@@ -201,7 +201,7 @@ class SSVAE(object):
             if CUDA:
                 loss = loss.cpu()
             epoch_elbo -= loss.data.numpy()[0]
-    return epoch_elbo / N, label_mask
+        return epoch_elbo / N, label_mask
 
     def test(self, data, batch_size=None, infer=True):
         if batch_size is None:
