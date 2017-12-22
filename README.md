@@ -1,6 +1,6 @@
 # SS VAE
 
-This repository maintains an experimental code of SS VAE implementation<span id="a1">[[1]](#f1)</span> using [Pytorch](https://github.com/pytorch/pytorch) and [ProbTorch](https://github.com/probtorch/probtorch).
+This repository maintains an experimental code of SS VAE implementation <span id="a1">[[1]](#f1)</span> using [Pytorch](https://github.com/pytorch/pytorch) and [ProbTorch](https://github.com/probtorch/probtorch).
 The code was tested with Python 3.6.3, Pytorch 0.4.0a0+32a4a52, and Probtorch 0.0+579de67.
 
 ## Installation
@@ -52,4 +52,4 @@ $ python main.py --load_model
 ```
 
 ## Reference
-1. <span id="f1"></span> Kingma, Diederik P, Danilo J Rezende, Shakir Mohamed, and Max Welling. 2014. “Semi-Supervised Learning with Deep Generative Models.” (http://arxiv.org/abs/1406.5298) [$\hookleftarrow$](#a1)
+[[1]] <span id="f1"></span> Kingma, Diederik P, Danilo J Rezende, Shakir Mohamed, and Max Welling. 2014. “Semi-Supervised Learning with Deep Generative Models.”(http://arxiv.org/abs/1406.5298) [$\hookleftarrow$](#a1)
