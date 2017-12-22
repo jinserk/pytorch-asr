@@ -52,4 +52,4 @@ $ python main.py --load_model
 ```
 
 ## Reference
-1. <span id="f1"></span> Kingma, Diederik P, Danilo J Rezende, Shakir Mohamed, and Max Welling. 2014. “Semi-Supervised Learning with Deep Generative Models.”[[[Paper]]](http://arxiv.org/abs/1406.5298) [$\hookleftarrow$](#a1)
+1. <span id="f1"></span> Kingma, Diederik P, Danilo J Rezende, Shakir Mohamed, and Max Welling. 2014. “Semi-Supervised Learning with Deep Generative Models.”[[Paper]](http://arxiv.org/abs/1406.5298) [$\hookleftarrow$](#a1)
