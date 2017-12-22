@@ -51,3 +51,5 @@ $ python main.py
 $ python main.py --load_model
 ```
 
+## Reference
+[1] Kingma, Diederik P, Danilo J Rezende, Shakir Mohamed, and Max Welling. 2014. “Semi-Supervised Learning with Deep Generative Models.” http://arxiv.org/abs/1406.5298.
