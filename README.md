@@ -5,11 +5,49 @@ The code was tested with Python 3.6.3, Pytorch 0.4.0a0+32a4a52, and Probtorch 0.
 
 ## Installation
 
-We recommend [pyenv](https://github.com/pyenv/pyenv). All descriptions here is under the assumption you already have pyenv and Python 3.6.3 and Pytorch 0.4.0a0 under it.
+We recommend [pyenv](https://github.com/pyenv/pyenv). We assume you already have pyenv and Python 3.6.3 and Pytorch 0.4.0a0 under it.
 
-1. download [Probtorch](https://github.com/probtorch/probtorch)
+download [Probtorch](https://github.com/probtorch/probtorch):
 ```
 $ git clone https://github.com/probtorch/probtorch.git
 ```
-    modify `probtorch/probtorch/version.py` as following:
+
+modify `probtorch/probtorch/version.py` as following:
+```
+def git_revision():
+    import os, subprocess
+    tmp = os.getcwd()
+    os.chdir('<full path of probtorch you downloaded>')
+    rev = subprocess.check_output("git rev-parse --short HEAD".split())
+    os.chdir(tmp)
+    return rev.strip().decode('utf-8')
+
+__version__ = "0.0+" + str(git_revision())
+```
+
+download [SS_VAE](https://github.com/jinserk/ss_vae.git"):
+```
+$ git clone https://github.com/jinserk/ss_vae.git
+```
+
+modify line 19 in `ss_vae/main.py`:
+```
+sys.path.append('<absolute path of probtorch you downloaded>')
+```
+
+done!
+
+## Training
+
+do not forget to set `pyenv local 3.6.3` in the local repo
+
+```
+$ python main.py
+```
+
+## Load model from stored file
+
+```
+$ python main.py --load_model
+```
 
