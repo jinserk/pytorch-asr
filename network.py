@@ -28,14 +28,9 @@ class Network(object):
             self.label_fraction = args.label_fraction
             self.cuda = args.cuda
             self.lr = args.lr
+            self.initialize()
         except:
-            try:
-                self.load(args.model_dir, args.model_prefix)
-            except:
-                log.error("you have to provide proper args or model file info")
-                sys.exit(1)
-
-        self.initialize()
+            self.load(args.model_dir, args.model_prefix, cuda=args.cuda)
 
     def initialize(self):
         if self.cuda:
@@ -135,10 +130,9 @@ class Network(object):
 
     def save(self, model_dir, file_prefix, file_middle="", **kwargs):
         from pathlib import Path
-        try:
-            Path(model_dir).mkdir(mode=0o755, parents=True, exist_ok=True)
-        except OSError as e:
-            raise
+
+        Path(model_dir).mkdir(mode=0o755, parents=True, exist_ok=True)
+
         if file_middle != "":
             file_path = Path(model_dir, f"{file_prefix}_{file_middle}.{file_suffix}")
         else:
@@ -150,26 +144,30 @@ class Network(object):
                       "batch_size": self.batch_size,
                       "num_samples": self.num_samples,
                       "label_fraction": self.label_fraction,
-                      "cuda": self.cuda,
                       "lr": self.lr,
+                      "cuda": self.cuda,
                       })
         torch.save(state, file_path)
 
-    def load(self, model_dir, file_prefix):
+    def load(self, model_dir, file_prefix, **kwargs):
         from pathlib import Path
+
         file_path = Path(model_dir, f"{file_prefix}.{file_suffix}")
         if not file_path.exists():
             log.error(f"no such file {file_path} exists")
-            raise IOError
+            sys.exit(1)
+
         log.info(f"loading the model from {file_path}")
         parameters = torch.load(file_path)
         self.enc.load_state_dict(parameters["encoder"])
         self.dec.load_state_dict(parameters["decoder"])
-        self.batch_size = parameters["batch_size"]
+
         self.num_samples = parameters["num_samples"]
         self.label_fraction = parameters["label_fraction"]
-        self.cuda = parameters["cuda"]
         self.lr = parameters["lr"]
+
+        self.batch_size = kwargs["batch_size"] if "batch_size" in kwargs else parameters["batch_size"]
+        self.cuda = kwargs["cuda"] if "cuda" in kwargs else parameters["cuda"]
         self.initialize()
         return parameters
 

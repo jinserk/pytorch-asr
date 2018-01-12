@@ -1,6 +1,8 @@
 #!python
 
 import os
+from pathlib import Path
+
 import numpy as np
 from scipy.stats import norm
 
@@ -9,6 +11,13 @@ from torch.autograd import Variable
 
 from logger import log
 from model import NUM_PIXELS, NUM_STYLE
+
+
+def save_figure(fig, image_dir, image_file):
+    fig.tight_layout()
+    figfile = Path(image_dir, '01_encodings.png')
+    fig.savefig(str(figfile), dpi=300)
+    return figfile
 
 
 def check(args, network):
@@ -21,7 +30,7 @@ def check(args, network):
     for (x, y) in test_data:
         if len(x) == batch_size:
             images = Variable(x).view(-1, NUM_PIXELS)
-            if args.cuda:
+            if network.cuda:
                 q = network.enc(images.cuda())
                 z = q['styles'].value.data.cpu().numpy()
             else:
@@ -57,9 +66,7 @@ def check(args, network):
         colors.append(p.get_facecolor())
     ax.legend()
 
-    fig.tight_layout()
-    figfile = os.path.join(image_path, '01_encodings.png')
-    fig.savefig(figfile, dpi=300)
+    figfile = save_figure(fig, args.image_dir, '01_encodings.png')
     log.info(f"the figure of latent encoding is stored to {figfile}")
 
     x_lim = ax.get_xlim()
@@ -76,14 +83,12 @@ def check(args, network):
         ax.set_ylim(y_lim)
         ax.set_title('y=%d' % k)
 
-    fig.tight_layout()
-    figfile = os.path.join(image_path, '02_classes.png')
-    fig.savefig(figfile, dpi=300)
+    figfile = save_figure(fig, args.image_dir, '02_classes.png')
     log.info(f"the figure of encodings for each class is stored to {figfile}")
 
     x, _ = next(iter(train_data))
     x_var = Variable(x.view(-1, NUM_PIXELS))
-    if args.cuda:
+    if network.cuda:
         q = network.enc(x_var.cuda())
         p = network.dec(x_var.cuda(), q)
         x_mean = p['images'].value.view(batch_size, 28, 28).data.cpu().numpy()
@@ -103,9 +108,8 @@ def check(args, network):
         ax.set_title("reconstructed")
         plt.axis("off")
 
-    fig.tight_layout()
-    figfile = os.path.join(image_path, '03_reconstructions.png')
-    fig.savefig(figfile, dpi=300, facecolor=[0, 0, 0, 0])
+    figfile = save_figure(fig, args.image_dir, '03_reconstructions.png')
+    #fig.savefig(figfile, dpi=300, facecolor=[0, 0, 0, 0])
     log.info(f"the figure of original and reconstructed image samples is stored to {figfile}")
 
     # display a 2D manifold of the digits
@@ -133,7 +137,7 @@ def check(args, network):
                     n = ((zs2[my] - z) ** 2).sum(1).argmin()
                     z = zs[my][n][None, :]
                 z = Variable(torch.FloatTensor(z))
-                if args.cuda:
+                if network.cuda:
                     p = network.dec(null_image.cuda(), {'styles': z.cuda(), 'digits': y_hot.cuda()})
                     images = p['images'].value.data.cpu().numpy()
                 else:
@@ -146,9 +150,7 @@ def check(args, network):
         plt.title('y=%d' % y)
         plt.axis('off')
 
-    fig.tight_layout()
-    figfile = os.path.join(image_path, '04_digits.png')
-    fig.savefig(figfile, dpi=300)
+    figfile = save_figure(fig, args.image_dir, '04_digits.png')
     log.info(f"the figure of all digits variables is stored to {figfile}")
 
 
@@ -161,7 +163,7 @@ if __name__ == "__main__":
 
     # command line options
     parser = argparse.ArgumentParser(description='SS-VAE check')
-    parser.add_argument('--cuda', dest='cuda', action='store_true', help='use cuda')
+    parser.add_argument('--cuda', dest='cuda', default=False, action='store_true', help='use cuda')
     parser.add_argument('--data_dir', default='./data', help='dir to download/read data')
     parser.add_argument('--image_dir', default='./images', help='dir where to store images for check')
     parser.add_argument('--model_dir', default='./models', help='dir where to read stored model file from')
@@ -171,10 +173,7 @@ if __name__ == "__main__":
     log.info(f"probtorch:{probtorch.__version__} torch:{torch.__version__}")
 
     # output path
-    try:
-        os.makedirs(args.image_dir, exist_ok=True)
-    except OSError as e:
-        raise
+    Path(args.image_dir).mkdir(mode=0o755, parents=True, exist_ok=True)
 
     # load model
     net = Network(args)

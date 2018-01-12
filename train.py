@@ -11,11 +11,7 @@ def prepare_data(data_dir, batch_size):
     import torch
     from torchvision import datasets, transforms
 
-    # prepare data
-    try:
-        Path(data_dir).mkdir(mode=0o755, parents=True, exist_ok=True)
-    except OSError as e:
-        raise
+    Path(data_dir).mkdir(mode=0o755, parents=True, exist_ok=True)
 
     train_dataset = datasets.MNIST(data_dir, train=True, download=True, transform=transforms.ToTensor())
     test_dataset = datasets.MNIST(data_dir, train=False, download=True, transform=transforms.ToTensor())
@@ -79,7 +75,7 @@ if __name__ == "__main__":
     parser.add_argument('--lr', default=1e-3, type=float, help='initial learning rate')
     parser.add_argument('--num_samples', default=8, type=int, help='number of samples (?)')
     parser.add_argument('--label_fraction', default=0.1, type=float, help='fraction for the labeled data')
-    parser.add_argument('--cuda', dest='cuda', action='store_true', help='use cuda')
+    parser.add_argument('--cuda', dest='cuda', default=False, action='store_true', help='use cuda')
     parser.add_argument('--data_dir', default='./data', help='dir to download/read data')
     parser.add_argument('--model_dir', default='./models', help='dir where to store trained models')
     parser.add_argument('--model_prefix', default='mnist', help='model file prefix to store')
