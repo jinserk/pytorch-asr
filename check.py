@@ -5,6 +5,9 @@ from pathlib import Path
 
 import numpy as np
 from scipy.stats import norm
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
 
 import torch
 from torch.autograd import Variable
@@ -15,7 +18,7 @@ from model import NUM_PIXELS, NUM_STYLE
 
 def save_figure(fig, image_dir, image_file):
     fig.tight_layout()
-    figfile = Path(image_dir, '01_encodings.png')
+    figfile = Path(image_dir, image_file)
     fig.savefig(str(figfile), dpi=300)
     return figfile
 
@@ -55,7 +58,6 @@ def check(args, network):
         zs2 = zs
 
     # display a 2D plot of the digit classes in the latent space
-    import matplotlib.pyplot as plt
     fig = plt.figure(figsize=(6, 6))
     ax = plt.gca()
 

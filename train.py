@@ -88,4 +88,4 @@ if __name__ == "__main__":
     net = Network(args)
 
     # train
-    train(args, net, data)
+    train(args, net)
