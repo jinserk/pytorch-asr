@@ -1,6 +1,6 @@
-# SS VAE
+# Semisupervised Sequential Variational Autoencoder
 
-This repository maintains an experimental code of SS VAE implementation <span id="a1">[[1]](#f1)</span> using [Pytorch](https://github.com/pytorch/pytorch) and [ProbTorch](https://github.com/probtorch/probtorch).
+This repository maintains an experimental code of SS-VAE implementation <span id="a1">[[1]](#f1)</span> using [Pytorch](https://github.com/pytorch/pytorch) and [ProbTorch](https://github.com/probtorch/probtorch).
 The code was tested with Python 3.6.4, Pytorch 0.4.0a0, and Probtorch.
 
 ## Installation
@@ -12,9 +12,9 @@ Install required Python modules:
 pip install -r requrements.txt
 ```
 
-Download [SS_VAE](https://github.com/jinserk/ss_vae.git"):
+Download [ss-vae](https://github.com/jinserk/ss-vae.git"):
 ```
-$ git clone https://github.com/jinserk/ss_vae.git
+$ git clone https://github.com/jinserk/ss-vae.git
 ```
 
 Done!
