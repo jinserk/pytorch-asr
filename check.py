@@ -35,10 +35,10 @@ def check(args, network):
             images = Variable(x).view(-1, NUM_PIXELS)
             if network.cuda:
                 q = network.enc(images.cuda())
-                z = q['styles'].value.data.cpu().numpy()
+                z = q['z'].value.data.cpu().numpy()
             else:
                 q = network.enc(images)
-                z = q['styles'].value.data.numpy()
+                z = q['z'].value.data.numpy()
             zs.append(z)
             ys.append(y.numpy())
     ys = np.concatenate(ys, 0)
@@ -48,7 +48,7 @@ def check(args, network):
     if NUM_STYLE > 2:
         log.info("doing T-SNE to check the latent space")
         #from MulticoreTSNE import MulticoreTSNE as TSNE
-        #tsne = TSNE(n_jobs=40)
+        #tsne = TSNE(n_jobs=4)
         from sklearn.manifold import TSNE
         tsne = TSNE()
         zs2 = tsne.fit_transform(zs)
@@ -93,11 +93,11 @@ def check(args, network):
     if network.cuda:
         q = network.enc(x_var.cuda())
         p = network.dec(x_var.cuda(), q)
-        x_mean = p['images'].value.view(batch_size, 28, 28).data.cpu().numpy()
+        x_mean = p['x'].value.view(batch_size, 28, 28).data.cpu().numpy()
     else:
         q = network.enc(x_var)
         p = network.dec(x_var, q)
-        x_mean = p['images'].value.view(batch_size, 28, 28).data.numpy().squeeze()
+        x_mean = p['x'].value.view(batch_size, 28, 28).data.numpy().squeeze()
 
     fig = plt.figure(figsize=(12, 5.25))
     for k in range(5):
@@ -140,11 +140,11 @@ def check(args, network):
                     z = zs[my][n][None, :]
                 z = Variable(torch.FloatTensor(z))
                 if network.cuda:
-                    p = network.dec(null_image.cuda(), {'styles': z.cuda(), 'digits': y_hot.cuda()})
-                    images = p['images'].value.data.cpu().numpy()
+                    p = network.dec(null_image.cuda(), {'z': z.cuda(), 'y': y_hot.cuda()})
+                    images = p['x'].value.data.cpu().numpy()
                 else:
-                    p = network.dec(null_image, {'styles': z, 'digits': y_hot})
-                    images = p['images'].value.data.numpy()
+                    p = network.dec(null_image, {'z': z, 'y': y_hot})
+                    images = p['x'].value.data.numpy()
                 digit = images.reshape(digit_size, digit_size)
                 figure[j * digit_size: (j + 1) * digit_size,
                        i * digit_size: (i + 1) * digit_size] = digit

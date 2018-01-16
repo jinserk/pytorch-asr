@@ -64,7 +64,6 @@ def train(args, network):
 
 if __name__ == "__main__":
     import argparse
-    import probtorch_env
     import probtorch
     import torch
 

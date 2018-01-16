@@ -3,15 +3,16 @@
 import sys
 from random import random
 
+from tqdm import tqdm
+
 import torch
 from torch.autograd import Variable
 from torchvision import datasets, transforms
 
-import probtorch_env
 import probtorch
 
 from logger import log
-from model import Encoder, Decoder, NUM_PIXELS, NUM_DIGITS, EPS
+from model import LinearEncoder, LinearDecoder, ConvEncoder, ConvDecoder, NUM_PIXELS, NUM_DIGITS, EPS
 
 
 file_suffix = "pth.tar"
@@ -20,8 +21,8 @@ file_suffix = "pth.tar"
 class Network(object):
 
     def __init__(self, args):
-        self.enc = Encoder()
-        self.dec = Decoder()
+        self.enc = LinearEncoder()
+        self.dec = LinearDecoder()
         try:
             self.batch_size = args.batch_size
             self.num_samples = args.num_samples
@@ -57,7 +58,7 @@ class Network(object):
         self.dec.train()
 
         N = 0
-        for b, (images, labels) in enumerate(data):
+        for b, (images, labels) in tqdm(enumerate(data), total=len(data), desc="Training"):
             if images.size()[0] != batch_size:
                 continue
             N += batch_size
@@ -96,7 +97,7 @@ class Network(object):
         epoch_correct = 0
         N = 0
         with torch.no_grad():
-            for b, (images, labels) in enumerate(data):
+            for b, (images, labels) in tqdm(enumerate(data), total=len(data), desc="Testing "):
                 if images.size()[0] != batch_size:
                     continue
                 N += batch_size
@@ -115,14 +116,14 @@ class Network(object):
                     log_q = q.log_joint(0, 1)
                     log_w = log_p - log_q
                     w = torch.nn.functional.softmax(log_w, 0)
-                    y_samples = q['digits'].value
+                    y_samples = q['y'].value
                     y_expect = (w.unsqueeze(-1) * y_samples).sum(0)
                     _, y_pred = y_expect.data.max(-1)
                     if self.cuda:
                         y_pred = y_pred.cpu()
                     epoch_correct += (labels == y_pred).sum()
                 else:
-                    _, y_pred = q['digits'].value.data.max(-1)
+                    _, y_pred = q['y'].value.data.max(-1)
                     if self.cuda:
                         y_pred = y_pred.cpu()
                     epoch_correct += (labels == y_pred).sum() * 1.0 / (self.num_samples or 1.0)
