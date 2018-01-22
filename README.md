@@ -24,7 +24,7 @@ Done!
 
 Do not forget to set `pyenv local 3.6.4` in the local repo
 
-Running vizdom if you give the commandline options `--visualize`
+Running visdom server if you give the commandline options `--visualize`
 ```
 $ python -m visdom.server
 ```
@@ -37,6 +37,11 @@ $ python train.py
 If you want to resume training from a model file:
 ```
 $ python train.py --continue_from <file_prefix>
+```
+
+You can see the sampled digits and latent variable T-SNE plots via web browser:
+```
+https://localhost:8097
 ```
 
 ## Reference
