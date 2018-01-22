@@ -142,10 +142,9 @@ if __name__ == "__main__":
     args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
     logger.info(f"args: {' '.join(args_str)}")
 
-    #if args.use_cuda:
-    #    torch.set_default_tensor_type("torch.cuda.FloatTensor")
-    #else:
-    #    torch.set_default_tensor_type("torch.FloatTensor")
+    if args.use_cuda:
+        x = torch.randn(1).cuda() # to initialize cuda in torch
+        torch.set_default_tensor_type("torch.cuda.FloatTensor")
 
     if args.seed is not None:
         torch.manual_seed(args.seed)

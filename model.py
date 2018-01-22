@@ -197,7 +197,7 @@ class SsVae(nn.Module):
 
         # sample an image using the decoder
         mu = self.decoder.forward(zs, ys)
-        xs = pyro.sample("sample", dist.bernoulli, mu)
+        xs = pyro.sample("sample", dist.bernoulli, mu.cpu())
         return xs, mu
 
     def guide_sample(self, xs, ys, batch_size=1):

@@ -81,12 +81,19 @@ def __plot_tsne_to_visdom(z_embed, classes):
     import numpy as np
 
     for ic in range(10):
-        idx_class = classes[:, ic] == 1
-        viz_plot(f"z_tsne", viz.scatter, z_embed[idx_class, :], np.argmax(classes[idx_class], axis=1) + 1,
-                 opts=dict(color=ic, markersize=4))
+        idx = classes[:, ic] == 1
+        X = z_embed[idx, :]
+        Y = np.ones_like(X[:, 0])
+        C = (20 * ic + 1) * np.ones_like(Y)
+        viz_plot(f"z_tsne_for_{ic}", viz.scatter, X, Y,
+                 opts=dict(markercolor=C, markersize=4, legend=[str(ic)]))
 
-    viz_plot(f"z_tsne", viz.scatter, z_embed, np.argmax(classes, axis=1) + 1,
-             opts=dict(title='2d t-sne of z embedding', width=800, height=800, markersize=4))
+    X = z_embed
+    Y = np.argmax(classes, axis=1) + 1
+    C = 20 * np.arange(10) + 1
+    viz_plot("z_tsne", viz.scatter, X, Y,
+             opts=dict(width=800, height=800, markercolor=C, markersize=4,
+                       legend=[str(x) for x in range(10)]))
 
 
 def __plot_tsne_to_matplotlib(z_embed, classes):
