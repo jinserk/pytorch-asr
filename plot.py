@@ -79,18 +79,19 @@ def plot_tsne(ssvae, test_loader):
 
 def __plot_tsne_to_visdom(z_embed, classes):
     import numpy as np
+    import colorlover as cl
+
+    C = np.array([list(x) for x in cl.to_numeric(cl.scales['10']['qual']['Paired'])])
 
     for ic in range(10):
         idx = classes[:, ic] == 1
         X = z_embed[idx, :]
         Y = np.ones_like(X[:, 0])
-        C = (20 * ic + 1) * np.ones_like(Y)
         viz_plot(f"z_tsne_for_{ic}", viz.scatter, X, Y,
                  opts=dict(markercolor=C, markersize=4, legend=[str(ic)]))
 
     X = z_embed
     Y = np.argmax(classes, axis=1) + 1
-    C = 20 * np.arange(10) + 1
     viz_plot("z_tsne", viz.scatter, X, Y,
              opts=dict(width=800, height=800, markercolor=C, markersize=4,
                        legend=[str(x) for x in range(10)]))

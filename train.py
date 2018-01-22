@@ -143,7 +143,7 @@ if __name__ == "__main__":
     logger.info(f"args: {' '.join(args_str)}")
 
     if args.use_cuda:
-        x = torch.randn(1).cuda() # to initialize cuda in torch
+        torch.cuda.init()
         torch.set_default_tensor_type("torch.cuda.FloatTensor")
 
     if args.seed is not None:
