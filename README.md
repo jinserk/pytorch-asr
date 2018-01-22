@@ -24,6 +24,11 @@ Done!
 
 Do not forget to set `pyenv local 3.6.4` in the local repo
 
+Running vizdom if you give the commandline options `--visualize`
+```
+$ python -m visdom.server
+```
+
 In order to start a new training:
 ```
 $ python train.py

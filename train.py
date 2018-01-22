@@ -89,7 +89,8 @@ def train(args):
         # visualize the conditional samples
         if args.visualize:
             plot_samples(ss_vae)
-            plot_tsne(ss_vae, data_loaders["test"])
+            if epoch % 100 == 0:
+                plot_tsne(ss_vae, data_loaders["test"])
 
     final_test_accuracy = ss_vae.get_accuracy(data_loaders["test"])
     logger.info(f"best validation accuracy {best_valid_acc:5.3f} "

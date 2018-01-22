@@ -2,6 +2,7 @@ from pathlib import Path
 import torch
 from torch.autograd import Variable
 from visdom import Visdom
+from logger import logger
 
 viz = Visdom()
 viz_wins = dict()
@@ -70,6 +71,7 @@ def plot_tsne(ssvae, test_loader):
 
     from sklearn.manifold import TSNE
 
+    logger.info("calculating T-SNE of z embedding..")
     model_tsne = TSNE(n_components=2, random_state=0)
     z_embed = model_tsne.fit_transform(z_states)
 
@@ -81,14 +83,15 @@ def __plot_tsne_to_visdom(z_embed, classes):
     import numpy as np
     import colorlover as cl
 
-    C = np.array([list(x) for x in cl.to_numeric(cl.scales['10']['qual']['Paired'])])
+    C = np.array([list(x) for x in cl.to_numeric(cl.scales['10']['qual']['Paired'])]).astype(int)
 
     for ic in range(10):
         idx = classes[:, ic] == 1
         X = z_embed[idx, :]
-        Y = np.ones_like(X[:, 0])
+        Y = np.ones_like(X[:, 0]).astype(int)   # treat as a single class
+        Ci = np.expand_dims(C[ic], axis=0)      # pickup a corresponding color
         viz_plot(f"z_tsne_for_{ic}", viz.scatter, X, Y,
-                opts=dict(markercolor=C[ic, :], markersize=4, legend=[str(ic)]))
+                 opts=dict(markercolor=Ci, markersize=4, legend=[str(ic)]))
 
     X = z_embed
     Y = np.argmax(classes, axis=1) + 1
