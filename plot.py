@@ -61,38 +61,56 @@ def plot_llk(train_elbo, test_elbo):
 
 
 def plot_tsne(ssvae, test_loader):
-    import numpy as np
-    import matplotlib
-    matplotlib.use('Agg')
-
-    import matplotlib.pyplot as plt
-    from sklearn.manifold import TSNE
-
     xs = test_loader.dataset.test_data.float()
     ys = test_loader.dataset.test_labels
     z_mu, z_sigma = ssvae.guide_sample(xs, ys, len(test_loader))
 
-    model_tsne = TSNE(n_components=2, random_state=0)
     z_states = z_mu.data.cpu().numpy()
-    z_embed = model_tsne.fit_transform(z_states)
     classes = ys.cpu().numpy()
+
+    from sklearn.manifold import TSNE
+
+    model_tsne = TSNE(n_components=2, random_state=0)
+    z_embed = model_tsne.fit_transform(z_states)
+
+    __plot_tsne_to_visdom(z_embed, classes)
+    #__plot_tsne_to_matplotlib(z_embed, classes)
+
+
+def __plot_tsne_to_visdom(z_embed, classes):
+    import numpy as np
+
+    for ic in range(10):
+        idx_class = classes[:, ic] == 1
+        viz_plot(f"z_tsne", viz.scatter, z_embed[idx_class, :], np.argmax(classes[idx_class], axis=1) + 1,
+                 opts=dict(color=ic, markersize=4))
 
     viz_plot(f"z_tsne", viz.scatter, z_embed, np.argmax(classes, axis=1) + 1,
              opts=dict(title='2d t-sne of z embedding', width=800, height=800, markersize=4))
 
-    fig_all = plt.figure(0)
+
+def __plot_tsne_to_matplotlib(z_embed, classes):
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    figs = plt.figure(0)
+    plt.clf()
+
     for ic in range(10):
         ind_class = classes[:, ic] == 1
         color = plt.cm.Set1(ic)
 
         fig = plt.figure(ic + 1)
+        plt.clf()
         plt.scatter(z_embed[ind_class, 0], z_embed[ind_class, 1], s=10, color=color)
         plt.title(f"Latent Variable T-SNE per Class: {ic}")
         fig.savefig(str(Path(result_dir, f"z_embedding_{ic}.png")))
 
-        fig_all = plt.figure(0)
+        figs = plt.figure(0)
         plt.scatter(z_embed[ind_class, 0], z_embed[ind_class, 1], s=10, color=color)
 
-    fig_all = plt.figure(0)
-    plt.title(f"Latent Variable T-SNE per Class: All")
-    fig_all.savefig(str(Path(result_dir, f"z_embedding.png")))
+    figs = plt.figure(0)
+    plt.title(f"Latent Variable T-SNE for All Classes")
+    figs.savefig(str(Path(result_dir, f"z_embedding_all.png")))
+

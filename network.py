@@ -21,7 +21,7 @@ class Swish(nn.Module):
 
 class MlpEncoderY(nn.Module):
     def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, h_dims=NUM_HIDDEN,
-                 eps=EPS, cuda=False):
+                 eps=EPS):
         super(self.__class__, self).__init__()
         # network
         in_layers = [ nn.Linear(x_dim, h_dims[0]), Swish() ]
@@ -31,10 +31,7 @@ class MlpEncoderY(nn.Module):
         out_layers = [ nn.Linear(h_dims[-1], y_dim), ClippedSoftmax(eps, dim=1) ]
         # parallelize
         layers = in_layers + hid_layers + out_layers
-        self.hidden = nn.DataParallel(nn.Sequential(*layers))
-        # if cuda
-        if cuda:
-            self.cuda()
+        self.hidden = nn.Sequential(*layers)
 
     def forward(self, *args, **kwargs):
         return self.hidden.forward(*args, **kwargs)
@@ -42,7 +39,7 @@ class MlpEncoderY(nn.Module):
 
 class MlpEncoderZ(nn.Module):
     def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, h_dims=NUM_HIDDEN, z_dim=NUM_STYLE,
-                 eps=EPS, cuda=False):
+                 eps=EPS):
         super(self.__class__, self).__init__()
         # network
         in_layers = [ nn.Linear(x_dim + y_dim, h_dims[0]), Swish() ]
@@ -51,13 +48,10 @@ class MlpEncoderZ(nn.Module):
             hid_layers.append([ nn.Linear(h_dims[l], h_dims[l + 1]), Swish() ])
         # parallelize
         layers = in_layers + hid_layers
-        self.hidden = nn.DataParallel(nn.Sequential(*layers))
+        self.hidden = nn.Sequential(*layers)
         # output: z_mean and z_std
-        self.z_mean_hidden = nn.DataParallel(nn.Linear(h_dims[-1], z_dim))
-        self.z_log_std_hidden = nn.DataParallel(nn.Linear(h_dims[-1], z_dim))
-        # if cuda
-        if cuda:
-            self.cuda()
+        self.z_mean_hidden = nn.Linear(h_dims[-1], z_dim)
+        self.z_log_std_hidden = nn.Linear(h_dims[-1], z_dim)
 
     def forward(self, xs, ys, *args, **kwargs):
         h = self.hidden.forward(torch.cat([xs, ys], -1), *args, **kwargs)
@@ -69,7 +63,7 @@ class MlpEncoderZ(nn.Module):
 class MlpDecoder(nn.Module):
 
     def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, h_dims=NUM_HIDDEN, z_dim=NUM_STYLE,
-                 eps=EPS, cuda=False):
+                 eps=EPS):
         super(self.__class__, self).__init__()
         # network
         in_layers = [ nn.Linear(z_dim + y_dim, h_dims[0]), Swish() ]
@@ -79,10 +73,7 @@ class MlpDecoder(nn.Module):
         out_layers = [ nn.Linear(h_dims[-1], x_dim), ClippedSigmoid(eps) ]
         # parallelize
         layers = in_layers + hid_layers + out_layers
-        self.hidden = nn.DataParallel(nn.Sequential(*layers))
-        # if cuda
-        if cuda:
-            self.cuda()
+        self.hidden = nn.Sequential(*layers)
 
     def forward(self, zs, ys, *args, **kwargs):
         return self.hidden.forward(torch.cat([zs, ys], -1), *args, **kwargs)

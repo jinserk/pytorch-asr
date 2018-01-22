@@ -30,7 +30,7 @@ class SsVae(nn.Module):
                           representing the parameters of the distributions in our model
     :param epsilon_scale: a small float value used to scale down the output of Softmax and Sigmoid
                           opertations in pytorch for numerical stability
-    :param cuda: use GPUs for faster training
+    :param use_cuda: use GPUs for faster training
     :param aux_loss_multiplier: the multiplier to use with the auxiliary loss
     """
     def __init__(self, args):
@@ -48,7 +48,7 @@ class SsVae(nn.Module):
         self.enum_discrete = args.enum_discrete
         self.batch_size = args.batch_size
         self.learning_rate = args.learning_rate
-        self.cuda = args.cuda
+        self.use_cuda = args.use_cuda
 
         # define and instantiate the neural networks representing
         # the paramters of various distributions in the model
@@ -61,7 +61,7 @@ class SsVae(nn.Module):
         self.decoder = MlpDecoder(z_dim=self.z_dim, h_dims=self.h_dims)
 
         # using GPUs for faster training of the networks
-        if self.cuda:
+        if self.use_cuda:
             self.cuda()
 
         # setup the optimizer
@@ -292,7 +292,7 @@ class SsVae(nn.Module):
             "enum_discrete": self.enum_discrete,
             "batch_size": self.batch_size,
             "learning_rate": self.learning_rate,
-            "cuda": self.cuda,
+            "use_cuda": self.use_cuda,
         })
         torch.save(state, file_path)
 
@@ -316,5 +316,5 @@ class SsVae(nn.Module):
         self.enum_discrete = parameters["enum_discrete"]
         self.batch_size = parameters["batch_size"]
         self.learning_rate = parameters["learning_rate"]
-        self.cuda = parameters["cuda"]
+        self.use_cuda = parameters["use_cuda"]
         return parameters

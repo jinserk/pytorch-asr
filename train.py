@@ -36,7 +36,7 @@ def train(args):
         start_epoch = 0
 
     # prepare data loaders
-    data_loaders = setup_data_loaders(MNISTCached, args.cuda, args.batch_size,
+    data_loaders = setup_data_loaders(MNISTCached, args.use_cuda, args.batch_size,
                                       sup_num=args.sup_num, drop_last=True)
 
     # how often would a supervised batch be encountered during inference
@@ -89,7 +89,7 @@ def train(args):
         # visualize the conditional samples
         if args.visualize:
             plot_samples(ss_vae)
-            #plot_tsne(ss_vae, data_loaders["test"])
+            plot_tsne(ss_vae, data_loaders["test"])
 
     final_test_accuracy = ss_vae.get_accuracy(data_loaders["test"])
     logger.info(f"best validation accuracy {best_valid_acc:5.3f} "
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     parser.add_argument('-bs', '--batch-size', default=100, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('-eps', '--epsilon-scale', default=1e-9, type=float, help="a small float value used to scale down the output of Softmax and Sigmoid opertations in pytorch for numerical stability")
 
-    parser.add_argument('--cuda', default=False, action='store_true', help="use cuda")
+    parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
     parser.add_argument('--visualize', default=True, action="store_true", help="use a visdom server to visualize the embeddings")
     parser.add_argument('--log-dir', default='./logs', type=str, help="filename for logging the outputs")
@@ -142,13 +142,15 @@ if __name__ == "__main__":
     args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
     logger.info(f"args: {' '.join(args_str)}")
 
-    if args.cuda:
-        torch.set_default_tensor_type('torch.cuda.FloatTensor')
+    #if args.use_cuda:
+    #    torch.set_default_tensor_type("torch.cuda.FloatTensor")
+    #else:
+    #    torch.set_default_tensor_type("torch.FloatTensor")
 
     if args.seed is not None:
         torch.manual_seed(args.seed)
         np.random.seed(args.seed)
-        if args.cuda:
+        if args.use_cuda:
             torch.cuda.manual_seed(args.seed)
 
     # run training

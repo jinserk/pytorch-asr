@@ -122,7 +122,7 @@ class MNISTCached(MNIST):
     data_valid, labels_valid = None, None
     test_size = 10000
 
-    def __init__(self, mode, sup_num, use_cuda=True, *args, **kwargs):
+    def __init__(self, mode, sup_num, use_cuda=False, *args, **kwargs):
         super(MNISTCached, self).__init__(train=mode in ["sup", "unsup", "valid"], *args, **kwargs)
 
         # transformations on MNIST data (normalization and one-hot conversion for labels)
