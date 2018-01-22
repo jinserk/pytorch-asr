@@ -88,7 +88,7 @@ def __plot_tsne_to_visdom(z_embed, classes):
         X = z_embed[idx, :]
         Y = np.ones_like(X[:, 0])
         viz_plot(f"z_tsne_for_{ic}", viz.scatter, X, Y,
-                 opts=dict(markercolor=C, markersize=4, legend=[str(ic)]))
+                opts=dict(markercolor=C[ic, :], markersize=4, legend=[str(ic)]))
 
     X = z_embed
     Y = np.argmax(classes, axis=1) + 1
