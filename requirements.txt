@@ -1,2 +1,4 @@
 scikit-learn
 matplotlib
+tqdm
+visdom

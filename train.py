@@ -1,90 +1,156 @@
 #!python
-
-import time
 from pathlib import Path
 
-from logger import log
-from network import Network, file_suffix
+from pyro.infer import SVI
+from pyro.optim import Adam
+from pyro.shim import parse_torch_version
+
+from logger import logger, set_logfile
+from mnist_cached import MNISTCached, setup_data_loaders
+
+from model import SsVae
+from plot import visualize_setup, plot_samples, plot_tsne
+
+MODEL_SUFFIX = "pth.tar"
 
 
-def prepare_data(data_dir, batch_size):
-    import torch
-    from torchvision import datasets, transforms
+def train(args):
+    """
+    train SS-VAE model
+    :param args: arguments for SS-VAE
+    :return: None
+    """
+    def get_model_file_path(desc):
+        return Path(args.log_dir, f"{args.model_prefix}_{desc}.{MODEL_SUFFIX}")
 
-    Path(data_dir).mkdir(mode=0o755, parents=True, exist_ok=True)
+    if args.visualize:
+        visualize_setup(args.log_dir)
 
-    train_dataset = datasets.MNIST(data_dir, train=True, download=True, transform=transforms.ToTensor())
-    test_dataset = datasets.MNIST(data_dir, train=False, download=True, transform=transforms.ToTensor())
+    # batch_size: number of images (and labels) to be considered in a batch
+    ss_vae = SsVae(args)
 
-    train_data = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
-    test_data = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=True)
-
-    log.info("data preparation complete")
-    return train_data, test_data
-
-
-def train(args, network):
-    if args.continue_from != "":
-        parameters = network.load(args.model_dir, args.continue_from)
-        start_epoch = parameters['epoch']
-        filename = Path(args.model_dir, args.continue_from)
-        log.info(f"training is resumed from {filename}.{file_suffix}")
+    if args.continue_from is not None:
+        parameters = ss_vae.load(args.continue_from)
+        start_epoch = parameters("epoch")
     else:
         start_epoch = 0
-        network.batch_size = args.batch_size
-        log.info("new training begins")
 
-    train_data, test_data = prepare_data(args.data_dir, network.batch_size)
+    # prepare data loaders
+    data_loaders = setup_data_loaders(MNISTCached, args.cuda, args.batch_size,
+                                      sup_num=args.sup_num, drop_last=True)
 
-    mask = {}
-    for epoch in range(start_epoch, args.num_epochs):
-        train_start = time.time()
-        train_elbo, mask = network.train_epoch(train_data, label_mask=mask)
-        train_time = time.time() - train_start
+    # how often would a supervised batch be encountered during inference
+    # e.g. if sup_num is 3000, we would have every 16th = int(50000/3000) batch supervised
+    # until we have traversed through the all supervised batches
+    periodic_interval_batches = int(MNISTCached.train_data_size / (1.0 * args.sup_num))
 
-        test_start = time.time()
-        test_elbo, test_accuracy = network.test(test_data)
-        test_time = time.time() - test_start
+    # number of unsupervised examples
+    unsup_num = MNISTCached.train_data_size - args.sup_num
 
-        log.info(f"[Epoch {epoch+1:03d}] Train: ELBO {train_elbo:6.4e} ({train_time:04.1f}s) "
-                 f"Test: ELBO {test_elbo:6.4e}, Accuracy {test_accuracy:5.3f} ({test_time:04.1f}s)")
+    # initializing local variables to maintain the best validation accuracy
+    # seen across epochs over the supervised training set
+    # and the corresponding testing set and the state of the networks
+    best_valid_acc, corresponding_test_acc = 0.0, 0.0
 
-        network.save(args.model_dir, args.model_prefix, f"epoch_{epoch+1:03d}",
-                     epoch=epoch+1, elbo=test_elbo, accuracy=test_accuracy)
+    # run inference for a certain number of epochs
+    for i in range(start_epoch, args.num_epochs):
+        # get the losses for an epoch
+        epoch = i + 1
+        losses_sup, losses_unsup = ss_vae.train_epoch(epoch, data_loaders, periodic_interval_batches)
 
-    elbo, accuracy = network.test(test_data, infer=False)
-    log.info(f"[encoder] ELBO: {elbo:6.4e}, ACCURACY: {accuracy:5.3f}")
-    elbo, accuracy = network.test(test_data, infer=True)
-    log.info(f"[encoder+inference] ELBO: {elbo:6.4e}, ACCURACY: {accuracy:5.3f}")
+        # compute average epoch losses i.e. losses per example
+        avg_losses_sup = map(lambda x: f"{x/args.sup_num:7.3f}", losses_sup)
+        avg_losses_unsup = map(lambda x: f"{x/unsup_num:7.3f}", losses_unsup)
 
-    network.save(args.model_dir, args.model_prefix, "final",
-                 epoch=epoch+1, elbo=elbo, accuracy=accuracy)
-    log.info("training done")
+        validation_accuracy = ss_vae.get_accuracy(data_loaders["valid"])
+
+        # this test accuracy is only for logging, this is not used
+        # to make any decisions during training
+        test_accuracy = ss_vae.get_accuracy(data_loaders["test"])
+
+        str_avg_losses_sup = ' '.join([x for x in avg_losses_sup])
+        str_avg_losses_unsup = ' '.join([x for x in avg_losses_unsup])
+
+        logger.info(f"epoch {epoch:03d}: "
+                    f"avg_loss_sup {str_avg_losses_sup} "
+                    f"avg_loss_unsup {str_avg_losses_unsup} "
+                    f"val_accuracy {validation_accuracy:5.3f} "
+                    f"test_accuracy {test_accuracy:5.3f}")
+
+        # update the best validation accuracy and the corresponding
+        # testing accuracy and the state of the parent module (including the networks)
+        if best_valid_acc < validation_accuracy:
+            best_valid_acc = validation_accuracy
+            corresponding_test_acc = test_accuracy
+
+        # save
+        ss_vae.save(get_model_file_path(f"epoch_{epoch:04d}"), epoch=epoch)
+
+        # visualize the conditional samples
+        if args.visualize:
+            plot_samples(ss_vae)
+            #plot_tsne(ss_vae, data_loaders["test"])
+
+    final_test_accuracy = ss_vae.get_accuracy(data_loaders["test"])
+    logger.info(f"best validation accuracy {best_valid_acc:5.3f} "
+                f"corresponding testing accuracy {corresponding_test_acc:5.3f} "
+                f"last testing accuracy {final_test_accuracy:5.3f}")
+
+    #save final model
+    ss_vae.save(get_model_file_path("final"), epoch=epoch)
+
+    if args.visualize:
+        plot_tsne(ss_vae, data_loaders["test"])
 
 
 if __name__ == "__main__":
+    import sys
     import argparse
-    import probtorch
     import torch
+    import numpy as np
 
-    # command line options
-    parser = argparse.ArgumentParser(description='SS-VAE train')
-    parser.add_argument('--batch_size', default=128, type=int, help='batch size for training')
-    parser.add_argument('--num_epochs', default=200, type=int, help='number of training epochs')
-    parser.add_argument('--lr', default=1e-3, type=float, help='initial learning rate')
-    parser.add_argument('--num_samples', default=8, type=int, help='number of samples (?)')
-    parser.add_argument('--label_fraction', default=0.1, type=float, help='fraction for the labeled data')
-    parser.add_argument('--cuda', dest='cuda', default=False, action='store_true', help='use cuda')
-    parser.add_argument('--data_dir', default='./data', help='dir to download/read data')
-    parser.add_argument('--model_dir', default='./models', help='dir where to store trained models')
-    parser.add_argument('--model_prefix', default='mnist', help='model file prefix to store')
-    parser.add_argument('--continue_from', default='', help='model filename to resume the training from')
+    parser = argparse.ArgumentParser(description="SS-VAE model training")
+
+    parser.add_argument('-ne', '--num-epochs', default=1000, type=int, help="number of epochs to run")
+    parser.add_argument('-al', '--aux-loss', default=True, action="store_true", help="whether to use the auxiliary loss from NIPS 14 paper (Kingma et al)")
+    parser.add_argument('-alm', '--aux-loss-multiplier', default=300, type=float, help="the multiplier to use with the auxiliary loss")
+    parser.add_argument('-enum', '--enum-discrete', default=True, action="store_true", help="whether to enumerate the discrete support of the categorical distribution while computing the ELBO loss")
+    parser.add_argument('-sup', '--sup-num', default=3000, type=float, help="supervised amount of the data i.e. how many of the images have supervised labels")
+    parser.add_argument('-zd', '--z-dim', default=50, type=int, help="size of the tensor representing the latent variable z variable (handwriting style for our MNIST dataset)")
+    parser.add_argument('-hd', '--h-dims', nargs='+', default=[256,], type=int, help="a tuple (or list) of MLP layers to be used in the neural networks representing the parameters of the distributions in our model")
+    parser.add_argument('-lr', '--learning-rate', default=0.001, type=float, help="learning rate for Adam optimizer")
+    parser.add_argument('-bs', '--batch-size', default=100, type=int, help="number of images (and labels) to be considered in a batch")
+    parser.add_argument('-eps', '--epsilon-scale', default=1e-9, type=float, help="a small float value used to scale down the output of Softmax and Sigmoid opertations in pytorch for numerical stability")
+
+    parser.add_argument('--cuda', default=False, action='store_true', help="use cuda")
+    parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
+    parser.add_argument('--visualize', default=True, action="store_true", help="use a visdom server to visualize the embeddings")
+    parser.add_argument('--log-dir', default='./logs', type=str, help="filename for logging the outputs")
+    parser.add_argument('--model-prefix', default='ss_vae_mnist', type=str, help="model file prefix to store")
+    parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
+
     args = parser.parse_args()
 
-    log.info(f"probtorch:{probtorch.__version__} torch:{torch.__version__}")
+    # some assertions to make sure that batching math assumptions are met
+    assert args.sup_num % args.batch_size == 0, "assuming simplicity of batching math"
+    torch_version = parse_torch_version()
+    assert torch_version >= (0, 2, 1), "you need pytorch 0.2.1 or later"
 
-    # prepare model
-    net = Network(args)
+    set_logfile(Path(args.log_dir, "train.log"))
 
-    # train
-    train(args, net)
+    logger.info(f"Training started with command: {' '.join(sys.argv)}")
+    args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
+    logger.info(f"args: {' '.join(args_str)}")
+
+    if args.cuda:
+        torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+        if args.cuda:
+            torch.cuda.manual_seed(args.seed)
+
+    # run training
+    train(args)
+

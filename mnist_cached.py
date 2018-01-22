@@ -79,7 +79,7 @@ def split_sup_unsup_valid(X, y, sup_num, validation_num=10000):
     X = X[0:-validation_num]
     y = y[0:-validation_num]
 
-    #assert sup_num % 10 == 0, "unable to have equal number of images per class"
+    assert sup_num % 10 == 0, "unable to have equal number of images per class"
 
     # number of supervised examples per class
     sup_per_class = int(sup_num / 10)

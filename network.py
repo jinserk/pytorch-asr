@@ -1,188 +1,165 @@
 #!python
-
-import sys
-from random import random
-
-from tqdm import tqdm
+import math
 
 import torch
-from torch.autograd import Variable
-from torchvision import datasets, transforms
+import torch.nn as nn
+from torch.nn import Parameter
 
-import probtorch
+from pyro.nn import ClippedSoftmax, ClippedSigmoid
 
-from logger import log
-from model import LinearEncoder, LinearDecoder, ConvEncoder, ConvDecoder, NUM_PIXELS, NUM_DIGITS, EPS
+NUM_PIXELS = 784
+NUM_DIGITS = 10
+NUM_HIDDEN = [256, ]
+NUM_STYLE = 50
+EPS = 1e-9
 
 
-file_suffix = "pth.tar"
+class Swish(nn.Module):
+    def forward(self, x):
+        return x * nn.functional.sigmoid(x)
 
 
-class Network(object):
+class MlpEncoderY(nn.Module):
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, h_dims=NUM_HIDDEN,
+                 eps=EPS, cuda=False):
+        super(self.__class__, self).__init__()
+        # network
+        in_layers = [ nn.Linear(x_dim, h_dims[0]), Swish() ]
+        hid_layers = []
+        for l in range(1, len(h_dims) - 1):
+            hid_layers.extend([ nn.Linear(h_dims[l], h_dims[l + 1]), Swish() ])
+        out_layers = [ nn.Linear(h_dims[-1], y_dim), ClippedSoftmax(eps, dim=1) ]
+        # parallelize
+        layers = in_layers + hid_layers + out_layers
+        self.hidden = nn.DataParallel(nn.Sequential(*layers))
+        # if cuda
+        if cuda:
+            self.cuda()
 
-    def __init__(self, args):
-        self.enc = LinearEncoder()
-        self.dec = LinearDecoder()
-        try:
-            self.batch_size = args.batch_size
-            self.num_samples = args.num_samples
-            self.label_fraction = args.label_fraction
-            self.cuda = args.cuda
-            self.lr = args.lr
-            self.initialize()
-        except:
-            self.load(args.model_dir, args.model_prefix, cuda=args.cuda)
+    def forward(self, *args, **kwargs):
+        return self.hidden.forward(*args, **kwargs)
 
-    def initialize(self):
-        if self.cuda:
-            torch.nn.DataParallel(self.enc).cuda()
-            torch.nn.DataParallel(self.dec).cuda()
 
-        parameters = list(self.enc.parameters()) + list(self.dec.parameters())
-        self.optimizer = torch.optim.Adam(parameters, lr=self.lr, betas=(0.9, 0.999))
+class MlpEncoderZ(nn.Module):
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, h_dims=NUM_HIDDEN, z_dim=NUM_STYLE,
+                 eps=EPS, cuda=False):
+        super(self.__class__, self).__init__()
+        # network
+        in_layers = [ nn.Linear(x_dim + y_dim, h_dims[0]), Swish() ]
+        hid_layers = []
+        for l in range(1, len(h_dims) - 1):
+            hid_layers.append([ nn.Linear(h_dims[l], h_dims[l + 1]), Swish() ])
+        # parallelize
+        layers = in_layers + hid_layers
+        self.hidden = nn.DataParallel(nn.Sequential(*layers))
+        # output: z_mean and z_std
+        self.z_mean_hidden = nn.DataParallel(nn.Linear(h_dims[-1], z_dim))
+        self.z_log_std_hidden = nn.DataParallel(nn.Linear(h_dims[-1], z_dim))
+        # if cuda
+        if cuda:
+            self.cuda()
 
-    def elbo(self, q, p, alpha=0.1):
-        if self.num_samples is None:
-            return probtorch.objectives.montecarlo.elbo(q, p, sample_dim=None, batch_dim=0, alpha=alpha)
-        else:
-            return probtorch.objectives.montecarlo.elbo(q, p, sample_dim=0, batch_dim=1, alpha=alpha)
+    def forward(self, xs, ys, *args, **kwargs):
+        h = self.hidden.forward(torch.cat([xs, ys], -1), *args, **kwargs)
+        z_mean = self.z_mean_hidden.forward(h, *args, **kwargs)
+        z_std = torch.exp(self.z_log_std_hidden.forward(h, *args, **kwargs))
+        return z_mean, z_std
 
-    def train_epoch(self, data, batch_size=None, label_fraction=None, label_mask={}):
-        if batch_size is None:
-            batch_size = self.batch_size
-        if label_fraction is None:
-            label_fraction = self.label_fraction
 
-        epoch_elbo = 0.0
-        self.enc.train()
-        self.dec.train()
+class MlpDecoder(nn.Module):
 
-        N = 0
-        for b, (images, labels) in tqdm(enumerate(data), total=len(data), desc="Training"):
-            if images.size()[0] != batch_size:
-                continue
-            N += batch_size
-            images = images.view(-1, NUM_PIXELS)
-            labels_onehot = torch.zeros(batch_size, NUM_DIGITS)
-            labels_onehot.scatter_(1, labels.unsqueeze(1), 1)
-            labels_onehot = torch.clamp(labels_onehot, EPS, 1 - EPS)
-            if self.cuda:
-                images = images.cuda()
-                labels_onehot = labels_onehot.cuda()
-            images = Variable(images)
-            labels_onehot = Variable(labels_onehot)
-            self.optimizer.zero_grad()
-            if b not in label_mask:
-                label_mask[b] = (random() < label_fraction)
-            if label_mask[b]:
-                q = self.enc(images, labels_onehot, num_samples=self.num_samples)
-            else:
-                q = self.enc(images, num_samples=self.num_samples)
-            p = self.dec(images, q, num_samples=self.num_samples)
-            loss = -self.elbo(q, p)
-            loss.backward()
-            self.optimizer.step()
-            if self.cuda:
-                loss = loss.cpu()
-            epoch_elbo -= loss.data.numpy()[0]
-        return epoch_elbo / N, label_mask
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, h_dims=NUM_HIDDEN, z_dim=NUM_STYLE,
+                 eps=EPS, cuda=False):
+        super(self.__class__, self).__init__()
+        # network
+        in_layers = [ nn.Linear(z_dim + y_dim, h_dims[0]), Swish() ]
+        hid_layers = []
+        for l in range(1, len(h_dims) - 1):
+            hid_layers.append([ nn.Linear(h_dims[l], h_dims[l + 1]), Swish() ])
+        out_layers = [ nn.Linear(h_dims[-1], x_dim), ClippedSigmoid(eps) ]
+        # parallelize
+        layers = in_layers + hid_layers + out_layers
+        self.hidden = nn.DataParallel(nn.Sequential(*layers))
+        # if cuda
+        if cuda:
+            self.cuda()
 
-    def test(self, data, batch_size=None, infer=True):
-        if batch_size is None:
-            batch_size = self.batch_size
+    def forward(self, zs, ys, *args, **kwargs):
+        return self.hidden.forward(torch.cat([zs, ys], -1), *args, **kwargs)
 
-        self.enc.eval()
-        self.dec.eval()
-        epoch_elbo = 0.0
-        epoch_correct = 0
-        N = 0
-        with torch.no_grad():
-            for b, (images, labels) in tqdm(enumerate(data), total=len(data), desc="Testing "):
-                if images.size()[0] != batch_size:
-                    continue
-                N += batch_size
-                images = images.view(-1, NUM_PIXELS)
-                if self.cuda:
-                    images = images.cuda()
-                images = Variable(images)
-                q = self.enc(images, num_samples=self.num_samples)
-                p = self.dec(images, q, num_samples=self.num_samples)
-                batch_elbo = self.elbo(q, p)
-                if self.cuda:
-                    batch_elbo = batch_elbo.cpu()
-                epoch_elbo += batch_elbo.data.numpy()[0]
-                if infer:
-                    log_p = p.log_joint(0, 1)
-                    log_q = q.log_joint(0, 1)
-                    log_w = log_p - log_q
-                    w = torch.nn.functional.softmax(log_w, 0)
-                    y_samples = q['y'].value
-                    y_expect = (w.unsqueeze(-1) * y_samples).sum(0)
-                    _, y_pred = y_expect.data.max(-1)
-                    if self.cuda:
-                        y_pred = y_pred.cpu()
-                    epoch_correct += (labels == y_pred).sum()
-                else:
-                    _, y_pred = q['y'].value.data.max(-1)
-                    if self.cuda:
-                        y_pred = y_pred.cpu()
-                    epoch_correct += (labels == y_pred).sum() * 1.0 / (self.num_samples or 1.0)
-        return epoch_elbo / N, epoch_correct / N
 
-    def save(self, model_dir, file_prefix, file_middle="", **kwargs):
-        from pathlib import Path
+class ConvEncoder(nn.Module):
 
-        Path(model_dir).mkdir(mode=0o755, parents=True, exist_ok=True)
+    def __init__(self, num_pixels=NUM_PIXELS, num_hidden=NUM_HIDDEN,
+                 num_digits=NUM_DIGITS, num_style=NUM_STYLE):
+        super(self.__class__, self).__init__()
 
-        if file_middle != "":
-            file_path = Path(model_dir, f"{file_prefix}_{file_middle}.{file_suffix}")
-        else:
-            file_path = Path(model_dir, f"{file_prefix}.{file_suffix}")
-        log.info(f"saving the model to {file_path}")
-        state = kwargs
-        state.update({"encoder": self.enc.state_dict(),
-                      "decoder": self.dec.state_dict(),
-                      "batch_size": self.batch_size,
-                      "num_samples": self.num_samples,
-                      "label_fraction": self.label_fraction,
-                      "lr": self.lr,
-                      "cuda": self.cuda,
-                      })
-        torch.save(state, file_path)
+        self.enc_hidden = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=8, stride=2, padding=3),  # 1x28x28 -> 16x14x14
+            nn.BatchNorm2d(16),
+            Swish(),
+            nn.Conv2d(16, 32, 8, 2, 3),  # 16x14x14 -> 32x7x7
+            nn.BatchNorm2d(32),
+            Swish()
+        )
 
-    def load(self, model_dir, file_prefix, **kwargs):
-        from pathlib import Path
+        # W2 = (W1 - F + 2P) / S + 1
+        num_out = int(math.floor((14 - 8 + 2 * 3) / 2) + 1)
+        num_out *= 32
 
-        file_path = Path(model_dir, f"{file_prefix}.{file_suffix}")
-        if not file_path.exists():
-            log.error(f"no such file {file_path} exists")
-            sys.exit(1)
+        self.digit_log_weights = nn.Sequential(
+            nn.BatchNorm1d(num_out),
+            nn.Linear(num_out, num_digits)
+        )
 
-        log.info(f"loading the model from {file_path}")
-        parameters = torch.load(file_path)
-        self.enc.load_state_dict(parameters["encoder"])
-        self.dec.load_state_dict(parameters["decoder"])
+        self.digit_temp = 0.66
+        self.z_mean = nn.Linear(num_hidden + num_digits, num_style)
+        self.z_log_std = nn.Linear(num_hidden + num_digits, num_style)
 
-        self.num_samples = parameters["num_samples"]
-        self.label_fraction = parameters["label_fraction"]
-        self.lr = parameters["lr"]
+    def forward(self, x, labels=None, num_samples=None):
+        q = probtorch.Trace()
+        h = self.enc_hidden(x)
+        y = q.concrete(self.digit_log_weights(h), self.digit_temp, value=labels, name='y')
+        h2 = torch.cat((y, h), dim=1)
+        z_mean = self.z_mean(h2)
+        z_std = torch.exp(self.z_log_std(h2))
+        z = q.normal(z_mean, z_std, name='z')
+        return q
 
-        self.batch_size = kwargs["batch_size"] if "batch_size" in kwargs else parameters["batch_size"]
-        self.cuda = kwargs["cuda"] if "cuda" in kwargs else parameters["cuda"]
-        self.initialize()
-        return parameters
+
+class ConvDecoder(nn.Module):
+
+    def __init__(self, num_pixels=NUM_PIXELS, num_hidden=NUM_HIDDEN,
+                 num_digits=NUM_DIGITS, num_style=NUM_STYLE):
+        super(self.__class__, self).__init__()
+        self.num_digits = num_digits
+        self.digit_log_weights = Parameter(torch.zeros(num_digits))
+        self.digit_temp = 0.66
+        #self.z_mean = Parameter(torch.zeros(num_style))
+        #self.z_log_std = Parameter(torch.zeros(num_style))
+
+        self.dec_hidden = nn.Sequential(
+            nn.ConvTranspose2d(32, 16, kernel_size=8, stride=2, padding=3),  # 32x7x7 -> 16x14x14
+            Swish(),
+            nn.ConvTranspose2d(16, 1, 8, 2, 3),  # 16x14x14 -> 1x28x28
+            Swish()
+        )
+
+        self.dec_image = nn.Sequential(
+            nn.Linear(num_hidden, num_pixels),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x, q=None, num_samples=None):
+        p = probtorch.Trace()
+        y = p.concrete(self.digit_log_weights, self.digit_temp, value=q['y'], name='y')
+        z = p.normal(0.0, 1.0, value=q['z'], name='z')
+        h = self.dec_hidden(torch.cat([y, z], -1))
+        x_mean = self.dec_image(h)
+        p.loss(binary_cross_entropy, x_mean, x, name='x')
+        return p
 
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description='SS-VAE example')
-    parser.add_argument('--batch_size', default=128, type=int, help='batch size for training')
-    parser.add_argument('--lr', default=1e-3, type=float, help='initial learning rate')
-    parser.add_argument('--num_samples', default=8, type=int, help='number of samples (?)')
-    parser.add_argument('--label_fraction', default=0.1, type=float, help='fraction for the labeled data')
-    parser.add_argument('--cuda', dest='cuda', action='store_true', help='use cuda')
-
-    args = parser.parse_args()
-
-    model = Network(args)
+    enc = LinearEncoder()
+    dec = LinearDecoder()
