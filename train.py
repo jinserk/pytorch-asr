@@ -90,7 +90,7 @@ def train(args):
         if args.visualize:
             plot_samples(ss_vae)
             if epoch % 100 == 0:
-                plot_tsne(ss_vae, data_loaders["test"])
+                plot_tsne(ss_vae, data_loaders["test"], use_cuda=args.use_cuda)
 
     final_test_accuracy = ss_vae.get_accuracy(data_loaders["test"])
     logger.info(f"best validation accuracy {best_valid_acc:5.3f} "
@@ -101,7 +101,7 @@ def train(args):
     ss_vae.save(get_model_file_path("final"), epoch=epoch)
 
     if args.visualize:
-        plot_tsne(ss_vae, data_loaders["test"])
+        plot_tsne(ss_vae, data_loaders["test"], use_cuda=args.use_cuda)
 
 
 if __name__ == "__main__":

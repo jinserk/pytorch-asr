@@ -158,7 +158,7 @@ class ConvDecoder(nn.Module):
             Swish(),
             nn.ConvTranspose2d(16, 1, 8, 2, 3),  # 16x14x14 -> 1x28x28
             Swish(),
-            View(dim=(-1, 28*28)),
+            View(dim=(-1, 28 * 28)),
             nn.Linear(x_dim, x_dim),
             ClippedSigmoid(eps)
         ]
