@@ -56,9 +56,9 @@ class SsVae(nn.Module):
 
     def __setup_networks(self):
         # define the neural networks used later in the model and the guide.
-        self.encoder_y = MlpEncoderY(h_dims=self.h_dims)
+        self.encoder_y = ConvEncoderY()
         self.encoder_z = MlpEncoderZ(z_dim=self.z_dim, h_dims=self.h_dims)
-        self.decoder = MlpDecoder(z_dim=self.z_dim, h_dims=self.h_dims)
+        self.decoder = ConvDecoder(z_dim=self.z_dim)
 
         # using GPUs for faster training of the networks
         if self.use_cuda:
