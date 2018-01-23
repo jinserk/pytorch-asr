@@ -61,7 +61,7 @@ def plot_llk(train_elbo, test_elbo):
     plt.close('all')
 
 
-def plot_tsne(ssvae, test_loader):
+def plot_tsne(ssvae, test_loader, use_cuda=False):
     xs = test_loader.dataset.test_data.float()
     ys = test_loader.dataset.test_labels
     z_mu, z_sigma = ssvae.guide_sample(xs, ys, len(test_loader))
@@ -69,11 +69,14 @@ def plot_tsne(ssvae, test_loader):
     z_states = z_mu.data.cpu().numpy()
     classes = ys.cpu().numpy()
 
-    from sklearn.manifold import TSNE
-
     logger.info("calculating T-SNE of z embedding..")
-    model_tsne = TSNE(n_components=2, random_state=0)
-    z_embed = model_tsne.fit_transform(z_states)
+    if use_cuda:
+        from t_sne_bhcuda import t_sne
+        z_embed = t_sne(z_states, no_dims=2)
+    else:
+        from sklearn.manifold import TSNE
+        model_tsne = TSNE(n_components=2, random_state=0)
+        z_embed = model_tsne.fit_transform(z_states)
 
     __plot_tsne_to_visdom(z_embed, classes)
     #__plot_tsne_to_matplotlib(z_embed, classes)

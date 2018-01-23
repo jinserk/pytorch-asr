@@ -5,7 +5,7 @@ The code was tested with Python 3.6.4, Pytorch 0.4.0a0, and Pyro.
 
 ## Installation
 
-We recommend [pyenv](https://github.com/pyenv/pyenv). We assume you already have pyenv and Python 3.6.3 and Pytorch 0.4.0a0 under it.
+We recommend [pyenv](https://github.com/pyenv/pyenv). We assume you already have pyenv and Python 3.6.4 and Pytorch 0.4.0a0 under it.
 
 Download [ss-vae](https://github.com/jinserk/ss-vae.git"):
 ```

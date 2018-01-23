@@ -3,3 +3,4 @@ matplotlib
 tqdm
 visdom
 colorlover
+t_sne_bhcuda

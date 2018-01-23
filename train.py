@@ -31,7 +31,7 @@ def train(args):
 
     if args.continue_from is not None:
         parameters = ss_vae.load(args.continue_from)
-        start_epoch = parameters("epoch")
+        start_epoch = parameters["epoch"]
     else:
         start_epoch = 0
 

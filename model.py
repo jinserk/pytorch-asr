@@ -190,21 +190,23 @@ class SsVae(nn.Module):
         pass
 
     def model_sample(self, ys, batch_size=1):
-        # sample the handwriting style from the constant prior distribution
-        prior_mu = Variable(torch.zeros([batch_size, self.z_dim]))
-        prior_sigma = Variable(torch.ones([batch_size, self.z_dim]))
-        zs = pyro.sample("z", dist.normal, prior_mu, prior_sigma)
+        with torch.no_grad():
+            # sample the handwriting style from the constant prior distribution
+            prior_mu = Variable(torch.zeros([batch_size, self.z_dim]))
+            prior_sigma = Variable(torch.ones([batch_size, self.z_dim]))
+            zs = pyro.sample("z", dist.normal, prior_mu, prior_sigma)
 
-        # sample an image using the decoder
-        mu = self.decoder.forward(zs, ys)
-        xs = pyro.sample("sample", dist.bernoulli, mu.cpu())
-        return xs, mu
+            # sample an image using the decoder
+            mu = self.decoder.forward(zs, ys)
+            xs = pyro.sample("sample", dist.bernoulli, mu.cpu())
+            return xs, mu
 
     def guide_sample(self, xs, ys, batch_size=1):
-        # obtain z using `encoder_z`
-        xs, ys = Variable(xs), Variable(ys)
-        z_mu, z_sigma = self.encoder_z(xs, ys)
-        return z_mu, z_sigma
+        with torch.no_grad():
+            # obtain z using `encoder_z`
+            xs, ys = Variable(xs), Variable(ys)
+            z_mu, z_sigma = self.encoder_z(xs, ys)
+            return z_mu, z_sigma
 
     def train_epoch(self, epoch, data_loaders, periodic_interval_batches):
         """
@@ -255,25 +257,26 @@ class SsVae(nn.Module):
         """
         compute the accuracy over the supervised training set or the testing set
         """
-        predictions, actuals = [], []
+        with torch.no_grad():
+            predictions, actuals = [], []
 
-        # use the appropriate data loader
-        for (xs, ys) in data_loader:
-            # use classification function to compute all predictions for each batch
-            xs, ys = Variable(xs), Variable(ys)
-            predictions.append(self.classifier(xs))
-            actuals.append(ys)
+            # use the appropriate data loader
+            for (xs, ys) in data_loader:
+                # use classification function to compute all predictions for each batch
+                xs, ys = Variable(xs), Variable(ys)
+                predictions.append(self.classifier(xs))
+                actuals.append(ys)
 
-        # compute the number of accurate predictions
-        accurate_preds = 0
-        for pred, act in zip(predictions, actuals):
-            for i in range(pred.size(0)):
-                v = torch.sum(pred[i] == act[i])
-                accurate_preds += (v.data[0] == 10)
+            # compute the number of accurate predictions
+            accurate_preds = 0
+            for pred, act in zip(predictions, actuals):
+                for i in range(pred.size(0)):
+                    v = torch.sum(pred[i] == act[i])
+                    accurate_preds += (v.data[0] == 10)
 
-        # calculate the accuracy between 0 and 1
-        accuracy = (accurate_preds * 1.0) / (len(predictions) * self.batch_size)
-        return accuracy
+            # calculate the accuracy between 0 and 1
+            accuracy = (accurate_preds * 1.0) / (len(predictions) * self.batch_size)
+            return accuracy
 
     def save(self, file_path, **kwargs):
         Path(file_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
