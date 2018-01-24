@@ -36,7 +36,7 @@ $ python train.py
 
 If you want to resume training from a model file:
 ```
-$ python train.py --continue_from <file_prefix>
+$ python train.py --continue_from <model_filename>
 ```
 
 You can see the sampled digits and latent variable T-SNE plots via web browser:
