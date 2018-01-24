@@ -27,7 +27,7 @@ def train(args):
         visualize_setup(args.log_dir)
 
     # batch_size: number of images (and labels) to be considered in a batch
-    ss_vae = SsVae(args)
+    ss_vae = SsVae(**vars(args))
 
     if args.continue_from is not None:
         parameters = ss_vae.load(args.continue_from)
@@ -111,18 +111,20 @@ if __name__ == "__main__":
     import numpy as np
 
     parser = argparse.ArgumentParser(description="SS-VAE model training")
-
-    parser.add_argument('-ne', '--num-epochs', default=1000, type=int, help="number of epochs to run")
+    # for model network
+    parser.add_argument('-zd', '--z-dim', default=50, type=int, help="size of the tensor representing the latent variable z variable (handwriting style for our MNIST dataset)")
+    parser.add_argument('-hd', '--h-dims', nargs='+', default=[256,], type=int, help="a tuple (or list) of MLP layers to be used in the neural networks representing the parameters of the distributions in our model")
+    parser.add_argument('-eps', '--eps', default=1e-9, type=float, help="a small float value used to scale down the output of Softmax and Sigmoid opertations in pytorch for numerical stability")
+    # for SVI model
     parser.add_argument('-al', '--aux-loss', default=True, action="store_true", help="whether to use the auxiliary loss from NIPS 14 paper (Kingma et al)")
     parser.add_argument('-alm', '--aux-loss-multiplier', default=300, type=float, help="the multiplier to use with the auxiliary loss")
     parser.add_argument('-enum', '--enum-discrete', default=True, action="store_true", help="whether to enumerate the discrete support of the categorical distribution while computing the ELBO loss")
-    parser.add_argument('-sup', '--sup-num', default=3000, type=float, help="supervised amount of the data i.e. how many of the images have supervised labels")
-    parser.add_argument('-zd', '--z-dim', default=50, type=int, help="size of the tensor representing the latent variable z variable (handwriting style for our MNIST dataset)")
-    parser.add_argument('-hd', '--h-dims', nargs='+', default=[256,], type=int, help="a tuple (or list) of MLP layers to be used in the neural networks representing the parameters of the distributions in our model")
-    parser.add_argument('-lr', '--learning-rate', default=0.001, type=float, help="learning rate for Adam optimizer")
-    parser.add_argument('-bs', '--batch-size', default=100, type=int, help="number of images (and labels) to be considered in a batch")
-    parser.add_argument('-eps', '--epsilon-scale', default=1e-9, type=float, help="a small float value used to scale down the output of Softmax and Sigmoid opertations in pytorch for numerical stability")
-
+    # for training
+    parser.add_argument('--sup-num', default=3000, type=float, help="supervised amount of the data i.e. how many of the images have supervised labels")
+    parser.add_argument('--num-epochs', default=1000, type=int, help="number of epochs to run")
+    parser.add_argument('--batch-size', default=100, type=int, help="number of images (and labels) to be considered in a batch")
+    parser.add_argument('--init-lr', default=0.001, type=float, help="initial learning rate for Adam optimizer")
+    # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
     parser.add_argument('--visualize', default=True, action="store_true", help="use a visdom server to visualize the embeddings")
@@ -134,8 +136,7 @@ if __name__ == "__main__":
 
     # some assertions to make sure that batching math assumptions are met
     assert args.sup_num % args.batch_size == 0, "assuming simplicity of batching math"
-    torch_version = parse_torch_version()
-    assert torch_version >= (0, 2, 1), "you need pytorch 0.2.1 or later"
+    assert parse_torch_version() >= (0, 2, 1), "you need pytorch 0.2.1 or later"
 
     set_logfile(Path(args.log_dir, "train.log"))
 

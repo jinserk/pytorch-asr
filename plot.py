@@ -71,8 +71,12 @@ def plot_tsne(ssvae, test_loader, use_cuda=False):
 
     logger.info("calculating T-SNE of z embedding..")
     if use_cuda:
-        from t_sne_bhcuda import t_sne
-        z_embed = t_sne(z_states, no_dims=2)
+        import t_sne_bhcuda.bhtsne_cuda as tsne_bhcuda
+        files_dir = Path.cwd() / "tsne"
+        Path.mkdir(files_dir, parents=True, exist_ok=True)
+        z_embed = tsne_bhcuda.t_sne(z_states, no_dims=2, files_dir=files_dir, gpu_mem=0.9)
+        z_embed = np.array([list(x) for x in z_embed])
+        print(z_embed)
     else:
         from sklearn.manifold import TSNE
         model_tsne = TSNE(n_components=2, random_state=0)
@@ -127,4 +131,28 @@ def __plot_tsne_to_matplotlib(z_embed, classes):
     figs = plt.figure(0)
     plt.title(f"Latent Variable T-SNE for All Classes")
     figs.savefig(str(Path(result_dir, f"z_embedding_all.png")))
+
+
+if __name__ == "__main__":
+    import argparse
+    from model import SsVae
+    from mnist_cached import MNISTCached, setup_data_loaders
+
+    parser = argparse.ArgumentParser(description="SS-VAE plot")
+    parser.add_argument('--sup-num', default=3000, type=float, help="supervised amount of the data i.e. how many of the images have supervised labels")
+    parser.add_argument('--batch-size', default=100, type=int, help="number of images (and labels) to be considered in a batch")
+    parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
+    parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
+
+    args = parser.parse_args()
+
+    ss_vae = SsVae(**vars(args))
+
+    if args.use_cuda:
+        torch.set_default_tensor_type("torch.cuda.FloatTensor")
+
+    data_loaders = setup_data_loaders(MNISTCached, args.use_cuda, args.batch_size,
+                                      sup_num=args.sup_num, drop_last=True)
+
+    plot_tsne(ss_vae, data_loaders["test"], use_cuda=args.use_cuda)
 

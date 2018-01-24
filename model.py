@@ -26,46 +26,61 @@ class SsVae(nn.Module):
 
     :param z_dim: size of the tensor representing the latent random variable z
                   (handwriting style for our MNIST dataset)
-    :param hidden_layers: a tuple (or list) of MLP layers to be used in the neural networks
-                          representing the parameters of the distributions in our model
-    :param epsilon_scale: a small float value used to scale down the output of Softmax and Sigmoid
-                          opertations in pytorch for numerical stability
-    :param use_cuda: use GPUs for faster training
+    :param h_dims: a tuple (or list) of MLP layers to be used in the neural networks
+                   representing the parameters of the distributions in our model
+    :param eps: a small float value used to scale down the output of Softmax and Sigmoid
+                opertations in pytorch for numerical stability
+    :param enum_discrete: if True, sum out the discrete latent variables to reduce variance of
+                          the ELBO gradient
+    :param aux_loss: use the auxiliary loss as the model variant 3
+                     (http://pyro.ai/examples/ss-vae.html#Third-Variant:-Adding-a-Term-to-the-Objective)
     :param aux_loss_multiplier: the multiplier to use with the auxiliary loss
+    :param use_cuda: use GPUs for faster training
+    :param batch_size: batch size of calculation
+    :param init_lr: initial learning rate to setup the optimizer
+    :param continue_from: model file path to load the model states
     """
-    def __init__(self, args):
+    def __init__(self, x_dim=NUM_PIXEL, y_dim=NUM_DIGITS, z_dim=50, h_dims=[256,],
+                 eps=1e-9, enum_discrete=True, aux_loss=True, aux_loss_multiplier=300,
+                 use_cuda=False, batch_size=100, init_lr=0.001, continue_from=None,
+                 *args, **kwargs):
         super(self.__class__, self).__init__()
 
         # initialize the class with all arguments provided to the constructor
-        self.input_size = NUM_PIXEL
-        self.output_size = NUM_DIGITS
+        self.x_dim = NUM_PIXEL
+        self.y_dim = NUM_DIGITS
 
-        self.z_dim = args.z_dim
-        self.h_dims = args.h_dims
-        self.eps = args.epsilon_scale
-        self.aux_loss = args.aux_loss
-        self.aux_loss_multiplier = args.aux_loss_multiplier
-        self.enum_discrete = args.enum_discrete
-        self.batch_size = args.batch_size
-        self.learning_rate = args.learning_rate
-        self.use_cuda = args.use_cuda
+        self.use_cuda = use_cuda
+        self.batch_size = batch_size
+        self.init_lr = init_lr
 
-        # define and instantiate the neural networks representing
-        # the paramters of various distributions in the model
-        self.__setup_networks()
-
-    def __setup_networks(self):
-        # define the neural networks used later in the model and the guide.
-        self.encoder_y = ConvEncoderY()
-        self.encoder_z = MlpEncoderZ(z_dim=self.z_dim, h_dims=self.h_dims)
-        self.decoder = ConvDecoder(z_dim=self.z_dim)
+        if continue_from is None:
+            self.z_dim = z_dim
+            self.h_dims = h_dims
+            self.eps = eps
+            self.enum_discrete = enum_discrete
+            self.aux_loss = aux_loss
+            self.aux_loss_multiplier = aux_loss_multiplier
+            # define and instantiate the neural networks representing
+            # the paramters of various distributions in the model
+            self.__setup_networks()
+        else:
+            self.load(continue_from)
 
         # using GPUs for faster training of the networks
         if self.use_cuda:
             self.cuda()
 
+    def __setup_networks(self):
+        # define the neural networks used later in the model and the guide.
+        self.encoder_y = ConvEncoderY(x_dim=self.x_dim, y_dim=self.y_dim, eps=self.eps)
+        self.encoder_z = MlpEncoderZ(x_dim=self.x_dim, y_dim=self.y_dim,
+                                     z_dim=self.z_dim, h_dims=self.h_dims, eps=self.eps)
+        self.decoder = ConvDecoder(x_dim=self.x_dim, y_dim=self.y_dim,
+                                   z_dim=self.z_dim, eps=self.eps)
+
         # setup the optimizer
-        params = {"lr": self.learning_rate, "betas": (0.9, 0.999)}
+        params = {"lr": self.init_lr, "betas": (0.9, 0.999)}
         self.optimizer = Adam(params)
 
         # set up the loss(es) for inference setting the enum_discrete parameter builds the loss as a sum
@@ -105,7 +120,7 @@ class SsVae(nn.Module):
 
             # if the label y (which digit to write) is supervised, sample from the
             # constant prior, otherwise, observe the value (i.e. score it against the constant prior)
-            alpha_prior = Variable(torch.ones([batch_size, self.output_size]) / (1.0 * self.output_size))
+            alpha_prior = Variable(torch.ones([batch_size, self.y_dim]) / (1.0 * self.y_dim))
             if ys is None:
                 ys = pyro.sample("y", dist.one_hot_categorical, alpha_prior)
             else:
@@ -281,43 +296,36 @@ class SsVae(nn.Module):
     def save(self, file_path, **kwargs):
         Path(file_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
         logger.info(f"saving the model to {file_path}")
-        state = kwargs
-        state.update({
-            "encoder_y": self.encoder_y.state_dict(),
-            "encoder_z": self.encoder_z.state_dict(),
-            "decoder": self.decoder.state_dict(),
-            "optimizer": self.optimizer.get_state(),
+        states = kwargs
+        states["ss_vae"] = self.state_dict()
+        states.update({
             "z_dim": self.z_dim,
             "h_dims": self.h_dims,
             "eps": self.eps,
+            "enum_discrete": self.enum_discrete,
             "aux_loss": self.aux_loss,
             "aux_loss_multiplier": self.aux_loss_multiplier,
-            "enum_discrete": self.enum_discrete,
-            "batch_size": self.batch_size,
-            "learning_rate": self.learning_rate,
-            "use_cuda": self.use_cuda,
+            "optimizer": self.optimizer.get_state(),
         })
-        torch.save(state, file_path)
+        torch.save(states, file_path)
 
-    def load(self, file_path, **kwargs):
+    def load(self, file_path):
         if isinstance(file_path, str):
             file_path = Path(file_path)
         if not file_path.exists():
-            log.error(f"no such file {file_path} exists")
+            logger.error(f"no such file {file_path} exists")
             sys.exit(1)
         logger.info(f"loading the model from {file_path}")
-        parameters = torch.load(file_path)
-        self.encoder_y.load_state_dict(parameters["encoder_y"])
-        self.encoder_z.load_state_dict(parameters["encoder_z"])
-        self.decoder.load_state_dict(parameters["decoder"])
-        self.optimizer.set_state(parameters["optimizer"])
-        self.z_dim = parameters["z_dim"]
-        self.h_dims = parameters["h_dims"]
-        self.eps = parameters["eps"]
-        self.aux_loss = parameters["aux_loss"]
-        self.aux_loss_multiplier = parameters["aux_loss_multiplier"]
-        self.enum_discrete = parameters["enum_discrete"]
-        self.batch_size = parameters["batch_size"]
-        self.learning_rate = parameters["learning_rate"]
-        self.use_cuda = parameters["use_cuda"]
-        return parameters
+        states = torch.load(file_path)
+
+        self.z_dim = states["z_dim"]
+        self.h_dims = states["h_dims"]
+        self.eps = states["eps"]
+        self.enum_discrete = states["enum_discrete"]
+        self.aux_loss = states["aux_loss"]
+        self.aux_loss_multiplier = states["aux_loss_multiplier"]
+
+        self.__setup_networks()
+        self.load_state_dict(states["ss_vae"])
+        self.optimizer.set_state(states["optimizer"])
+        return states
