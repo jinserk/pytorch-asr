@@ -1,4 +1,5 @@
 from pathlib import Path
+import numpy as np
 import torch
 from torch.autograd import Variable
 from visdom import Visdom
@@ -46,7 +47,6 @@ def plot_samples(ssvae):
 
 def plot_llk(train_elbo, test_elbo):
     import matplotlib.pyplot as plt
-    import numpy as np
     import scipy as sp
     import seaborn as sns
     import pandas as pd
@@ -76,7 +76,6 @@ def plot_tsne(ssvae, test_loader, use_cuda=False):
         Path.mkdir(files_dir, parents=True, exist_ok=True)
         z_embed = tsne_bhcuda.t_sne(z_states, no_dims=2, files_dir=files_dir, gpu_mem=0.9)
         z_embed = np.array([list(x) for x in z_embed])
-        print(z_embed)
     else:
         from sklearn.manifold import TSNE
         model_tsne = TSNE(n_components=2, random_state=0)
@@ -87,7 +86,6 @@ def plot_tsne(ssvae, test_loader, use_cuda=False):
 
 
 def __plot_tsne_to_visdom(z_embed, classes):
-    import numpy as np
     import colorlover as cl
 
     C = np.array([list(x) for x in cl.to_numeric(cl.scales['10']['qual']['Paired'])]).astype(int)
