@@ -135,11 +135,12 @@ def get_alignments(target_dir):
                     except ValueError:
                         break
                     phones = read_vec_int(f)
+                    num_phns = len(phones)
                     tar_dir = Path(target_dir) / uttid[6:9]
                     Path(tar_dir).mkdir(mode=0o755, parents=True, exist_ok=True)
                     phn_file = str(Path(tar_dir, uttid + ".phn"))
                     np.savetxt(phn_file, phones, "%d")
-                    manifest[uttid] = (phn_file, phones)
+                    manifest[uttid] = (phn_file, num_phns, phones)
     return manifest
 
 
@@ -162,11 +163,11 @@ def prepare_data(target_dir):
                     continue
                 wav_file, samples = v
                 txt_file, _ = train_txt_manifest[k]
-                phn_file, _ = phn_manifest[k]
+                phn_file, num_phns, _ = phn_manifest[k]
                 if 0 < int(k[6:11]) < 60:
-                    f2.write(f"{k},{wav_file},{samples},{txt_file},{phn_file}\n")
+                    f2.write(f"{k},{wav_file},{samples},{phn_file},{num_phns},{txt_file}\n")
                 else:
-                    f1.write(f"{k},{wav_file},{samples},{txt_file},{phn_file}\n")
+                    f1.write(f"{k},{wav_file},{samples},{phn_file},{num_phns},{txt_file}\n")
     logger.info("data preparation finished.")
 
 
@@ -190,7 +191,7 @@ class Aspire(AudioDataset):
             self.root = Path(root).resolve()
 
         self._load_manifest()
-        max_len_entry = max(self.manifest, key=lambda x: int(x[2]))
+        self._split_frame()
         super().__init__(max_samples=int(max_len_entry[2]), unit_frames=9, *args, **kwargs)
 
     def __getitem__(self, index):
@@ -221,6 +222,9 @@ class Aspire(AudioDataset):
         self.manifest = [tuple(x.strip().split(',')) for x in manifest]
         self.size = len(self.manifest)
         logger.info(f"{self.size} entries are loaded.")
+
+    def _split_frames(self):
+
 
 
 if __name__ == "__main__":
