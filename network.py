@@ -17,7 +17,7 @@ EPS = 1e-9
 class View(nn.Module):
 
     def __init__(self, dim):
-        super(self.__class__, self).__init__()
+        super().__init__()
         self.dim = dim
 
     def forward(self, x, *args):
@@ -27,7 +27,7 @@ class View(nn.Module):
 class MultiOut(nn.ModuleList):
 
     def __init__(self, modules):
-        super(self.__class__, self).__init__(modules)
+        super().__init__(modules)
 
     def forward(self, *args, **kwargs):
         return (m.forward(*args, **kwargs) for m in self)
@@ -43,7 +43,7 @@ class MlpEncoderY(nn.Module):
 
     def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, h_dims=NUM_HIDDEN,
                  eps=EPS):
-        super(self.__class__, self).__init__()
+        super().__init__()
         # network
         layers = [
             nn.Linear(x_dim, h_dims[0]),
@@ -69,7 +69,7 @@ class MlpEncoderZ(nn.Module):
 
     def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE, h_dims=NUM_HIDDEN,
                  eps=EPS):
-        super(self.__class__, self).__init__()
+        super().__init__()
         # network
         layers = [
             nn.Linear(x_dim + y_dim, h_dims[0]),
@@ -97,7 +97,7 @@ class MlpDecoder(nn.Module):
 
     def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE, h_dims=NUM_HIDDEN,
                  eps=EPS):
-        super(self.__class__, self).__init__()
+        super().__init__()
         # network
         layers = [
             nn.Linear(z_dim + y_dim, h_dims[0]),
@@ -122,7 +122,7 @@ class MlpDecoder(nn.Module):
 class ConvEncoderY(nn.Module):
 
     def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, eps=EPS):
-        super(self.__class__, self).__init__()
+        super().__init__()
         # network
         layers = [
             View(dim=(-1, 1, 28, 28)),
@@ -139,7 +139,7 @@ class ConvEncoderY(nn.Module):
         self.hidden = nn.Sequential(*layers)
 
     def forward(self, xs, *args, **kwargs):
-        ys = self.hidden.forward(xs.view(-1, 1, 28, 28), *args, **kwargs)
+        ys = self.hidden.forward(xs, *args, **kwargs)
         return ys
 
 
@@ -147,7 +147,7 @@ class ConvDecoder(nn.Module):
 
     def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE,
                  eps=EPS):
-        super(self.__class__, self).__init__()
+        super().__init__()
         # network
         layers = [
             nn.Linear(y_dim + z_dim, 32 * 7 * 7),

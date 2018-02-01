@@ -5,8 +5,8 @@ from pyro.infer import SVI
 from pyro.optim import Adam
 from pyro.shim import parse_torch_version
 
-from logger import logger, set_logfile
-from mnist_cached import MNISTCached, setup_data_loaders
+from utils.logger import logger, set_logfile
+from mnist import MNISTCached, setup_data_loaders
 
 from model import SsVae
 from plot import visualize_setup, plot_samples, plot_tsne
@@ -36,7 +36,7 @@ def train(args):
         start_epoch = 0
 
     # prepare data loaders
-    data_loaders = setup_data_loaders(MNISTCached, args.use_cuda, args.batch_size,
+    data_loaders = setup_data_loaders(args.use_cuda, args.batch_size,
                                       sup_num=args.sup_num, drop_last=True)
 
     # how often would a supervised batch be encountered during inference
@@ -127,7 +127,7 @@ if __name__ == "__main__":
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
-    parser.add_argument('--visualize', default=True, action="store_true", help="use a visdom server to visualize the embeddings")
+    parser.add_argument('--visualize', default=False, action="store_true", help="use a visdom server to visualize the embeddings")
     parser.add_argument('--log-dir', default='./logs', type=str, help="filename for logging the outputs")
     parser.add_argument('--model-prefix', default='ss_vae_mnist', type=str, help="model file prefix to store")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
@@ -155,4 +155,3 @@ if __name__ == "__main__":
 
     # run training
     train(args)
-

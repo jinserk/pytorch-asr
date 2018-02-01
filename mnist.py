@@ -1,11 +1,12 @@
-import torch
-from torchvision.datasets import MNIST
-import numpy as np
-from functools import reduce
-from torch.utils.data import DataLoader
 # This file contains utilities for caching, transforming and splitting MNIST data
 # efficiently. By default, a Pytorch DataLoader will apply the transform every epoch
 # we avoid this by caching the data early on in MNISTCached class
+import numpy as np
+from functools import reduce
+
+import torch
+from torchvision.datasets import MNIST
+from torch.utils.data import DataLoader
 
 
 # transformations for MNIST data
@@ -123,7 +124,7 @@ class MNISTCached(MNIST):
     test_size = 10000
 
     def __init__(self, mode, sup_num, use_cuda=False, *args, **kwargs):
-        super(MNISTCached, self).__init__(train=mode in ["sup", "unsup", "valid"], *args, **kwargs)
+        super().__init__(train=mode in ["sup", "unsup", "valid"], *args, **kwargs)
 
         # transformations on MNIST data (normalization and one-hot conversion for labels)
         def transform(x):
@@ -190,7 +191,7 @@ class MNISTCached(MNIST):
         return img, target
 
 
-def setup_data_loaders(dataset, use_cuda, batch_size, sup_num=None, root='./data', download=True, **kwargs):
+def setup_data_loaders(use_cuda, batch_size, sup_num=None, root='data/mnist', download=True, **kwargs):
     """
         helper function for setting up pytorch data loaders for a semi-supervised dataset
     :param dataset: the data to use
@@ -213,8 +214,8 @@ def setup_data_loaders(dataset, use_cuda, batch_size, sup_num=None, root='./data
         if sup_num is None and mode == "sup":
             # in this special case, we do not want "sup" and "valid" data loaders
             return loaders["unsup"], loaders["test"]
-        cached_data[mode] = dataset(root=root, mode=mode, download=download,
-                                    sup_num=sup_num, use_cuda=use_cuda)
+        cached_data[mode] = MNISTCached(root=root, mode=mode, download=download,
+                                        sup_num=sup_num, use_cuda=use_cuda)
         loaders[mode] = DataLoader(cached_data[mode], batch_size=batch_size, shuffle=True, **kwargs)
 
     return loaders

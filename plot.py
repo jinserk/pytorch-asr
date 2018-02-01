@@ -3,7 +3,8 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 from visdom import Visdom
-from logger import logger
+
+from utils.logger import logger
 
 viz = Visdom()
 viz_wins = dict()

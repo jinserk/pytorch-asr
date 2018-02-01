@@ -12,8 +12,9 @@ from pyro.infer import SVI
 from pyro.optim import Adam
 from pyro.nn import ClippedSoftmax, ClippedSigmoid
 
+from utils.logger import logger
+
 from network import *
-from logger import logger
 
 NUM_PIXEL = 784
 NUM_DIGITS = 10
@@ -44,7 +45,7 @@ class SsVae(nn.Module):
                  eps=1e-9, enum_discrete=True, aux_loss=True, aux_loss_multiplier=300,
                  use_cuda=False, batch_size=100, init_lr=0.001, continue_from=None,
                  *args, **kwargs):
-        super(self.__class__, self).__init__()
+        super().__init__()
 
         # initialize the class with all arguments provided to the constructor
         self.x_dim = NUM_PIXEL
@@ -116,7 +117,7 @@ class SsVae(nn.Module):
             # sample the handwriting style from the constant prior distribution
             prior_mu = Variable(torch.zeros([batch_size, self.z_dim]))
             prior_sigma = Variable(torch.ones([batch_size, self.z_dim]))
-            zs = pyro.sample("z", dist.normal, prior_mu, prior_sigma)
+            zs = pyro.sample("z", dist.normal, prior_mu, prior_sigma, extra_event_dims=1)
 
             # if the label y (which digit to write) is supervised, sample from the
             # constant prior, otherwise, observe the value (i.e. score it against the constant prior)
@@ -131,7 +132,7 @@ class SsVae(nn.Module):
             # parametrized distribution p(x|y,z) = bernoulli(decoder(y,z))
             # where `decoder` is a neural network
             mu = self.decoder.forward(zs, ys)
-            pyro.sample("x", dist.bernoulli, mu, obs=xs)
+            pyro.sample("x", dist.bernoulli, mu, extra_event_dims=1, obs=xs)
 
     def guide(self, xs, ys=None):
         """
@@ -158,7 +159,7 @@ class SsVae(nn.Module):
             # sample (and score) the latent handwriting-style with the variational
             # distribution q(z|x,y) = normal(mu(x,y),sigma(x,y))
             mu, sigma = self.encoder_z.forward(xs, ys)
-            zs = pyro.sample("z", dist.normal, mu, sigma)   # noqa: F841
+            zs = pyro.sample("z", dist.normal, mu, sigma, extra_event_dims=1)
 
     def classifier(self, xs):
         """
@@ -195,8 +196,8 @@ class SsVae(nn.Module):
             # similar to the NIPS 14 paper (Kingma et al).
             if ys is not None:
                 alpha = self.encoder_y.forward(xs)
-                pyro.sample("y_aux", dist.one_hot_categorical, alpha,
-                            log_pdf_mask=self.aux_loss_multiplier, obs=ys)
+                with pyro.poutine.scale(None, self.aux_loss_multiplier):
+                    pyro.sample("y_aux", dist.one_hot_categorical, alpha, obs=ys)
 
     def guide_classify(self, xs, ys=None):
         """
@@ -209,11 +210,11 @@ class SsVae(nn.Module):
             # sample the handwriting style from the constant prior distribution
             prior_mu = Variable(torch.zeros([batch_size, self.z_dim]))
             prior_sigma = Variable(torch.ones([batch_size, self.z_dim]))
-            zs = pyro.sample("z", dist.normal, prior_mu, prior_sigma)
+            zs = pyro.sample("z", dist.normal, prior_mu, prior_sigma, extra_event_dims=1)
 
             # sample an image using the decoder
             mu = self.decoder.forward(zs, ys)
-            xs = pyro.sample("sample", dist.bernoulli, mu.cpu())
+            xs = pyro.sample("sample", dist.bernoulli, mu.cpu(), extra_event_dims=1)
             return xs, mu
 
     def guide_sample(self, xs, ys, batch_size=1):
@@ -230,13 +231,15 @@ class SsVae(nn.Module):
         """
         # initialize variables to store loss values
         num_losses = len(self.losses)
-        epoch_losses_sup = [0.] * num_losses
-        epoch_losses_unsup = [0.] * num_losses
 
         # compute number of batches for an epoch
         sup_batches = len(data_loaders["sup"])
         unsup_batches = len(data_loaders["unsup"])
         batches_per_epoch = sup_batches + unsup_batches
+
+        # initialize variables to store loss values
+        epoch_losses_sup = [0.] * num_losses
+        epoch_losses_unsup = [0.] * num_losses
 
         # setup the iterators for training data loaders
         sup_iter = iter(data_loaders["sup"])
@@ -247,6 +250,7 @@ class SsVae(nn.Module):
         for i in tqdm(range(batches_per_epoch), desc="Traning"):
             # whether this batch is supervised or not
             is_supervised = (i % periodic_interval_batches == 1) and ctr_sup < sup_batches
+
             # extract the corresponding batch
             if is_supervised:
                 (xs, ys) = next(sup_iter)
