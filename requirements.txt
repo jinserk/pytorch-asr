@@ -1,7 +1,7 @@
 scikit-learn
 matplotlib
+colorlover
+t_sne_bhcuda
 tqdm
 sox
 visdom
-colorlover
-t_sne_bhcuda

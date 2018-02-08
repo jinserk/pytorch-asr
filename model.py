@@ -1,4 +1,5 @@
 #!python
+import sys
 from pathlib import Path
 from tqdm import tqdm
 
@@ -15,9 +16,6 @@ from pyro.nn import ClippedSoftmax, ClippedSigmoid
 from utils.logger import logger
 
 from network import *
-
-NUM_PIXEL = 784
-NUM_DIGITS = 10
 
 
 class SsVae(nn.Module):
@@ -41,15 +39,15 @@ class SsVae(nn.Module):
     :param init_lr: initial learning rate to setup the optimizer
     :param continue_from: model file path to load the model states
     """
-    def __init__(self, x_dim=NUM_PIXEL, y_dim=NUM_DIGITS, z_dim=50, h_dims=[256,],
-                 eps=1e-9, enum_discrete=True, aux_loss=True, aux_loss_multiplier=300,
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE, h_dims=NUM_HIDDEN,
+                 eps=EPS, enum_discrete=True, aux_loss=True, aux_loss_multiplier=300,
                  use_cuda=False, batch_size=100, init_lr=0.001, continue_from=None,
                  *args, **kwargs):
         super().__init__()
 
         # initialize the class with all arguments provided to the constructor
-        self.x_dim = NUM_PIXEL
-        self.y_dim = NUM_DIGITS
+        self.x_dim = x_dim
+        self.y_dim = y_dim
 
         self.use_cuda = use_cuda
         self.batch_size = batch_size
@@ -224,78 +222,96 @@ class SsVae(nn.Module):
             z_mu, z_sigma = self.encoder_z(xs, ys)
             return z_mu, z_sigma
 
-    def train_epoch(self, epoch, data_loaders, periodic_interval_batches):
+    def train_epoch(self, epoch, data_loaders, unsup_num, sup_num):
         """
         runs the inference algorithm for an epoch
         returns the values of all losses separately on supervised and unsupervised parts
         """
+        # how often would a supervised batch be encountered during inference
+        # e.g. if sup_num is 3000, we would have every 16th = int(50000/3000) batch supervised
+        # until we have traversed through the all supervised batches
+        train_data_size = unsup_num + sup_num
+        periodic_interval_batches = int(train_data_size // (1.0 * sup_num))
+        sup_num = int(train_data_size / periodic_interval_batches)
+        train_data_size = unsup_num + sup_num
+
         # initialize variables to store loss values
         num_losses = len(self.losses)
 
         # compute number of batches for an epoch
-        sup_batches = len(data_loaders["sup"])
-        unsup_batches = len(data_loaders["unsup"])
-        batches_per_epoch = sup_batches + unsup_batches
+        #sup_batches = len(data_loaders["sup"])
+        #unsup_batches = len(data_loaders["unsup"])
+        #batches_per_epoch = sup_batches + unsup_batches
 
         # initialize variables to store loss values
         epoch_losses_sup = [0.] * num_losses
         epoch_losses_unsup = [0.] * num_losses
 
         # setup the iterators for training data loaders
-        sup_iter = iter(data_loaders["sup"])
-        unsup_iter = iter(data_loaders["unsup"])
+        sup_iter = iter(data_loaders["train_sup"])
+        unsup_iter = iter(data_loaders["train_unsup"])
 
         # count the number of supervised batches seen in this epoch
-        ctr_sup = 0
-        for i in tqdm(range(batches_per_epoch), desc="Traning"):
+        cnt_sup = 0
+        for i in tqdm(range(train_data_size), desc="training  "):
             # whether this batch is supervised or not
-            is_supervised = (i % periodic_interval_batches == 1) and ctr_sup < sup_batches
+            is_supervised = (i % periodic_interval_batches == 1) and cnt_sup < sup_num
 
             # extract the corresponding batch
             if is_supervised:
-                (xs, ys) = next(sup_iter)
-                ctr_sup += 1
+                xs, ys = next(sup_iter)
+                xs, ys = Variable(xs), Variable(ys)
+                cnt_sup += 1
             else:
-                (xs, ys) = next(unsup_iter)
-            xs, ys = Variable(xs), Variable(ys)
+                xs = next(unsup_iter)
+                xs = Variable(xs)
 
             # run the inference for each loss with supervised or un-supervised
             # data as arguments
             for loss_id in range(num_losses):
+                print(xs)
                 if is_supervised:
                     new_loss = self.losses[loss_id].step(xs, ys)
+                    print("sup_loss:", new_loss)
                     epoch_losses_sup[loss_id] += new_loss
                 else:
                     new_loss = self.losses[loss_id].step(xs)
+                    print("unsup_loss:", new_loss)
                     epoch_losses_unsup[loss_id] += new_loss
 
-        # return the values of all losses
-        return epoch_losses_sup, epoch_losses_unsup
+        # compute average epoch losses i.e. losses per example
+        avg_losses_sup = map(lambda x: x / sup_num, epoch_losses_sup)
+        avg_losses_unsup = map(lambda x: x / unsup_num, epoch_losses_unsup)
 
-    def get_accuracy(self, data_loader):
+        # return the values of all losses
+        return avg_losses_sup, avg_losses_unsup
+
+    def get_accuracy(self, data_loader, val_num, desc=None):
         """
         compute the accuracy over the supervised training set or the testing set
         """
-        with torch.no_grad():
-            predictions, actuals = [], []
+        # use the appropriate data loader
+        data_iter = iter(data_loader)
 
-            # use the appropriate data loader
-            for (xs, ys) in data_loader:
-                # use classification function to compute all predictions for each batch
-                xs, ys = Variable(xs), Variable(ys)
+        predictions, actuals = [], []
+        for i in tqdm(range(val_num), desc=desc):
+            xs, ys = next(data_iter)
+            xs, ys = Variable(xs), Variable(ys)
+            # use classification function to compute all predictions for each batch
+            with torch.no_grad():
                 predictions.append(self.classifier(xs))
-                actuals.append(ys)
+            actuals.append(ys)
 
-            # compute the number of accurate predictions
-            accurate_preds = 0
-            for pred, act in zip(predictions, actuals):
-                for i in range(pred.size(0)):
-                    v = torch.sum(pred[i] == act[i])
-                    accurate_preds += (v.data[0] == 10)
+        # compute the number of accurate predictions
+        accurate_preds = 0
+        for pred, act in zip(predictions, actuals):
+            for i in range(pred.size(0)):
+                v = torch.sum(pred[i] == act[i])
+                accurate_preds += (v.data[0] == 10)
 
-            # calculate the accuracy between 0 and 1
-            accuracy = (accurate_preds * 1.0) / (len(predictions) * self.batch_size)
-            return accuracy
+        # calculate the accuracy between 0 and 1
+        accuracy = (accurate_preds * 1.0) / (len(predictions) * self.batch_size)
+        return accuracy
 
     def save(self, file_path, **kwargs):
         Path(file_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)

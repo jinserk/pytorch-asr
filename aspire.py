@@ -7,7 +7,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 
-from utils.audio import AudioDataset, AudioDataLoader
+from utils.audio import AudioDataset, AudioDataLoader, Int2OneHot
 from utils.kaldi_io import smart_open, read_string, read_vec_int
 from utils.logger import logger
 
@@ -21,11 +21,16 @@ KALDI_ROOT = Path("/home/jbaik/kaldi").resolve()
 ASPIRE_ROOT = Path(KALDI_ROOT, "egs/aspire/ics").resolve()
 DATA_ROOT = (Path(__file__).parent / "data" / "aspire").resolve()
 
-
 assert KALDI_ROOT.exists(), \
     f"no such path \"{str(KALDI_ROOT)}\" not found"
 assert ASPIRE_ROOT.exists(), \
     f"no such path \"{str(ASPIRE_ROOT)}\" not found"
+
+SAMPLE_RATE = 8000
+WINDOW_SHIFT = 0.010  # sec
+WINDOW_SIZE = 0.025   # sec
+FRAME_MARGIN = 10
+SAMPLE_MARGIN = (SAMPLE_RATE * WINDOW_SHIFT * FRAME_MARGIN)  # samples
 
 
 def get_num_lines(filename):
@@ -40,8 +45,9 @@ def get_num_lines(filename):
 
 
 def strip_text(text):
-    mask = "abcdefghijklmnopqrstuvwxyz'-"
+    mask = "abcdefghijklmnopqrstuvwxyz'- "
     stripped = [x for x in text.lower() if x in mask]
+    return ''.join(stripped)
 
 
 def split_wav(mode, target_dir):
@@ -49,10 +55,11 @@ def split_wav(mode, target_dir):
     import wave
 
     data_dir = Path(ASPIRE_ROOT, "data", mode).resolve()
-    logger.info(f"processing {data_dir}/segments file ...")
+    segments_file = Path(data_dir, "segments")
+    logger.info(f"processing {str(segments_file)} file ...")
     segments = dict()
-    with smart_open(Path(data_dir, "segments"), "r") as f:
-        for line in f:
+    with smart_open(segments_file, "r") as f:
+        for line in tqdm(f, total=get_num_lines(segments_file)):
             split = line.strip().split()
             uttid, wavid, start, end = split[0], split[1], float(split[2]), float(split[3])
             if wavid in segments:
@@ -60,9 +67,9 @@ def split_wav(mode, target_dir):
             else:
                 segments[wavid] = [(uttid, start, end)]
 
-    logger.info(f"processing {data_dir}/wav.scp file ...")
-    manifest = dict()
     wav_scp = Path(data_dir, "wav.scp")
+    logger.info(f"processing {str(wav_scp)} file ...")
+    manifest = dict()
     with smart_open(wav_scp, "r") as f:
         for line in tqdm(f, total=get_num_lines(wav_scp)):
             wavid, cmd = line.strip().split(" ", 1)
@@ -72,10 +79,12 @@ def split_wav(mode, target_dir):
             p = sp.run(cmd, stdout=sp.PIPE, stderr=sp.PIPE)
             fp = io.BytesIO(p.stdout)
             with wave.openfp(fp, "rb") as wav:
-                #signal = np.fromstring(wav.readframes(-1), dtype='int16')
                 fr = wav.getframerate()
+                nf = wav.getnframes()
                 for uttid, start, end in segments[wavid]:
-                    fs, fe = int(fr * start), int(fr * end)
+                    fs, fe = int(fr * start - SAMPLE_MARGIN), int(fr * end + SAMPLE_MARGIN)
+                    if fs < 0 or fe > nf:
+                        continue
                     wav.rewind()
                     wav.setpos(fs)
                     signal = wav.readframes(fe - fs)
@@ -91,10 +100,11 @@ def split_wav(mode, target_dir):
 
 def get_transcripts(mode, target_dir):
     data_dir = Path(ASPIRE_ROOT, "data", mode).resolve()
-    logger.info(f"processing {data_dir}/text file ...")
+    texts_file = Path(data_dir, "text")
+    logger.info(f"processing {str(texts_file)} file ...")
     manifest = dict()
     with smart_open(Path(data_dir, "text"), "r") as f:
-        for line in f:
+        for line in tqdm(f, total=get_num_lines(texts_file)):
             uttid, text = line.strip().split(" ", 1)
             text = strip_text(text)
             tar_dir = Path(target_dir) / uttid[6:9]
@@ -119,13 +129,8 @@ def get_alignments(target_dir):
     manifest = dict()
     alis = [x for x in exp_dir.glob("ali.*.gz")]
     for ali in tqdm(alis):
-        cmd = [
-            str(Path(KALDI_ROOT, "src", "bin", "ali-to-phones")),
-            "--per-frame",
-            f"{model}",
-            f"ark:-",
-            f"ark,f:-",
-        ]
+        cmd = [ str(Path(KALDI_ROOT, "src", "bin", "ali-to-phones")),
+                "--per-frame", f"{model}", f"ark:-", f"ark,f:-" ]
         with gzip.GzipFile(ali, "rb") as a:
             p = sp.run(cmd, stdout=sp.PIPE, stderr=sp.PIPE, input=a.read())
             with io.BytesIO(p.stdout) as f:
@@ -135,12 +140,12 @@ def get_alignments(target_dir):
                     except ValueError:
                         break
                     phones = read_vec_int(f)
-                    num_phns = len(phones)
+                    num_frms = len(phones)
                     tar_dir = Path(target_dir) / uttid[6:9]
                     Path(tar_dir).mkdir(mode=0o755, parents=True, exist_ok=True)
                     phn_file = str(Path(tar_dir, uttid + ".phn"))
                     np.savetxt(phn_file, phones, "%d")
-                    manifest[uttid] = (phn_file, num_phns, phones)
+                    manifest[uttid] = (phn_file, num_frms, phones)
     return manifest
 
 
@@ -149,9 +154,9 @@ def prepare_data(target_dir):
     since the target time-alignment exists only on the train set,
     we split the train set into train and dev set
     """
-    train_wav_manifest = split_wav("train", DATA_ROOT)
+    #train_wav_manifest = split_wav("train", DATA_ROOT)
     train_txt_manifest = get_transcripts("train", DATA_ROOT)
-    phn_manifest = get_alignments(DATA_ROOT)
+    #phn_manifest = get_alignments(DATA_ROOT)
 
     logger.info("generating manifest files ...")
     with open(Path(target_dir, "train.csv"), "w") as f1:
@@ -163,12 +168,45 @@ def prepare_data(target_dir):
                     continue
                 wav_file, samples = v
                 txt_file, _ = train_txt_manifest[k]
-                phn_file, num_phns, _ = phn_manifest[k]
+                phn_file, num_frms, _ = phn_manifest[k]
                 if 0 < int(k[6:11]) < 60:
-                    f2.write(f"{k},{wav_file},{samples},{phn_file},{num_phns},{txt_file}\n")
+                    f2.write(f"{k},{wav_file},{samples},{phn_file},{num_frms},{txt_file}\n")
                 else:
-                    f1.write(f"{k},{wav_file},{samples},{phn_file},{num_phns},{txt_file}\n")
+                    f1.write(f"{k},{wav_file},{samples},{phn_file},{num_frms},{txt_file}\n")
     logger.info("data preparation finished.")
+
+
+def reconstruct_manifest(target_dir):
+    import wave
+
+    logger.info("reconstructing manifest files ...")
+    with open(Path(target_dir, "train.csv"), "w") as f1:
+        with open(Path(target_dir, "dev.csv"), "w") as f2:
+            for wav_file in Path(target_dir).glob("**/*.wav"):
+                uttid = wav_file.stem
+                txt_file = str(wav_file).replace("wav", "txt")
+                phn_file = str(wav_file).replace("wav", "phn")
+                if not Path(txt_file).exists() or not Path(phn_file).exists():
+                    continue
+                with wave.openfp(str(wav_file), "rb") as wav:
+                    samples = wav.getnframes()
+                num_frms = get_num_lines(phn_file)
+                if 0 < int(uttid[6:11]) < 60:
+                    f2.write(f"{uttid},{wav_file},{samples},{phn_file},{num_frms},{txt_file}\n")
+                else:
+                    f1.write(f"{uttid},{wav_file},{samples},{phn_file},{num_frms},{txt_file}\n")
+    logger.info("data preparation finished.")
+
+
+NUM_PIXELS = 2 * 257 * 9
+NUM_LABELS = 187
+
+WIN_SAMP_SIZE = SAMPLE_RATE * WINDOW_SIZE
+WIN_SAMP_SHIFT = SAMPLE_RATE * WINDOW_SHIFT
+
+def _samples2frames(samples):
+    num_samples = samples - 2 * SAMPLE_MARGIN
+    return int((num_samples - WIN_SAMP_SIZE) // WIN_SAMP_SHIFT + 1)
 
 
 class Aspire(AudioDataset):
@@ -180,34 +218,43 @@ class Aspire(AudioDataset):
         data_dir (path): dir containing the processed data and manifests
     """
     root = DATA_ROOT
-    manifest = list()
-    size = 0
+    frame_margin = FRAME_MARGIN
+    unit_frames = 9
+    entries = list()
+    entry_frames = list()
 
-    def __init__(self, root=None, mode=None, unit_frames=9, *args, **kwargs):
-        assert mode in ["train", "dev", "test"], \
-            "invalid mode options: either one of \"train\", \"dev\", or \"test\""
+    def __init__(self, root=None, mode=None, *args, **kwargs):
+        assert mode in ["train_sup", "train_unsup", "dev", "test"], \
+            "invalid mode options: either one of \"train_sup\", \"train_unsup\", \"dev\", or \"test\""
         self.mode = mode
         if root is not None:
             self.root = Path(root).resolve()
-
         self._load_manifest()
-        self._split_frame()
-        super().__init__(max_samples=int(max_len_entry[2]), unit_frames=9, *args, **kwargs)
+        super().__init__(frame_margin=self.frame_margin, unit_frames=self.unit_frames,
+                         window_shift=WINDOW_SHIFT, window_size=WINDOW_SIZE,
+                         target_transform=Int2OneHot(187), *args, **kwargs)
 
     def __getitem__(self, index):
-        uttid, wav_file, samples, txt_file, phn_file = self.manifest[index]
+        uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
         # read and transform wav file
         if self.transform is not None:
-            audio = self.transform(wav_file)
+            tensors = self.transform(wav_file)
+        if self.mode == "train_unsup":
+            return tensors, None
         # read phn file
-        target = torch.IntTensor(np.loadtxt(phn_file, dtype="int"))
+        targets = np.loadtxt(phn_file, dtype="int").tolist()
         if self.target_transform is not None:
-            target = self.target_transform(target)
-
-        return uttid, audio, target
+            targets = self.target_transform(targets)
+        # manipulating when the length of data and targets are mismatched
+        l0, l1 = len(tensors), len(targets)
+        if l0 > l1:
+            tensors = tensors[:l1]
+        elif l0 < l1:
+            tensors.extend([torch.zeros_like(tensors[0]) for i in range(l1 - l0)])
+        return tensors, targets
 
     def __len__(self):
-        return self.size
+        return len(self.entries)
 
     def _load_manifest(self):
         manifest_file = self.root / f"{self.mode}.csv"
@@ -219,33 +266,54 @@ class Aspire(AudioDataset):
         logger.info(f"loading dataset manifest {manifest_file} ...")
         with open(manifest_file, "r") as f:
             manifest = f.readlines()
-        self.manifest = [tuple(x.strip().split(',')) for x in manifest]
-        self.size = len(self.manifest)
-        logger.info(f"{self.size} entries are loaded.")
+        self.entries = [tuple(x.strip().split(',')) for x in manifest]
+        if self.mode == "train_unsup":
+            self.entry_frames = [_samples2frames(int(e[2])) for e in self.entries]
+        else:
+            self.entry_frames = [int(e[4]) for e in self.entries]
+        logger.info(f"{len(self.entries)} entries, {sum(self.entry_frames)} frames are loaded.")
 
-    def _split_frames(self):
 
+def setup_data_loaders(root=DATA_ROOT, batch_size=1, sup_num=None, use_cuda=False, num_workers=0, **kwargs):
+    # instantiate the dataset as training/testing sets
+    datasets, data_loaders = dict(), dict()
+
+    for mode in ["train_unsup", "train_sup", "dev"]:
+        datasets[mode] = Aspire(root=root, mode=mode)
+        data_loaders[mode] = AudioDataLoader(datasets[mode], batch_size=batch_size, num_workers=num_workers,
+                                             shuffle=True, use_cuda=use_cuda, **kwargs)
+
+    return data_loaders
 
 
 if __name__ == "__main__":
-    #prepare_data(DATA_ROOT)
-    train_dataset = Aspire(mode="dev")
-    loader = AudioDataLoader(train_dataset, batch_size=10, shuffle=True)
+    if False:
+        reconstruct_manifest(DATA_ROOT)
 
-    temp = iter(loader)
-    tensors, targets, sizes = next(temp)
+    if True:
+        train_dataset = Aspire(mode="test")
+        loader = AudioDataLoader(train_dataset, batch_size=10, num_workers=4, shuffle=True)
+        print(f"num_workers={loader.num_workers}")
 
-    import matplotlib
-    matplotlib.use('TkAgg')
-    matplotlib.interactive(True)
-    import matplotlib.pyplot as plt
+        for i, data in enumerate(loader):
+            tensors, targets = data
+            #for tensors, targets in data:
+            print(tensors, targets)
+            if False:
+                import matplotlib
+                matplotlib.use('TkAgg')
+                matplotlib.interactive(True)
+                import matplotlib.pyplot as plt
 
-    for i in range(tensors.size(0)):
-        fig = plt.figure(1)
-        t = np.arange(0, tensors.size(3)) / 8000
-        f = np.linspace(0, 4000, tensors.size(2))
-        p = plt.pcolormesh(t, f, np.log10(10 ** tensors[i][0] - 1), cmap='plasma')
-        plt.colorbar(p)
-        plt.show(block=True)
+                for tensor, target in zip(tensors, targets):
+                    tensor = tensor.view(-1, 2, 257, 9)
+                    t = np.arange(0, tensor.size(3)) / 8000
+                    f = np.linspace(0, 4000, tensor.size(2))
 
-    plt.close('all')
+                    fig = plt.figure(1)
+                    p = plt.pcolormesh(t, f, np.log10(10 ** tensor[0][0] - 1), cmap='plasma')
+                    plt.colorbar(p)
+                    plt.show(block=True)
+            if i == 2:
+                break
+        #plt.close('all')
