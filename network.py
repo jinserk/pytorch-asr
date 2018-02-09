@@ -129,7 +129,7 @@ class MlpDecoder(nn.Module):
 
 class ConvEncoderY(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, eps=EPS):
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, softmax=True, eps=EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -147,8 +147,9 @@ class ConvEncoderY(nn.Module):
             Swish(),
             View(dim=(-1, 64 * 4)),
             nn.Linear(64 * 4, y_dim),
-            ClippedSoftmax(eps, dim=1),
         ]
+        if softmax:
+            layers.append(ClippedSoftmax(eps, dim=1))
         self.hidden = nn.Sequential(*layers)
 
     def forward(self, xs, *args, **kwargs):

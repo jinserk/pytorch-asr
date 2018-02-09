@@ -269,14 +269,14 @@ class SsVae(nn.Module):
             # run the inference for each loss with supervised or un-supervised
             # data as arguments
             for loss_id in range(num_losses):
-                print(xs)
+                #print(xs)
                 if is_supervised:
                     new_loss = self.losses[loss_id].step(xs, ys)
-                    print("sup_loss:", new_loss)
+                    #print("sup_loss:", new_loss)
                     epoch_losses_sup[loss_id] += new_loss
                 else:
                     new_loss = self.losses[loss_id].step(xs)
-                    print("unsup_loss:", new_loss)
+                    #print("unsup_loss:", new_loss)
                     epoch_losses_unsup[loss_id] += new_loss
 
         # compute average epoch losses i.e. losses per example

@@ -6,7 +6,7 @@ from pyro.shim import parse_torch_version
 from utils.logger import logger, set_logfile
 from utils.audio import AudioDataset
 
-from model import SsVae
+from ssvae import SsVae
 from aspire import NUM_PIXELS, NUM_LABELS
 
 MODEL_SUFFIX = "pth.tar"

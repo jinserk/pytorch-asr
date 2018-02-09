@@ -224,8 +224,8 @@ class Aspire(AudioDataset):
     entry_frames = list()
 
     def __init__(self, root=None, mode=None, *args, **kwargs):
-        assert mode in ["train_sup", "train_unsup", "dev", "test"], \
-            "invalid mode options: either one of \"train_sup\", \"train_unsup\", \"dev\", or \"test\""
+        assert mode in ["train_sup", "train_unsup", "train", "dev", "test"], \
+            "invalid mode options: either one of \"train_sup\", \"train_unsup\", \"train\", \"dev\", or \"test\""
         self.mode = mode
         if root is not None:
             self.root = Path(root).resolve()

@@ -134,7 +134,7 @@ def __plot_tsne_to_matplotlib(z_embed, classes):
 
 if __name__ == "__main__":
     import argparse
-    from model import SsVae
+    from ssvae import SsVae
     from mnist_cached import MNISTCached, setup_data_loaders
 
     parser = argparse.ArgumentParser(description="SS-VAE plot")
