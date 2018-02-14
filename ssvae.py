@@ -307,7 +307,7 @@ class SsVae(nn.Module):
         for pred, act in zip(predictions, actuals):
             for i in range(pred.size(0)):
                 v = torch.sum(pred[i] == act[i])
-                accurate_preds += (v.data[0] == 10)
+                accurate_preds += (v.data[0] == pred.size(1))
 
         # calculate the accuracy between 0 and 1
         accuracy = (accurate_preds * 1.0) / (len(predictions) * self.batch_size)

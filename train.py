@@ -11,15 +11,16 @@ from conv import ConvAM
 MODEL_SUFFIX = "pth.tar"
 
 
+def get_model_file_path(args, desc):
+    return Path(args.log_dir, f"{args.model_prefix}_{desc}.{MODEL_SUFFIX}")
+
+
 def train_conv(args):
     """
     train Convolutional AM model
     :param args: arguments for ConvAM
     :return: None
     """
-    def get_model_file_path(desc):
-        return Path(args.log_dir, f"{args.model_prefix}_{desc}.{MODEL_SUFFIX}")
-
     # batch_size: number of images (and labels) to be considered in a batch
     conv_am = ConvAM(x_dim=NUM_PIXELS, y_dim=NUM_LABELS, **vars(args))
 
@@ -35,12 +36,12 @@ def train_conv(args):
         datasets[mode] = Aspire(mode=mode)
         data_loaders[mode] = AudioDataLoader(datasets[mode], batch_size=args.batch_size,
                                              num_workers=args.num_workers, shuffle=True,
-                                             use_cuda=args.use_cuda)
+                                             use_cuda=args.use_cuda, pin_memory=True)
 
     # number of supervised and unsupervised examples
     #train_data_size = len(data_loaders["train"])
-    train_data_size = 1000
-    dev_data_size = 10
+    train_data_size = 10000
+    dev_data_size = 100
 
     # initializing local variables to maintain the best validation accuracy
     # seen across epochs over the supervised training set
@@ -55,9 +56,8 @@ def train_conv(args):
         # validate
         validation_accuracy = conv_am.get_accuracy(data_loaders["dev"], dev_data_size, desc="validating")
 
-        str_avg_loss = ' '.join([f"{x:7.3f}" for x in avg_loss])
         logger.info(f"epoch {epoch:03d}: "
-                    f"avg_loss {str_avg_loss} "
+                    f"avg_loss {avg_loss:7.3f} "
                     f"val_accuracy {validation_accuracy:5.3f}")
 
         # update the best validation accuracy and the corresponding
@@ -65,7 +65,7 @@ def train_conv(args):
         if best_valid_acc < validation_accuracy:
             best_valid_acc = validation_accuracy
         # save
-        conv_am.save(get_model_file_path(f"epoch_{epoch:04d}"), epoch=epoch)
+        conv_am.save(get_model_file_path(args, f"epoch_{epoch:04d}"), epoch=epoch)
 
     # test
     test_accuracy = ss_vae.get_accuracy(data_loaders["test"])
@@ -74,7 +74,7 @@ def train_conv(args):
                 f"test accuracy {test_accuracy:5.3f}")
 
     #save final model
-    conv_am.save(get_model_file_path("final"), epoch=epoch)
+    conv_am.save(get_model_file_path(args, "final"), epoch=epoch)
 
 
 def train_ssvae(args):
@@ -83,9 +83,6 @@ def train_ssvae(args):
     :param args: arguments for SS-VAE
     :return: None
     """
-    def get_model_file_path(desc):
-        return Path(args.log_dir, f"{args.model_prefix}_{desc}.{MODEL_SUFFIX}")
-
     if args.visualize:
         from plot import visualize_setup, plot_samples, plot_tsne
         visualize_setup(args.log_dir)
@@ -133,7 +130,7 @@ def train_ssvae(args):
         if best_valid_acc < validation_accuracy:
             best_valid_acc = validation_accuracy
         # save
-        ss_vae.save(get_model_file_path(f"epoch_{epoch:04d}"), epoch=epoch)
+        ss_vae.save(get_model_file_path(args, f"epoch_{epoch:04d}"), epoch=epoch)
         # visualize the conditional samples
         if args.visualize:
             from plot import visualize_setup, plot_samples, plot_tsne
@@ -148,7 +145,7 @@ def train_ssvae(args):
                 f"test accuracy {test_accuracy:5.3f}")
 
     #save final model
-    ss_vae.save(get_model_file_path("final"), epoch=epoch)
+    ss_vae.save(args, get_model_file_path("final"), epoch=epoch)
     #if args.visualize:
     #    plot_tsne(ss_vae, data_loaders["test"], use_cuda=args.use_cuda)
 

@@ -7,7 +7,7 @@ from torch.autograd import Variable
 
 from pyro.nn import ClippedSoftmax, ClippedSigmoid
 
-NUM_PIXELS = 2 * 257 * 9
+NUM_PIXELS = 2 * 129 * 9
 NUM_DIGITS = 187
 NUM_HIDDEN = [256, 256]
 NUM_STYLE = 200
@@ -41,8 +41,8 @@ class Swish(nn.Module):
 
 class MlpEncoderY(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, h_dims=NUM_HIDDEN,
-                 eps=EPS):
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS,
+                 h_dims=NUM_HIDDEN, eps=EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -69,8 +69,8 @@ class MlpEncoderY(nn.Module):
 
 class MlpEncoderZ(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE, h_dims=NUM_HIDDEN,
-                 eps=EPS):
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE,
+                 h_dims=NUM_HIDDEN, eps=EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -100,8 +100,8 @@ class MlpEncoderZ(nn.Module):
 
 class MlpDecoder(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE, h_dims=NUM_HIDDEN,
-                 eps=EPS):
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE,
+                 h_dims=NUM_HIDDEN, eps=EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -135,18 +135,18 @@ class ConvEncoderY(nn.Module):
         self.y_dim = y_dim
         # network
         layers = [
-            View(dim=(-1, 2, 257, 9)),
-            nn.Conv2d(2, 16, kernel_size=(16, 8), stride=(4, 2), padding=(6, 3)),  # 2x257x9 -> 16x64x4
+            View(dim=(-1, 2, 129, 9)),
+            nn.Conv2d(2, 16, kernel_size=(16, 8), stride=(4, 2), padding=(6, 3)),  # 2x129x9 -> 16x32x4
             nn.BatchNorm2d(16),
             Swish(),
-            nn.Conv2d(16, 32, (16, 8), (4, 2), (6, 3)),  # 16x64x4 -> 32x16x2
+            nn.Conv2d(16, 32, (16, 8), (4, 2), (6, 3)),  # 16x32x4 -> 32x8x2
             nn.BatchNorm2d(32),
             Swish(),
-            nn.Conv2d(32, 64, (16, 8), (4, 2), (6, 3)),  # 32x16x2 -> 64x4x1
+            nn.Conv2d(32, 64, (16, 8), (4, 2), (6, 3)),  # 32x8x2 -> 64x2x1
             nn.BatchNorm2d(64),
             Swish(),
-            View(dim=(-1, 64 * 4)),
-            nn.Linear(64 * 4, y_dim),
+            View(dim=(-1, 64 * 2)),
+            nn.Linear(64 * 2, y_dim),
         ]
         if softmax:
             layers.append(ClippedSoftmax(eps, dim=1))
@@ -158,6 +158,7 @@ class ConvEncoderY(nn.Module):
 
     def test(self):
         xs = torch.randn(10, self.x_dim)
+        print(xs.shape)
         xs = Variable(xs)
         for h in self.hidden:
             xs = h.forward(xs)
@@ -166,25 +167,24 @@ class ConvEncoderY(nn.Module):
 
 class ConvDecoder(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE,
-                 eps=EPS):
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE, eps=EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
         self.z_dim = z_dim
         # network
         layers = [
-            nn.Linear(z_dim + y_dim, 64 * 4),
+            nn.Linear(z_dim + y_dim, 64 * 2),
             Swish(),
-            View(dim=(-1, 64, 4, 1)),
-            nn.ConvTranspose2d(64, 32, kernel_size=(16, 8), stride=(4, 2), padding=(6, 3)),  # 64x4x1 -> 32x16x2
+            View(dim=(-1, 64, 2, 1)),
+            nn.ConvTranspose2d(64, 32, kernel_size=(16, 8), stride=(4, 2), padding=(6, 3)),  # 64x2x1 -> 32x8x2
             Swish(),
-            nn.ConvTranspose2d(32, 16, (16, 8), (4, 2), (6, 3)),  # 32x16x2 -> 16x64x4
+            nn.ConvTranspose2d(32, 16, (16, 8), (4, 2), (6, 3)),  # 32x8x2 -> 16x32x4
             Swish(),
-            nn.ConvTranspose2d(16, 2, (16, 8), (4, 2), (6, 3)),  # 16x64x4 -> 2x256x8
+            nn.ConvTranspose2d(16, 2, (16, 8), (4, 2), (6, 3)),  # 16x32x4 -> 2x128x8
             Swish(),
-            View(dim=(-1, 2 * 256 * 8)),
-            nn.Linear(2 * 256 * 8, x_dim),
+            View(dim=(-1, 2 * 128 * 8)),
+            nn.Linear(2 * 128 * 8, x_dim),
             ClippedSigmoid(eps)
         ]
         self.hidden = nn.Sequential(*layers)
@@ -204,4 +204,11 @@ class ConvDecoder(nn.Module):
 
 
 if __name__ == "__main__":
-    pass
+    print("enc")
+    enc = ConvEncoderY()
+    enc.test()
+
+    print("dec")
+    dec = ConvDecoder()
+    dec.test()
+

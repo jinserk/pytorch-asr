@@ -102,7 +102,7 @@ class ConvAM(nn.Module):
             del loss, y_hats
 
         # compute average epoch loss i.e. loss per example
-        avg_loss = map(lambda x: x / train_data_size, epoch_loss)
+        avg_loss = epoch_loss.cpu().data[0] / train_data_size
         return avg_loss
 
     def get_accuracy(self, data_loader, val_num, desc=None):
@@ -124,9 +124,10 @@ class ConvAM(nn.Module):
         # compute the number of accurate predictions
         accurate_preds = 0
         for pred, act in zip(predictions, actuals):
+            pred, act = pred.long(), act.long()
             for i in range(pred.size(0)):
                 v = torch.sum(pred[i] == act[i])
-                accurate_preds += (v.data[0] == 10)
+                accurate_preds += (v.data[0] == pred.size(1))
 
         # calculate the accuracy between 0 and 1
         accuracy = (accurate_preds * 1.0) / (len(predictions) * self.batch_size)
@@ -137,7 +138,7 @@ class ConvAM(nn.Module):
         logger.info(f"saving the model to {file_path}")
         states = kwargs
         states["conv"] = self.state_dict()
-        states["optimizer"] = self.optimizer.get_state()
+        states["optimizer"] = self.optimizer.state_dict()
         torch.save(states, file_path)
 
     def load(self, file_path):
@@ -151,5 +152,5 @@ class ConvAM(nn.Module):
 
         self.__setup_networks()
         self.load_state_dict(states["conv"])
-        self.optimizer.set_state(states["optimizer"])
+        self.optimizer.load_state_dict(states["optimizer"])
         return states

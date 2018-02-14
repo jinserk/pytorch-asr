@@ -104,7 +104,7 @@ class Augment(object):
 class Spectrogram(object):
 
     def __init__(self, sample_rate=8000, window_shift=0.01, window_size=0.025,
-                 window=sp.signal.tukey, nfft=512, normalize=True):
+                 window=sp.signal.tukey, nfft=256, normalize=True):
         self.sample_rate = sample_rate
         self.window_shift = window_shift
         self.window_size = window_size
@@ -176,7 +176,7 @@ class AudioDataset(Dataset):
                  tempo=False, tempo_range=(0.85, 1.15),
                  gain=False, gain_range=(-6., 8.),
                  window_shift=0.01, window_size=0.025,
-                 window=sp.signal.tukey, nfft=512, normalize=True,
+                 window=sp.signal.tukey, nfft=256, normalize=True,
                  frame_margin=0, unit_frames=9, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transform is None:
@@ -468,7 +468,7 @@ if __name__ == "__main__":
         import matplotlib.pyplot as plt
 
         sr = 8000
-        nfft = 512
+        nfft = 256
         window_size = 0.025
         window_stride = 0.01
         nperseg = int(sr * window_size)
