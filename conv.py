@@ -33,6 +33,7 @@ class ConvAM(nn.Module):
         self.use_cuda = use_cuda
         self.batch_size = batch_size
         self.init_lr = init_lr
+        self.epoch = 1
 
         if continue_from is None:
             # define and instantiate the neural networks representing
@@ -74,7 +75,7 @@ class ConvAM(nn.Module):
         ys = ys.scatter_(1, ind, 1.0)
         return ys
 
-    def train_epoch(self, epoch, data_loaders, train_data_size):
+    def train_epoch(self, data_loaders, train_data_size):
         # initialize variables to store loss values
         epoch_loss = 0.
 
@@ -88,14 +89,13 @@ class ConvAM(nn.Module):
             res, ind = torch.topk(ys, 1)
             ys = ind.long().squeeze()
             xs, ys = Variable(xs), Variable(ys)
-            self.optimizer.zero_grad()
             # run the inference for each loss (loss with size_avarage=True)
+            self.optimizer.zero_grad()
             y_hats = self.encoder(xs)
             loss = self.loss(y_hats, ys)
             epoch_loss += loss
             # compute gradient
             loss.backward()
-            # optimizer step
             self.optimizer.step()
             if self.use_cuda:
                 torch.cuda.synchronize()
@@ -137,6 +137,7 @@ class ConvAM(nn.Module):
         Path(file_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
         logger.info(f"saving the model to {file_path}")
         states = kwargs
+        states["epoch"] = self.epoch
         states["conv"] = self.state_dict()
         states["optimizer"] = self.optimizer.state_dict()
         torch.save(states, file_path)
@@ -149,8 +150,8 @@ class ConvAM(nn.Module):
             sys.exit(1)
         logger.info(f"loading the model from {file_path}")
         states = torch.load(file_path)
+        self.epoch = states["epoch"]
 
         self.__setup_networks()
         self.load_state_dict(states["conv"])
         self.optimizer.load_state_dict(states["optimizer"])
-        return states

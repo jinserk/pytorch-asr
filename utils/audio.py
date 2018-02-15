@@ -127,7 +127,7 @@ class Spectrogram(object):
             m, s = spect.mean(), spect.std()
             spect.sub_(m)
             spect.div_(s)
-            phase.div_(2 * np.pi).add_(0.5)
+            phase.div_(np.pi)
         # {mag, phase} x n_freq_bin x n_frame
         data = torch.cat([spect.unsqueeze_(0), phase.unsqueeze_(0)], 0)
         return data
@@ -136,7 +136,7 @@ class Spectrogram(object):
 # transformer: frame splitter
 class FrameSplitter(object):
 
-    def __init__(self, frame_margin=10, unit_frames=9):
+    def __init__(self, frame_margin=10, unit_frames=21):
         self.frame_margin = frame_margin
         self.unit_frames = unit_frames
         self.half = (self.unit_frames - 1) // 2
@@ -177,7 +177,7 @@ class AudioDataset(Dataset):
                  gain=False, gain_range=(-6., 8.),
                  window_shift=0.01, window_size=0.025,
                  window=sp.signal.tukey, nfft=256, normalize=True,
-                 frame_margin=0, unit_frames=9, *args, **kwargs):
+                 frame_margin=0, unit_frames=21, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transform is None:
             self.transform = torchaudio.transforms.Compose([
@@ -434,7 +434,7 @@ class AudioDataLoaderIter(object):
 class AudioDataLoader(DataLoader):
 
     def __init__(self, dataset, batch_size=1, shuffle=False, sampler=None, batch_sampler=None,
-                 num_workers=0, drop_last=False, pin_memory=False, use_cuda=False,
+                 num_workers=0, drop_last=False, pin_memory=True, use_cuda=False,
                  *args, **kwargs):
         collate_fn = AudioCollateFn()
         if batch_sampler is None:

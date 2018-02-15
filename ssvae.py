@@ -52,6 +52,7 @@ class SsVae(nn.Module):
         self.use_cuda = use_cuda
         self.batch_size = batch_size
         self.init_lr = init_lr
+        self.epoch = 1
 
         if continue_from is None:
             self.z_dim = z_dim
@@ -222,7 +223,7 @@ class SsVae(nn.Module):
             z_mu, z_sigma = self.encoder_z(xs, ys)
             return z_mu, z_sigma
 
-    def train_epoch(self, epoch, data_loaders, unsup_num, sup_num):
+    def train_epoch(self, data_loaders, unsup_num, sup_num):
         """
         runs the inference algorithm for an epoch
         returns the values of all losses separately on supervised and unsupervised parts
@@ -317,6 +318,7 @@ class SsVae(nn.Module):
         Path(file_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
         logger.info(f"saving the model to {file_path}")
         states = kwargs
+        states["epoch"] = self.epoch
         states["ss_vae"] = self.state_dict()
         states.update({
             "z_dim": self.z_dim,
@@ -344,8 +346,8 @@ class SsVae(nn.Module):
         self.enum_discrete = states["enum_discrete"]
         self.aux_loss = states["aux_loss"]
         self.aux_loss_multiplier = states["aux_loss_multiplier"]
+        self.epoch = states["epoch"]
 
         self.__setup_networks()
         self.load_state_dict(states["ss_vae"])
         self.optimizer.set_state(states["optimizer"])
-        return states

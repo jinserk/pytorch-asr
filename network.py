@@ -135,18 +135,25 @@ class ConvEncoderY(nn.Module):
         self.y_dim = y_dim
         # network
         layers = [
-            View(dim=(-1, 2, 129, 9)),
-            nn.Conv2d(2, 16, kernel_size=(16, 8), stride=(4, 2), padding=(6, 3)),  # 2x129x9 -> 16x32x4
+            View(dim=(-1, 2, 129, 21)),
+            nn.Conv2d(2, 16, kernel_size=(5, 5), stride=(2, 2), padding=(2, 2)),  # 2x129x21 -> 16x65x11
             nn.BatchNorm2d(16),
             Swish(),
-            nn.Conv2d(16, 32, (16, 8), (4, 2), (6, 3)),  # 16x32x4 -> 32x8x2
+            nn.Conv2d(16, 32, (5, 5), (2, 2), (2, 2)),  # 16x65x11 -> 32x33x6
             nn.BatchNorm2d(32),
             Swish(),
-            nn.Conv2d(32, 64, (16, 8), (4, 2), (6, 3)),  # 32x8x2 -> 64x2x1
+            nn.Conv2d(32, 64, (5, 5), (2, 2), (2, 2)),  # 32x33x6 -> 64x17x3
             nn.BatchNorm2d(64),
             Swish(),
-            View(dim=(-1, 64 * 2)),
-            nn.Linear(64 * 2, y_dim),
+            nn.Conv2d(64, 128, (5, 5), (2, 2), (2, 2)),  # 64x17x3 -> 128x9x2
+            nn.BatchNorm2d(128),
+            Swish(),
+            nn.Conv2d(128, 256, (5, 5), (2, 2), (2, 2)),  # 128x9x2 -> 256x5x1
+            nn.BatchNorm2d(256),
+            Swish(),
+            View(dim=(-1, 256 * 5 * 1)),
+            nn.Linear(256 * 5 * 1, y_dim),
+            nn.BatchNorm2d(y_dim),
         ]
         if softmax:
             layers.append(ClippedSoftmax(eps, dim=1))
@@ -174,17 +181,21 @@ class ConvDecoder(nn.Module):
         self.z_dim = z_dim
         # network
         layers = [
-            nn.Linear(z_dim + y_dim, 64 * 2),
+            nn.Linear(z_dim + y_dim, 256 * 5 * 1),
             Swish(),
-            View(dim=(-1, 64, 2, 1)),
-            nn.ConvTranspose2d(64, 32, kernel_size=(16, 8), stride=(4, 2), padding=(6, 3)),  # 64x2x1 -> 32x8x2
+            View(dim=(-1, 256, 5, 1)),
+            nn.ConvTranspose2d(256, 128, kernel_size=(5, 5), stride=(2, 2), padding=(2, 2), output_padding=(0, 1)),  # 256x5x1 -> 128x9x2
             Swish(),
-            nn.ConvTranspose2d(32, 16, (16, 8), (4, 2), (6, 3)),  # 32x8x2 -> 16x32x4
+            nn.ConvTranspose2d(128, 64, (5, 5), (2, 2), (2, 2)),  # 128x9x2 -> 64x17x3
             Swish(),
-            nn.ConvTranspose2d(16, 2, (16, 8), (4, 2), (6, 3)),  # 16x32x4 -> 2x128x8
+            nn.ConvTranspose2d(64, 32, (5, 5), (2, 2), (2, 2), output_padding=(0, 1)),  # 64x17x3 -> 32x33x6
             Swish(),
-            View(dim=(-1, 2 * 128 * 8)),
-            nn.Linear(2 * 128 * 8, x_dim),
+            nn.ConvTranspose2d(32, 16, (5, 5), (2, 2), (2, 2)),  # 32x33x6 -> 16x65x11
+            Swish(),
+            nn.ConvTranspose2d(16, 2, (5, 5), (2, 2), (2, 2)),  # 16x65x11 -> 2x129x21
+            Swish(),
+            View(dim=(-1, 2 * 129 * 21)),
+            nn.Linear(2 * 129 * 21, x_dim),
             ClippedSigmoid(eps)
         ]
         self.hidden = nn.Sequential(*layers)
@@ -204,11 +215,14 @@ class ConvDecoder(nn.Module):
 
 
 if __name__ == "__main__":
+    num_pixels = 2 * 129 * 21
+    num_digits = 187
+
     print("enc")
-    enc = ConvEncoderY()
+    enc = ConvEncoderY(x_dim=num_pixels, y_dim=num_digits)
     enc.test()
 
     print("dec")
-    dec = ConvDecoder()
+    dec = ConvDecoder(x_dim=num_pixels, y_dim=num_digits)
     dec.test()
 

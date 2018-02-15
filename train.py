@@ -24,12 +24,6 @@ def train_conv(args):
     # batch_size: number of images (and labels) to be considered in a batch
     conv_am = ConvAM(x_dim=NUM_PIXELS, y_dim=NUM_LABELS, **vars(args))
 
-    if args.continue_from is not None:
-        parameters = conv_am.load(args.continue_from)
-        start_epoch = parameters["epoch"]
-    else:
-        start_epoch = 0
-
     # prepare data loaders
     datasets, data_loaders = dict(), dict()
     for mode in ["train", "dev"]:
@@ -49,14 +43,13 @@ def train_conv(args):
     best_valid_acc, corresponding_test_acc = 0.0, 0.0
 
     # run inference for a certain number of epochs
-    for i in range(start_epoch, args.num_epochs):
-        epoch = i + 1
+    for i in range(conv_am.epoch, args.num_epochs):
         # get the losses for an epoch
-        avg_loss = conv_am.train_epoch(epoch, data_loaders, train_data_size)
+        avg_loss = conv_am.train_epoch(data_loaders, train_data_size)
         # validate
         validation_accuracy = conv_am.get_accuracy(data_loaders["dev"], dev_data_size, desc="validating")
 
-        logger.info(f"epoch {epoch:03d}: "
+        logger.info(f"epoch {conv_am.epoch:03d}: "
                     f"avg_loss {avg_loss:7.3f} "
                     f"val_accuracy {validation_accuracy:5.3f}")
 
@@ -65,7 +58,9 @@ def train_conv(args):
         if best_valid_acc < validation_accuracy:
             best_valid_acc = validation_accuracy
         # save
-        conv_am.save(get_model_file_path(args, f"epoch_{epoch:04d}"), epoch=epoch)
+        conv_am.save(get_model_file_path(args, f"epoch_{conv_am.epoch:04d}"))
+        # increase epoch num
+        conv_am.epoch += 1
 
     # test
     test_accuracy = ss_vae.get_accuracy(data_loaders["test"])
@@ -90,12 +85,6 @@ def train_ssvae(args):
     # batch_size: number of images (and labels) to be considered in a batch
     ss_vae = SsVae(x_dim=NUM_PIXELS, y_dim=NUM_LABELS, **vars(args))
 
-    if args.continue_from is not None:
-        parameters = ss_vae.load(args.continue_from)
-        start_epoch = parameters["epoch"]
-    else:
-        start_epoch = 0
-
     # prepare data loaders
     data_loaders = setup_data_loaders(batch_size=args.batch_size, use_cuda=args.use_cuda,
                                       num_workers=args.num_workers, drop_last=True)
@@ -111,16 +100,15 @@ def train_ssvae(args):
     best_valid_acc, corresponding_test_acc = 0.0, 0.0
 
     # run inference for a certain number of epochs
-    for i in range(start_epoch, args.num_epochs):
-        epoch = i + 1
+    for i in range(ss_vae.epoch, args.num_epochs):
         # get the losses for an epoch
-        avg_losses_sup, avg_losses_unsup = ss_vae.train_epoch(epoch, data_loaders, unsup_num, sup_num)
+        avg_losses_sup, avg_losses_unsup = ss_vae.train_epoch(data_loaders, unsup_num, sup_num)
         # validate
         validation_accuracy = ss_vae.get_accuracy(data_loaders["dev"], val_num, desc="validating")
 
         str_avg_loss_sup = ' '.join([f"{x:7.3f}" for x in avg_losses_sup])
         str_avg_loss_unsup = ' '.join([f"{x:7.3f}" for x in avg_losses_unsup])
-        logger.info(f"epoch {epoch:03d}: "
+        logger.info(f"epoch {ss_vae.epoch:03d}: "
                     f"avg_loss_sup {str_avg_loss_sup} "
                     f"avg_loss_unsup {str_avg_loss_unsup} "
                     f"val_accuracy {validation_accuracy:5.3f}")
@@ -130,13 +118,15 @@ def train_ssvae(args):
         if best_valid_acc < validation_accuracy:
             best_valid_acc = validation_accuracy
         # save
-        ss_vae.save(get_model_file_path(args, f"epoch_{epoch:04d}"), epoch=epoch)
+        ss_vae.save(get_model_file_path(args, f"epoch_{ss_vae.epoch:04d}"))
         # visualize the conditional samples
         if args.visualize:
             from plot import visualize_setup, plot_samples, plot_tsne
             plot_samples(ss_vae)
             #if epoch % 100 == 0:
             #    plot_tsne(ss_vae, data_loaders["test"], use_cuda=args.use_cuda)
+        # increase epoch num
+        ss_vae.epoch += 1
 
     # test
     test_accuracy = ss_vae.get_accuracy(data_loaders["test"])
@@ -215,6 +205,7 @@ if __name__ == "__main__":
     logger.info(f"args: {' '.join(args_str)}")
 
     if args.use_cuda:
+        logger.info("using cuda")
         torch.set_default_tensor_type("torch.cuda.FloatTensor")
 
     if args.seed is not None:

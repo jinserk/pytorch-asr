@@ -219,7 +219,7 @@ class Aspire(AudioDataset):
     """
     root = DATA_ROOT
     frame_margin = FRAME_MARGIN
-    unit_frames = 9
+    unit_frames = 21
     entries = list()
     entry_frames = list()
 
