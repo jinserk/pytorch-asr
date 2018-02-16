@@ -27,7 +27,7 @@ def train_conv(args):
     # prepare data loaders
     datasets, data_loaders = dict(), dict()
     for mode in ["train", "dev"]:
-        datasets[mode] = Aspire(mode=mode)
+        datasets[mode] = Aspire(mode=mode, use_cuda=args.use_cuda)
         data_loaders[mode] = AudioDataLoader(datasets[mode], batch_size=args.batch_size,
                                              num_workers=args.num_workers, shuffle=True,
                                              use_cuda=args.use_cuda, pin_memory=True)
