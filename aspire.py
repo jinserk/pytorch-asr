@@ -223,7 +223,7 @@ class Aspire(AudioDataset):
     entries = list()
     entry_frames = list()
 
-    def __init__(self, root=None, mode=None, use_cuda=False, *args, **kwargs):
+    def __init__(self, root=None, mode=None, *args, **kwargs):
         assert mode in ["train_sup", "train_unsup", "train", "dev", "test"], \
             "invalid mode options: either one of \"train_sup\", \"train_unsup\", \"train\", \"dev\", or \"test\""
         self.mode = mode
@@ -232,7 +232,7 @@ class Aspire(AudioDataset):
         self._load_manifest()
         super().__init__(frame_margin=self.frame_margin, unit_frames=self.unit_frames,
                          window_shift=WINDOW_SHIFT, window_size=WINDOW_SIZE,
-                         target_transform=Int2OneHot(187), use_cuda=use_cuda, *args, **kwargs)
+                         target_transform=Int2OneHot(187), *args, **kwargs)
 
     def __getitem__(self, index):
         uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
@@ -279,7 +279,7 @@ def setup_data_loaders(root=DATA_ROOT, batch_size=1, sup_num=None, use_cuda=Fals
     datasets, data_loaders = dict(), dict()
 
     for mode in ["train_unsup", "train_sup", "dev"]:
-        datasets[mode] = Aspire(root=root, mode=mode, use_cuda=use_cuda)
+        datasets[mode] = Aspire(root=root, mode=mode)
         data_loaders[mode] = AudioDataLoader(datasets[mode], batch_size=batch_size, num_workers=num_workers,
                                              shuffle=True, use_cuda=use_cuda, **kwargs)
 

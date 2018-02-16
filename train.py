@@ -27,15 +27,14 @@ def train_conv(args):
     # prepare data loaders
     datasets, data_loaders = dict(), dict()
     for mode in ["train", "dev"]:
-        datasets[mode] = Aspire(mode=mode, use_cuda=args.use_cuda)
+        datasets[mode] = Aspire(mode=mode)
         data_loaders[mode] = AudioDataLoader(datasets[mode], batch_size=args.batch_size,
                                              num_workers=args.num_workers, shuffle=True,
                                              use_cuda=args.use_cuda, pin_memory=True)
 
     # number of supervised and unsupervised examples
-    #train_data_size = len(data_loaders["train"])
-    train_data_size = 10000
-    dev_data_size = 100
+    train_data_size = len(data_loaders["train"])
+    dev_data_size = len(data_loaders["dev"])
 
     # initializing local variables to maintain the best validation accuracy
     # seen across epochs over the supervised training set
