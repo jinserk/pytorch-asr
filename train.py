@@ -89,9 +89,9 @@ def train_ssvae(args):
                                       num_workers=args.num_workers, drop_last=True)
 
     # number of supervised and unsupervised examples
-    unsup_num = 10  # len(data_loaders["train_unsup"])
-    sup_num = 1  # len(data_loaders["train_sup"])
-    val_num = 1  # len(data_loaders["dev"])
+    unsup_num = len(data_loaders["train_unsup"])
+    sup_num = len(data_loaders["train_sup"])
+    val_num = len(data_loaders["dev"])
 
     # initializing local variables to maintain the best validation accuracy
     # seen across epochs over the supervised training set
@@ -154,7 +154,7 @@ if __name__ == "__main__":
     ## CNN AM command line options
     conv_parser = subparsers.add_parser('conv', help="CNN AM with fully supervised training")
     # for training
-    conv_parser.add_argument('--num-workers', default=32, type=int, help="number of dataloader workers")
+    conv_parser.add_argument('--num-workers', default=16, type=int, help="number of dataloader workers")
     conv_parser.add_argument('--num-epochs', default=1000, type=int, help="number of epochs to run")
     conv_parser.add_argument('--batch-size', default=1024, type=int, help="number of images (and labels) to be considered in a batch")
     conv_parser.add_argument('--init-lr', default=0.001, type=float, help="initial learning rate for Adam optimizer")
@@ -168,7 +168,7 @@ if __name__ == "__main__":
     ## SS-VAE AM command line options
     ssvae_parser = subparsers.add_parser('ssvae', help="SS-VAE AM with semi-supervised training")
     # for model network
-    ssvae_parser.add_argument('-zd', '--z-dim', default=200, type=int, help="size of the tensor representing the latent variable z variable (handwriting style for our MNIST dataset)")
+    ssvae_parser.add_argument('-zd', '--z-dim', default=256, type=int, help="size of the tensor representing the latent variable z variable (handwriting style for our MNIST dataset)")
     ssvae_parser.add_argument('-hd', '--h-dims', nargs='+', default=[256, 256], type=int, help="a tuple (or list) of MLP layers to be used in the neural networks representing the parameters of the distributions in our model")
     ssvae_parser.add_argument('-eps', '--eps', default=1e-9, type=float, help="a small float value used to scale down the output of Softmax and Sigmoid opertations in pytorch for numerical stability")
     # for SVI model
@@ -178,7 +178,7 @@ if __name__ == "__main__":
     # for training
     ssvae_parser.add_argument('--num-workers', default=8, type=int, help="number of dataloader workers")
     ssvae_parser.add_argument('--num-epochs', default=1000, type=int, help="number of epochs to run")
-    ssvae_parser.add_argument('--batch-size', default=1024, type=int, help="number of images (and labels) to be considered in a batch")
+    ssvae_parser.add_argument('--batch-size', default=512, type=int, help="number of images (and labels) to be considered in a batch")
     ssvae_parser.add_argument('--init-lr', default=0.0001, type=float, help="initial learning rate for Adam optimizer")
     # optional
     ssvae_parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")

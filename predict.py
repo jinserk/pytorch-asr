@@ -36,7 +36,7 @@ def predict_conv(args):
     for wav_file in args.wav_files:
         # prepare data
         data_loader = PredictLoader(use_cuda=args.use_cuda, resample=True, sample_rate=8000,
-                                    frame_margin=4, unit_frames=9)
+                                    frame_margin=10, unit_frames=21)
         xs = data_loader.load(wav_file)
         xs = Variable(xs)
         # classify phones
@@ -55,7 +55,7 @@ def predict_ssvae(args):
     for wav_file in args.wav_files:
         # prepare data
         data_loader = PredictLoader(use_cuda=args.use_cuda, resample=True, sample_rate=8000,
-                                    frame_margin=4, unit_frames=9)
+                                    frame_margin=10, unit_frames=21)
         xs = data_loader.load(wav_file)
         xs = Variable(xs)
         # classify phones

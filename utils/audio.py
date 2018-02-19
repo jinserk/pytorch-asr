@@ -221,16 +221,18 @@ class AudioBatchSampler(BatchSampler):
 
 class AudioCollateFn(object):
 
+    def __init__(self):
+        self.widx = -1
+
     def __call__(self, dataset, indices):
         tensors, targets = list(), list()
-        pwidx = -1
         for widx, fidx in indices:
-            if pwidx != widx:
+            if self.widx != widx:
                 tensor, target = dataset[widx]
+                self.widx = widx
             tensors.append(tensor[fidx])
             if target is not None:
                 targets.append(target[fidx])
-            pwidx = widx
         if targets:
             batch = (torch.stack(tensors), torch.stack(targets))
         else:
@@ -269,15 +271,15 @@ def _worker_loop(dataset, index_queue, data_queue, collate_fn, seed, init_fn, wo
 
 class AudioDataLoaderIter(object):
 
-    def __init__(self, loader, use_cuda=False):
+    def __init__(self, loader):
         self.dataset = loader.dataset
         self.collate_fn = loader.collate_fn
         self.batch_sampler = loader.batch_sampler
         self.num_workers = loader.num_workers
-        self.pin_memory = loader.pin_memory and torch.cuda.is_available()
         self.timeout = loader.timeout
         self.done_event = threading.Event()
         self.use_cuda = loader.use_cuda
+        self.pin_memory = loader.pin_memory and loader.use_cuda and torch.cuda.is_available()
 
         self.sample_iter = iter(self.batch_sampler)
 
@@ -437,7 +439,7 @@ class AudioDataLoaderIter(object):
 class AudioDataLoader(DataLoader):
 
     def __init__(self, dataset, batch_size=1, shuffle=False, sampler=None, batch_sampler=None,
-                 num_workers=0, drop_last=False, pin_memory=True, use_cuda=False,
+                 num_workers=0, drop_last=True, pin_memory=False, use_cuda=False,
                  *args, **kwargs):
         collate_fn = AudioCollateFn()
         if batch_sampler is None:

@@ -7,10 +7,10 @@ from torch.autograd import Variable
 
 from pyro.nn import ClippedSoftmax, ClippedSigmoid
 
-NUM_PIXELS = 2 * 129 * 9
-NUM_DIGITS = 187
+NUM_PIXELS = 2 * 129 * 21
+NUM_LABELS = 187
 NUM_HIDDEN = [256, 256]
-NUM_STYLE = 200
+NUM_STYLE = 256
 EPS = 1e-9
 
 
@@ -41,7 +41,7 @@ class Swish(nn.Module):
 
 class MlpEncoderY(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS,
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS,
                  h_dims=NUM_HIDDEN, eps=EPS):
         super().__init__()
         self.x_dim = x_dim
@@ -69,7 +69,7 @@ class MlpEncoderY(nn.Module):
 
 class MlpEncoderZ(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE,
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS, z_dim=NUM_STYLE,
                  h_dims=NUM_HIDDEN, eps=EPS):
         super().__init__()
         self.x_dim = x_dim
@@ -100,7 +100,7 @@ class MlpEncoderZ(nn.Module):
 
 class MlpDecoder(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE,
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS, z_dim=NUM_STYLE,
                  h_dims=NUM_HIDDEN, eps=EPS):
         super().__init__()
         self.x_dim = x_dim
@@ -129,7 +129,7 @@ class MlpDecoder(nn.Module):
 
 class ConvEncoderY(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, softmax=True, eps=EPS):
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS, softmax=True, eps=EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -174,7 +174,7 @@ class ConvEncoderY(nn.Module):
 
 class ConvDecoder(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE, eps=EPS):
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS, z_dim=NUM_STYLE, eps=EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -215,14 +215,11 @@ class ConvDecoder(nn.Module):
 
 
 if __name__ == "__main__":
-    num_pixels = 2 * 129 * 21
-    num_digits = 187
-
     print("enc")
-    enc = ConvEncoderY(x_dim=num_pixels, y_dim=num_digits)
+    enc = ConvEncoderY(x_dim=NUM_PIXELS, y_dim=NUM_LABELS)
     enc.test()
 
     print("dec")
-    dec = ConvDecoder(x_dim=num_pixels, y_dim=num_digits)
+    dec = ConvDecoder(x_dim=NUM_PIXELS, y_dim=NUM_LABELS)
     dec.test()
 

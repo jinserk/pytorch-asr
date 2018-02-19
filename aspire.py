@@ -7,6 +7,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 
+from network import NUM_PIXELS, NUM_LABELS
 from utils.audio import AudioDataset, AudioDataLoader, Int2OneHot
 from utils.kaldi_io import smart_open, read_string, read_vec_int
 from utils.logger import logger
@@ -31,6 +32,8 @@ WINDOW_SHIFT = 0.010  # sec
 WINDOW_SIZE = 0.025   # sec
 FRAME_MARGIN = 10
 SAMPLE_MARGIN = (SAMPLE_RATE * WINDOW_SHIFT * FRAME_MARGIN)  # samples
+WIN_SAMP_SIZE = SAMPLE_RATE * WINDOW_SIZE
+WIN_SAMP_SHIFT = SAMPLE_RATE * WINDOW_SHIFT
 
 
 def get_num_lines(filename):
@@ -198,12 +201,6 @@ def reconstruct_manifest(target_dir):
     logger.info("data preparation finished.")
 
 
-NUM_PIXELS = 2 * 257 * 9
-NUM_LABELS = 187
-
-WIN_SAMP_SIZE = SAMPLE_RATE * WINDOW_SIZE
-WIN_SAMP_SHIFT = SAMPLE_RATE * WINDOW_SHIFT
-
 def _samples2frames(samples):
     num_samples = samples - 2 * SAMPLE_MARGIN
     return int((num_samples - WIN_SAMP_SIZE) // WIN_SAMP_SHIFT + 1)
@@ -282,7 +279,6 @@ def setup_data_loaders(root=DATA_ROOT, batch_size=1, sup_num=None, use_cuda=Fals
         datasets[mode] = Aspire(root=root, mode=mode)
         data_loaders[mode] = AudioDataLoader(datasets[mode], batch_size=batch_size, num_workers=num_workers,
                                              shuffle=True, use_cuda=use_cuda, **kwargs)
-
     return data_loaders
 
 

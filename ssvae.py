@@ -39,7 +39,7 @@ class SsVae(nn.Module):
     :param init_lr: initial learning rate to setup the optimizer
     :param continue_from: model file path to load the model states
     """
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, z_dim=NUM_STYLE, h_dims=NUM_HIDDEN,
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS, z_dim=NUM_STYLE, h_dims=NUM_HIDDEN,
                  eps=EPS, enum_discrete=True, aux_loss=True, aux_loss_multiplier=300,
                  use_cuda=False, batch_size=100, init_lr=0.001, continue_from=None,
                  *args, **kwargs):
@@ -74,10 +74,9 @@ class SsVae(nn.Module):
     def __setup_networks(self):
         # define the neural networks used later in the model and the guide.
         self.encoder_y = ConvEncoderY(x_dim=self.x_dim, y_dim=self.y_dim, eps=self.eps)
-        self.encoder_z = MlpEncoderZ(x_dim=self.x_dim, y_dim=self.y_dim,
-                                     z_dim=self.z_dim, h_dims=self.h_dims, eps=self.eps)
-        self.decoder = ConvDecoder(x_dim=self.x_dim, y_dim=self.y_dim,
-                                   z_dim=self.z_dim, eps=self.eps)
+        self.encoder_z = MlpEncoderZ(x_dim=self.x_dim, y_dim=self.y_dim, z_dim=self.z_dim,
+                                     h_dims=self.h_dims, eps=self.eps)
+        self.decoder = ConvDecoder(x_dim=self.x_dim, y_dim=self.y_dim, z_dim=self.z_dim, eps=self.eps)
 
         # setup the optimizer
         params = {"lr": self.init_lr, "betas": (0.9, 0.999)}
@@ -116,22 +115,22 @@ class SsVae(nn.Module):
             # sample the handwriting style from the constant prior distribution
             prior_mu = Variable(torch.zeros([batch_size, self.z_dim]))
             prior_sigma = Variable(torch.ones([batch_size, self.z_dim]))
-            zs = pyro.sample("z", dist.normal, prior_mu, prior_sigma, extra_event_dims=1)
+            zs = pyro.sample("z", dist.Normal(prior_mu, prior_sigma).reshape(extra_event_dims=1))
 
             # if the label y (which digit to write) is supervised, sample from the
             # constant prior, otherwise, observe the value (i.e. score it against the constant prior)
             alpha_prior = Variable(torch.ones([batch_size, self.y_dim]) / (1.0 * self.y_dim))
             if ys is None:
-                ys = pyro.sample("y", dist.one_hot_categorical, alpha_prior)
+                ys = pyro.sample("y", dist.OneHotCategorical(alpha_prior))
             else:
-                pyro.sample("y", dist.one_hot_categorical, alpha_prior, obs=ys)
+                pyro.sample("y", dist.OneHotCategorical(alpha_prior), obs=ys)
 
             # finally, score the image (x) using the handwriting style (z) and
             # the class label y (which digit to write) against the
             # parametrized distribution p(x|y,z) = bernoulli(decoder(y,z))
             # where `decoder` is a neural network
             mu = self.decoder.forward(zs, ys)
-            pyro.sample("x", dist.bernoulli, mu, extra_event_dims=1, obs=xs)
+            pyro.sample("x", dist.Bernoulli(mu).reshape(extra_event_dims=1), obs=xs)
 
     def guide(self, xs, ys=None):
         """
@@ -153,12 +152,12 @@ class SsVae(nn.Module):
             # q(y|x) = categorical(alpha(x))
             if ys is None:
                 alpha = self.encoder_y.forward(xs)
-                ys = pyro.sample("y", dist.one_hot_categorical, alpha)
+                ys = pyro.sample("y", dist.OneHotCategorical(alpha))
 
             # sample (and score) the latent handwriting-style with the variational
             # distribution q(z|x,y) = normal(mu(x,y),sigma(x,y))
             mu, sigma = self.encoder_z.forward(xs, ys)
-            zs = pyro.sample("z", dist.normal, mu, sigma, extra_event_dims=1)
+            zs = pyro.sample("z", dist.Normal(mu, sigma).reshape(extra_event_dims=1))
 
     def classifier(self, xs):
         """
@@ -196,7 +195,7 @@ class SsVae(nn.Module):
             if ys is not None:
                 alpha = self.encoder_y.forward(xs)
                 with pyro.poutine.scale(None, self.aux_loss_multiplier):
-                    pyro.sample("y_aux", dist.one_hot_categorical, alpha, obs=ys)
+                    pyro.sample("y_aux", dist.OneHotCategorical(alpha), obs=ys)
 
     def guide_classify(self, xs, ys=None):
         """
@@ -209,11 +208,11 @@ class SsVae(nn.Module):
             # sample the handwriting style from the constant prior distribution
             prior_mu = Variable(torch.zeros([batch_size, self.z_dim]))
             prior_sigma = Variable(torch.ones([batch_size, self.z_dim]))
-            zs = pyro.sample("z", dist.normal, prior_mu, prior_sigma, extra_event_dims=1)
+            zs = pyro.sample("z", dist.Normal(prior_mu, prior_sigma).reshape(extra_event_dims=1))
 
             # sample an image using the decoder
             mu = self.decoder.forward(zs, ys)
-            xs = pyro.sample("sample", dist.bernoulli, mu.cpu(), extra_event_dims=1)
+            xs = pyro.sample("sample", dist.Bernoulli(mu).reshape(extra_event_dims=1))
             return xs, mu
 
     def guide_sample(self, xs, ys, batch_size=1):

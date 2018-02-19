@@ -22,7 +22,7 @@ class ConvAM(nn.Module):
     :param init_lr: initial learning rate to setup the optimizer
     :param continue_from: model file path to load the model states
     """
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_DIGITS, use_cuda=False,
+    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS, use_cuda=False,
                  batch_size=100, init_lr=0.001, continue_from=None, *args, **kwargs):
         super().__init__()
 
