@@ -2,8 +2,9 @@
 from pathlib import Path
 
 from utils.logger import logger, set_logfile
-from aspire import setup_data_loaders, Aspire, NUM_PIXELS, NUM_LABELS
+from aspire import setup_data_loaders, Aspire
 from utils.audio import AudioDataLoader
+import utils.params as p
 
 from ssvae import SsVae
 from conv import ConvAM
@@ -22,7 +23,7 @@ def train_conv(args):
     :return: None
     """
     # batch_size: number of images (and labels) to be considered in a batch
-    conv_am = ConvAM(x_dim=NUM_PIXELS, y_dim=NUM_LABELS, **vars(args))
+    conv_am = ConvAM(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
 
     # prepare data loaders
     datasets, data_loaders = dict(), dict()
@@ -82,7 +83,7 @@ def train_ssvae(args):
         visualize_setup(args.log_dir)
 
     # batch_size: number of images (and labels) to be considered in a batch
-    ss_vae = SsVae(x_dim=NUM_PIXELS, y_dim=NUM_LABELS, **vars(args))
+    ss_vae = SsVae(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
 
     # prepare data loaders
     data_loaders = setup_data_loaders(batch_size=args.batch_size, use_cuda=args.use_cuda,

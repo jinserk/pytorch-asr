@@ -5,10 +5,10 @@ from pyro.shim import parse_torch_version
 
 from utils.logger import logger, set_logfile
 from utils.audio import AudioDataset
+import utils.params as p
 
 from ssvae import SsVae
 from conv import ConvAM
-from aspire import NUM_PIXELS, NUM_LABELS
 
 MODEL_SUFFIX = "pth.tar"
 
@@ -31,12 +31,12 @@ class PredictLoader(AudioDataset):
 
 def predict_conv(args):
     # load model
-    conv = ConvAM(x_dim=NUM_PIXELS, y_dim=NUM_LABELS, **vars(args))
+    conv = ConvAM(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
 
     for wav_file in args.wav_files:
         # prepare data
-        data_loader = PredictLoader(use_cuda=args.use_cuda, resample=True, sample_rate=8000,
-                                    frame_margin=10, unit_frames=21)
+        data_loader = PredictLoader(use_cuda=args.use_cuda, resample=True, sample_rate=p.SAMPLE_RATE,
+                                    frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT)
         xs = data_loader.load(wav_file)
         xs = Variable(xs)
         # classify phones
@@ -50,12 +50,12 @@ def predict_conv(args):
 
 def predict_ssvae(args):
     # load model
-    ss_vae = SsVae(x_dim=NUM_PIXELS, y_dim=NUM_LABELS, **vars(args))
+    ss_vae = SsVae(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
 
     for wav_file in args.wav_files:
         # prepare data
-        data_loader = PredictLoader(use_cuda=args.use_cuda, resample=True, sample_rate=8000,
-                                    frame_margin=10, unit_frames=21)
+        data_loader = PredictLoader(use_cuda=args.use_cuda, resample=True, sample_rate=p.SAMPLE_RATE,
+                                    frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT)
         xs = data_loader.load(wav_file)
         xs = Variable(xs)
         # classify phones

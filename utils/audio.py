@@ -19,6 +19,8 @@ import torchaudio
 
 import sox
 
+from . import params as p
+
 if sys.version_info[0] == 2:
     import Queue as queue
 else:
@@ -48,11 +50,8 @@ def make_manifest(path):
 # transformer: resampling and augmentation
 class Augment(object):
 
-    def __init__(self,
-                 resample=False, sample_rate=8000,
-                 tempo=False, tempo_range=(0.85, 1.15),
-                 gain=False, gain_range=(-6., 8.),
-                 noise=False, noise_range=(-30, -10)):
+    def __init__(self, resample, sample_rate, tempo, tempo_range,
+                 gain, gain_range, noise, noise_range):
         self.resample = resample
         self.sample_rate = sample_rate
         self.tempo = tempo
@@ -103,22 +102,17 @@ class Augment(object):
 # transformer: spectrogram
 class Spectrogram(object):
 
-    def __init__(self, sample_rate=8000, window_shift=0.01, window_size=0.025,
-                 window=sp.signal.tukey, nfft=256, normalize=True):
-        self.sample_rate = sample_rate
-        self.window_shift = window_shift
-        self.window_size = window_size
-        self.window = window
+    def __init__(self, sample_rate, window_shift, window_size, window, nfft, normalize=True):
         self.nfft = nfft
+        self.nperseg = int(sample_rate * window_size)
+        self.noverlap = int(sample_rate * (window_size - window_shift))
+        self.window = window(self.nperseg)
         self.normalize = normalize
 
     def __call__(self, data):
-        nperseg = int(self.sample_rate * self.window_size)
-        noverlap = int(self.sample_rate * (self.window_size - self.window_shift))
-        window = self.window(nperseg)
         # STFT
-        bins, frames, z = sp.signal.stft(data, nfft=self.nfft, nperseg=nperseg, noverlap=noverlap,
-                                         window=window, boundary=None, padded=False)
+        bins, frames, z = sp.signal.stft(data, nfft=self.nfft, nperseg=self.nperseg, noverlap=self.noverlap,
+                                         window=self.window, boundary=None, padded=False)
         mag, ang = np.abs(z), np.angle(z)
         spect = torch.FloatTensor(np.log1p(mag))
         phase = torch.FloatTensor(ang)
@@ -136,7 +130,7 @@ class Spectrogram(object):
 # transformer: frame splitter
 class FrameSplitter(object):
 
-    def __init__(self, frame_margin=10, unit_frames=21):
+    def __init__(self, frame_margin, unit_frames):
         self.frame_margin = frame_margin
         self.unit_frames = unit_frames
         self.half = (self.unit_frames - 1) // 2
@@ -162,8 +156,8 @@ class Int2OneHot(object):
     def __call__(self, targets):
         one_hots = list()
         for t in targets:
-            one_hot = torch.FloatTensor(self.num_labels).zero_()
-            one_hot[t] = 1.
+            one_hot = torch.LongTensor(self.num_labels).zero_()
+            one_hot[t] = 1
             one_hots.append(one_hot)
         return one_hots
 
@@ -172,18 +166,20 @@ class AudioDataset(Dataset):
 
     def __init__(self,
                  transform=None, target_transform=None,
-                 resample=False, sample_rate=8000,
-                 tempo=False, tempo_range=(0.85, 1.15),
-                 gain=False, gain_range=(-6., 8.),
-                 window_shift=0.01, window_size=0.025,
-                 window=sp.signal.tukey, nfft=256, normalize=True,
-                 frame_margin=0, unit_frames=21, *args, **kwargs):
+                 resample=False, sample_rate=p.SAMPLE_RATE,
+                 tempo=False, tempo_range=p.TEMPO_RANGE,
+                 gain=False, gain_range=p.GAIN_RANGE,
+                 noise=False, noise_range=p.NOISE_RANGE,
+                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
+                 window=p.WINDOW, nfft=p.NFFT, normalize=True,
+                 frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transform is None:
             self.transform = torchaudio.transforms.Compose([
                 Augment(resample=resample, sample_rate=sample_rate,
                         tempo=tempo, tempo_range=tempo_range,
-                        gain=gain, gain_range=gain_range),
+                        gain=gain, gain_range=gain_range,
+                        noise=noise, noise_range=noise_range),
                 Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
                             window_size=window_size, window=window, nfft=nfft,
                             normalize=normalize),
@@ -220,23 +216,23 @@ class AudioBatchSampler(BatchSampler):
 
 
 class AudioCollateFn(object):
-
-    def __init__(self):
-        self.widx = -1
+    widx = -1
+    tensor = None
+    target = None
 
     def __call__(self, dataset, indices):
         tensors, targets = list(), list()
         for widx, fidx in indices:
             if self.widx != widx:
-                tensor, target = dataset[widx]
+                self.tensor, self.target = dataset[widx]
                 self.widx = widx
-            tensors.append(tensor[fidx])
-            if target is not None:
-                targets.append(target[fidx])
+            tensors.append(self.tensor[fidx])
+            if self.target is not None:
+                targets.append(self.target[fidx])
         if targets:
             batch = (torch.stack(tensors), torch.stack(targets))
         else:
-            batch = torch.stack(tensors)
+            batch = (torch.stack(tensors), None)
         return batch
 
 
@@ -438,9 +434,9 @@ class AudioDataLoaderIter(object):
 
 class AudioDataLoader(DataLoader):
 
-    def __init__(self, dataset, batch_size=1, shuffle=False, sampler=None, batch_sampler=None,
-                 num_workers=0, drop_last=True, pin_memory=False, use_cuda=False,
-                 *args, **kwargs):
+    def __init__(self, dataset, batch_size,
+                 shuffle=False, sampler=None, batch_sampler=None, num_workers=0,
+                 drop_last=True, pin_memory=False, use_cuda=False, *args, **kwargs):
         collate_fn = AudioCollateFn()
         if batch_sampler is None:
             if sampler is None:
@@ -461,7 +457,7 @@ class AudioDataLoader(DataLoader):
 if __name__ == "__main__":
     # test Augment
     if False:
-        transformer = Augment(resample=True, sample_rate=16000)
+        transformer = Augment(resample=True, sample_rate=p.SAMPLE_RATE)
         wav_file = Path("/home/jbaik/src/enf/stt/test/conan1-8k.wav")
         audio = transformer(wav_file)
 
@@ -472,12 +468,8 @@ if __name__ == "__main__":
         matplotlib.interactive(True)
         import matplotlib.pyplot as plt
 
-        sr = 8000
-        nfft = 256
-        window_size = 0.025
-        window_stride = 0.01
-        nperseg = int(sr * window_size)
-        noverlap = int(sr * (window_size-window_stride))
+        nperseg = int(p.SAMPLE_RATE * p.WINDOW_SIZE)
+        noverlap = int(p.SAMPLE_RATE * (p.WINDOW_SIZE - p.WINDOW_SHIFT))
 
         wav_file = Path("../data/aspire/000/fe_03_00047-A-025005-025135.wav")
         audio, _ = torchaudio.load(wav_file)
@@ -485,10 +477,11 @@ if __name__ == "__main__":
         # pyplot specgram
         audio = torch.squeeze(audio)
         fig = plt.figure(0)
-        plt.specgram(audio, Fs=sr, NFFT=nfft, noverlap=noverlap, cmap='plasma')
+        plt.specgram(audio, Fs=p.SAMPLE_RATE, NFFT=p.NFFT, noverlap=noverlap, cmap='plasma')
 
         # implemented transformer - scipy stft
-        transformer = Spectrogram(sample_rate=sr, window_stride=window_stride, window_size=window_size, nfft=nfft)
+        transformer = Spectrogram(sample_rate=p.SAMPLE_RATE, window_stride=p.WINDOW_SHIFT,
+                                  window_size=p.WINDOW_SIZE, nfft=p.NFFT)
         data, f, t = transformer(audio)
         print(data.shape)
         mag = data[0]
@@ -500,7 +493,8 @@ if __name__ == "__main__":
         #print(max(data[1].view(257*601)), min(data[1].view(257*601)))
 
         # scipy spectrogram
-        f, t, z = sp.signal.spectrogram(audio, fs=sr, nperseg=nperseg, noverlap=noverlap, nfft=nfft, mode='complex')
+        f, t, z = sp.signal.spectrogram(audio, fs=p.SAMPLE_RATE, nperseg=nperseg, noverlap=noverlap,
+                                        nfft=p.NFFT, mode='complex')
         spect, phase = np.abs(z), np.angle(z)
         fig = plt.figure(3)
         plt.pcolormesh(t, f, 20*np.log10(spect), cmap='plasma')

@@ -7,10 +7,10 @@ import numpy as np
 from tqdm import tqdm
 import torch
 
-from network import NUM_PIXELS, NUM_LABELS
 from utils.audio import AudioDataset, AudioDataLoader, Int2OneHot
 from utils.kaldi_io import smart_open, read_string, read_vec_int
 from utils.logger import logger
+import utils.params as p
 
 
 """
@@ -27,13 +27,9 @@ assert KALDI_ROOT.exists(), \
 assert ASPIRE_ROOT.exists(), \
     f"no such path \"{str(ASPIRE_ROOT)}\" not found"
 
-SAMPLE_RATE = 8000
-WINDOW_SHIFT = 0.010  # sec
-WINDOW_SIZE = 0.025   # sec
-FRAME_MARGIN = 10
-SAMPLE_MARGIN = (SAMPLE_RATE * WINDOW_SHIFT * FRAME_MARGIN)  # samples
-WIN_SAMP_SIZE = SAMPLE_RATE * WINDOW_SIZE
-WIN_SAMP_SHIFT = SAMPLE_RATE * WINDOW_SHIFT
+WIN_SAMP_SIZE = p.SAMPLE_RATE * p.WINDOW_SIZE
+WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
+SAMPLE_MARGIN = WIN_SAMP_SHIFT * p.FRAME_MARGIN  # samples
 
 
 def get_num_lines(filename):
@@ -215,8 +211,6 @@ class Aspire(AudioDataset):
         data_dir (path): dir containing the processed data and manifests
     """
     root = DATA_ROOT
-    frame_margin = FRAME_MARGIN
-    unit_frames = 21
     entries = list()
     entry_frames = list()
 
@@ -227,9 +221,9 @@ class Aspire(AudioDataset):
         if root is not None:
             self.root = Path(root).resolve()
         self._load_manifest()
-        super().__init__(frame_margin=self.frame_margin, unit_frames=self.unit_frames,
-                         window_shift=WINDOW_SHIFT, window_size=WINDOW_SIZE,
-                         target_transform=Int2OneHot(187), *args, **kwargs)
+        super().__init__(frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT,
+                         window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
+                         target_transform=Int2OneHot(p.NUM_LABELS), *args, **kwargs)
 
     def __getitem__(self, index):
         uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
@@ -302,7 +296,7 @@ if __name__ == "__main__":
                 import matplotlib.pyplot as plt
 
                 for tensor, target in zip(tensors, targets):
-                    tensor = tensor.view(-1, 2, 257, 9)
+                    tensor = tensor.view(-1, p.CHANNEL, p.WIDTH, p.HEIGHT)
                     t = np.arange(0, tensor.size(3)) / 8000
                     f = np.linspace(0, 4000, tensor.size(2))
 

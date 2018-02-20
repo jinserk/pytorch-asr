@@ -14,6 +14,7 @@ from pyro.optim import Adam
 from pyro.nn import ClippedSoftmax, ClippedSigmoid
 
 from utils.logger import logger
+import utils.params as p
 
 from network import *
 
@@ -39,8 +40,8 @@ class SsVae(nn.Module):
     :param init_lr: initial learning rate to setup the optimizer
     :param continue_from: model file path to load the model states
     """
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS, z_dim=NUM_STYLE, h_dims=NUM_HIDDEN,
-                 eps=EPS, enum_discrete=True, aux_loss=True, aux_loss_multiplier=300,
+    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, z_dim=p.NUM_STYLE, h_dims=p.NUM_HIDDEN,
+                 eps=p.EPS, enum_discrete=True, aux_loss=True, aux_loss_multiplier=300,
                  use_cuda=False, batch_size=100, init_lr=0.001, continue_from=None,
                  *args, **kwargs):
         super().__init__()
@@ -263,7 +264,7 @@ class SsVae(nn.Module):
                 xs, ys = Variable(xs), Variable(ys)
                 cnt_sup += 1
             else:
-                xs = next(unsup_iter)
+                xs, _ = next(unsup_iter)
                 xs = Variable(xs)
 
             # run the inference for each loss with supervised or un-supervised

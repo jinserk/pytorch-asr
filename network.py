@@ -7,11 +7,7 @@ from torch.autograd import Variable
 
 from pyro.nn import ClippedSoftmax, ClippedSigmoid
 
-NUM_PIXELS = 2 * 129 * 21
-NUM_LABELS = 187
-NUM_HIDDEN = [256, 256]
-NUM_STYLE = 256
-EPS = 1e-9
+import utils.params as p
 
 
 class View(nn.Module):
@@ -41,8 +37,8 @@ class Swish(nn.Module):
 
 class MlpEncoderY(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS,
-                 h_dims=NUM_HIDDEN, eps=EPS):
+    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS,
+                 h_dims=p.NUM_HIDDEN, eps=p.EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -69,8 +65,8 @@ class MlpEncoderY(nn.Module):
 
 class MlpEncoderZ(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS, z_dim=NUM_STYLE,
-                 h_dims=NUM_HIDDEN, eps=EPS):
+    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, z_dim=p.NUM_STYLE,
+                 h_dims=p.NUM_HIDDEN, eps=p.EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -100,8 +96,8 @@ class MlpEncoderZ(nn.Module):
 
 class MlpDecoder(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS, z_dim=NUM_STYLE,
-                 h_dims=NUM_HIDDEN, eps=EPS):
+    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, z_dim=p.NUM_STYLE,
+                 h_dims=p.NUM_HIDDEN, eps=p.EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -129,14 +125,14 @@ class MlpDecoder(nn.Module):
 
 class ConvEncoderY(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS, softmax=True, eps=EPS):
+    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, softmax=True, eps=p.EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
         # network
         layers = [
-            View(dim=(-1, 2, 129, 21)),
-            nn.Conv2d(2, 16, kernel_size=(5, 5), stride=(2, 2), padding=(2, 2)),  # 2x129x21 -> 16x65x11
+            View(dim=(-1, p.CHANNEL, p.WIDTH, p.HEIGHT)),
+            nn.Conv2d(p.CHANNEL, 16, kernel_size=(5, 5), stride=(2, 2), padding=(2, 2)),  # 2x129x21 -> 16x65x11
             nn.BatchNorm2d(16),
             Swish(),
             nn.Conv2d(16, 32, (5, 5), (2, 2), (2, 2)),  # 16x65x11 -> 32x33x6
@@ -174,7 +170,7 @@ class ConvEncoderY(nn.Module):
 
 class ConvDecoder(nn.Module):
 
-    def __init__(self, x_dim=NUM_PIXELS, y_dim=NUM_LABELS, z_dim=NUM_STYLE, eps=EPS):
+    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, z_dim=p.NUM_STYLE, eps=p.EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
@@ -192,10 +188,10 @@ class ConvDecoder(nn.Module):
             Swish(),
             nn.ConvTranspose2d(32, 16, (5, 5), (2, 2), (2, 2)),  # 32x33x6 -> 16x65x11
             Swish(),
-            nn.ConvTranspose2d(16, 2, (5, 5), (2, 2), (2, 2)),  # 16x65x11 -> 2x129x21
+            nn.ConvTranspose2d(16, p.CHANNEL, (5, 5), (2, 2), (2, 2)),  # 16x65x11 -> 2x129x21
             Swish(),
-            View(dim=(-1, 2 * 129 * 21)),
-            nn.Linear(2 * 129 * 21, x_dim),
+            View(dim=(-1, p.CHANNEL * p.WIDTH * p.HEIGHT)),
+            nn.Linear(p.CHANNEL * p.WIDTH * p.HEIGHT, x_dim),
             ClippedSigmoid(eps)
         ]
         self.hidden = nn.Sequential(*layers)
@@ -216,10 +212,10 @@ class ConvDecoder(nn.Module):
 
 if __name__ == "__main__":
     print("enc")
-    enc = ConvEncoderY(x_dim=NUM_PIXELS, y_dim=NUM_LABELS)
+    enc = ConvEncoderY(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS)
     enc.test()
 
     print("dec")
-    dec = ConvDecoder(x_dim=NUM_PIXELS, y_dim=NUM_LABELS)
+    dec = ConvDecoder(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS)
     dec.test()
 
