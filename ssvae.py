@@ -223,7 +223,7 @@ class SsVae(nn.Module):
             z_mu, z_sigma = self.encoder_z(xs, ys)
             return z_mu, z_sigma
 
-    def train_epoch(self, data_loaders, unsup_num, sup_num):
+    def train_epoch(self, data_loaders):
         """
         runs the inference algorithm for an epoch
         returns the values of all losses separately on supervised and unsupervised parts
@@ -231,6 +231,9 @@ class SsVae(nn.Module):
         # how often would a supervised batch be encountered during inference
         # e.g. if sup_num is 3000, we would have every 16th = int(50000/3000) batch supervised
         # until we have traversed through the all supervised batches
+        unsup_num = len(data_loaders["train_unsup"])
+        sup_num = len(data_loaders["train_sup"])
+
         train_data_size = unsup_num + sup_num
         periodic_interval_batches = int(train_data_size // (1.0 * sup_num))
         sup_num = int(train_data_size / periodic_interval_batches)
@@ -238,11 +241,6 @@ class SsVae(nn.Module):
 
         # initialize variables to store loss values
         num_losses = len(self.losses)
-
-        # compute number of batches for an epoch
-        #sup_batches = len(data_loaders["sup"])
-        #unsup_batches = len(data_loaders["unsup"])
-        #batches_per_epoch = sup_batches + unsup_batches
 
         # initialize variables to store loss values
         epoch_losses_sup = [0.] * num_losses
@@ -264,7 +262,7 @@ class SsVae(nn.Module):
                 xs, ys = Variable(xs), Variable(ys)
                 cnt_sup += 1
             else:
-                xs, _ = next(unsup_iter)
+                xs = next(unsup_iter)
                 xs = Variable(xs)
 
             # run the inference for each loss with supervised or un-supervised
@@ -287,16 +285,13 @@ class SsVae(nn.Module):
         # return the values of all losses
         return avg_losses_sup, avg_losses_unsup
 
-    def get_accuracy(self, data_loader, val_num, desc=None):
+    def get_accuracy(self, data_loader, desc=None):
         """
         compute the accuracy over the supervised training set or the testing set
         """
-        # use the appropriate data loader
-        data_iter = iter(data_loader)
-
         predictions, actuals = [], []
-        for i in tqdm(range(val_num), desc=desc):
-            xs, ys = next(data_iter)
+        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
+            xs, ys = data
             xs, ys = Variable(xs), Variable(ys)
             # use classification function to compute all predictions for each batch
             with torch.no_grad():

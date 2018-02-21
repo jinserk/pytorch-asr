@@ -7,6 +7,7 @@ import tempfile as tmp
 
 import numpy as np
 import scipy as sp
+import sox
 
 import torch
 import torch.multiprocessing as multiprocessing
@@ -16,8 +17,6 @@ from torch.utils.data.dataloader import _worker_manager_loop, _set_SIGCHLD_handl
                                         pin_memory_batch, ExceptionWrapper
 from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSampler
 import torchaudio
-
-import sox
 
 from . import params as p
 
@@ -156,8 +155,8 @@ class Int2OneHot(object):
     def __call__(self, targets):
         one_hots = list()
         for t in targets:
-            one_hot = torch.LongTensor(self.num_labels).zero_()
-            one_hot[t] = 1
+            one_hot = torch.FloatTensor(self.num_labels).zero_()
+            one_hot[t] = 1.
             one_hots.append(one_hot)
         return one_hots
 
@@ -212,27 +211,27 @@ class AudioBatchSampler(BatchSampler):
         if self.drop_last:
             return total // self.batch_size
         else:
-            return (total // self.batch_size) + 1
+            return (total + self.batch_size - 1) // self.batch_size
 
 
 class AudioCollateFn(object):
-    widx = -1
+    idx = -1
     tensor = None
     target = None
 
     def __call__(self, dataset, indices):
         tensors, targets = list(), list()
-        for widx, fidx in indices:
-            if self.widx != widx:
-                self.tensor, self.target = dataset[widx]
-                self.widx = widx
+        for idx, fidx in indices:
+            if self.idx != idx:
+                self.tensor, self.target = dataset[idx]
+                self.idx = idx
             tensors.append(self.tensor[fidx])
             if self.target is not None:
                 targets.append(self.target[fidx])
         if targets:
             batch = (torch.stack(tensors), torch.stack(targets))
         else:
-            batch = (torch.stack(tensors), None)
+            batch = torch.stack(tensors)
         return batch
 
 
@@ -344,13 +343,12 @@ class AudioDataLoaderIter(object):
         else:
             batch = self._next_with_worker()
 
-        if self.use_cuda:
-            if isinstance(batch, collections.Sequence):
-                return (x.cuda() for x in batch)
-            else:
-                return batch.cuda()
-        else:
+        if not self.use_cuda:
             return batch
+        elif isinstance(batch, collections.Sequence):
+            return (x.cuda() for x in batch)
+        else:
+            return batch.cuda()
 
     def _next_without_worker(self):
         indices = next(self.sample_iter)  # may raise StopIteration
@@ -448,7 +446,7 @@ class AudioDataLoader(DataLoader):
         self.use_cuda = use_cuda
 
         super().__init__(dataset=dataset, batch_sampler=batch_sampler, num_workers=num_workers,
-                         collate_fn=collate_fn, pin_memory=pin_memory, *args, **kwargs)
+                         collate_fn=collate_fn, pin_memory=pin_memory, timeout=0, *args, **kwargs)
 
     def __iter__(self):
         return AudioDataLoaderIter(self)

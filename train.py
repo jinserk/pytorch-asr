@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from utils.logger import logger, set_logfile
-from aspire import setup_data_loaders, Aspire
+from aspire import Aspire
 from utils.audio import AudioDataLoader
 import utils.params as p
 
@@ -17,25 +17,19 @@ def get_model_file_path(args, desc):
 
 
 def train_conv(args):
-    """
-    train Convolutional AM model
-    :param args: arguments for ConvAM
-    :return: None
-    """
     # batch_size: number of images (and labels) to be considered in a batch
     conv_am = ConvAM(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
+
+    # if you want to limit the datasets' entry size
+    sizes = { "train": 200000, "dev": 1000 }
 
     # prepare data loaders
     datasets, data_loaders = dict(), dict()
     for mode in ["train", "dev"]:
-        datasets[mode] = Aspire(mode=mode)
+        datasets[mode] = Aspire(mode=mode, data_size=sizes[mode])
         data_loaders[mode] = AudioDataLoader(datasets[mode], batch_size=args.batch_size,
                                              num_workers=args.num_workers, shuffle=True,
                                              use_cuda=args.use_cuda, pin_memory=True)
-
-    # number of supervised and unsupervised examples
-    train_data_size = len(data_loaders["train"])
-    dev_data_size = len(data_loaders["dev"])
 
     # initializing local variables to maintain the best validation accuracy
     # seen across epochs over the supervised training set
@@ -45,9 +39,9 @@ def train_conv(args):
     # run inference for a certain number of epochs
     for i in range(conv_am.epoch, args.num_epochs):
         # get the losses for an epoch
-        avg_loss = conv_am.train_epoch(data_loaders, train_data_size)
+        avg_loss = conv_am.train_epoch(data_loaders["train"])
         # validate
-        validation_accuracy = conv_am.get_accuracy(data_loaders["dev"], dev_data_size, desc="validating")
+        validation_accuracy = conv_am.get_accuracy(data_loaders["dev"], desc="validating")
 
         logger.info(f"epoch {conv_am.epoch:03d}: "
                     f"avg_loss {avg_loss:7.3f} "
@@ -73,11 +67,6 @@ def train_conv(args):
 
 
 def train_ssvae(args):
-    """
-    train SS-VAE model
-    :param args: arguments for SS-VAE
-    :return: None
-    """
     if args.visualize:
         from plot import visualize_setup, plot_samples, plot_tsne
         visualize_setup(args.log_dir)
@@ -85,14 +74,16 @@ def train_ssvae(args):
     # batch_size: number of images (and labels) to be considered in a batch
     ss_vae = SsVae(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
 
-    # prepare data loaders
-    data_loaders = setup_data_loaders(batch_size=args.batch_size, use_cuda=args.use_cuda,
-                                      num_workers=args.num_workers, drop_last=True)
+    # if you want to limit the datasets' entry size
+    sizes = { "train_unsup": 200000, "train_sup": 1000, "dev": 1000 }
 
-    # number of supervised and unsupervised examples
-    unsup_num = len(data_loaders["train_unsup"])
-    sup_num = len(data_loaders["train_sup"])
-    val_num = len(data_loaders["dev"])
+    # prepare data loaders
+    datasets, data_loaders = dict(), dict()
+    for mode in ["train_unsup", "train_sup", "dev"]:
+        datasets[mode] = Aspire(mode=mode, data_size=sizes[mode])
+        data_loaders[mode] = AudioDataLoader(datasets[mode], batch_size=args.batch_size,
+                                             num_workers=args.num_workers, shuffle=True,
+                                             use_cuda=args.use_cuda, pin_memory=True)
 
     # initializing local variables to maintain the best validation accuracy
     # seen across epochs over the supervised training set
@@ -102,9 +93,9 @@ def train_ssvae(args):
     # run inference for a certain number of epochs
     for i in range(ss_vae.epoch, args.num_epochs):
         # get the losses for an epoch
-        avg_losses_sup, avg_losses_unsup = ss_vae.train_epoch(data_loaders, unsup_num, sup_num)
+        avg_losses_sup, avg_losses_unsup = ss_vae.train_epoch(data_loaders)
         # validate
-        validation_accuracy = ss_vae.get_accuracy(data_loaders["dev"], val_num, desc="validating")
+        validation_accuracy = ss_vae.get_accuracy(data_loaders["dev"], desc="validating")
 
         str_avg_loss_sup = ' '.join([f"{x:7.3f}" for x in avg_losses_sup])
         str_avg_loss_unsup = ' '.join([f"{x:7.3f}" for x in avg_losses_unsup])
@@ -158,7 +149,7 @@ if __name__ == "__main__":
     conv_parser.add_argument('--num-workers', default=16, type=int, help="number of dataloader workers")
     conv_parser.add_argument('--num-epochs', default=1000, type=int, help="number of epochs to run")
     conv_parser.add_argument('--batch-size', default=1024, type=int, help="number of images (and labels) to be considered in a batch")
-    conv_parser.add_argument('--init-lr', default=0.001, type=float, help="initial learning rate for Adam optimizer")
+    conv_parser.add_argument('--init-lr', default=0.0001, type=float, help="initial learning rate for Adam optimizer")
     # optional
     conv_parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     conv_parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")

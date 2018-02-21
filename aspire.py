@@ -214,10 +214,11 @@ class Aspire(AudioDataset):
     entries = list()
     entry_frames = list()
 
-    def __init__(self, root=None, mode=None, *args, **kwargs):
+    def __init__(self, root=None, mode=None, data_size=1e30, *args, **kwargs):
         assert mode in ["train_sup", "train_unsup", "train", "dev", "test"], \
             "invalid mode options: either one of \"train_sup\", \"train_unsup\", \"train\", \"dev\", or \"test\""
         self.mode = mode
+        self.data_size = data_size
         if root is not None:
             self.root = Path(root).resolve()
         self._load_manifest()
@@ -257,23 +258,13 @@ class Aspire(AudioDataset):
         logger.info(f"loading dataset manifest {manifest_file} ...")
         with open(manifest_file, "r") as f:
             manifest = f.readlines()
-        self.entries = [tuple(x.strip().split(',')) for x in manifest]
+        size = min(self.data_size, len(manifest))
+        self.entries = [tuple(x.strip().split(',')) for x in manifest[:size]]
         if self.mode == "train_unsup":
             self.entry_frames = [_samples2frames(int(e[2])) for e in self.entries]
         else:
             self.entry_frames = [int(e[4]) for e in self.entries]
         logger.info(f"{len(self.entries)} entries, {sum(self.entry_frames)} frames are loaded.")
-
-
-def setup_data_loaders(root=DATA_ROOT, batch_size=1, sup_num=None, use_cuda=False, num_workers=0, **kwargs):
-    # instantiate the dataset as training/testing sets
-    datasets, data_loaders = dict(), dict()
-
-    for mode in ["train_unsup", "train_sup", "dev"]:
-        datasets[mode] = Aspire(root=root, mode=mode)
-        data_loaders[mode] = AudioDataLoader(datasets[mode], batch_size=batch_size, num_workers=num_workers,
-                                             shuffle=True, use_cuda=use_cuda, **kwargs)
-    return data_loaders
 
 
 if __name__ == "__main__":

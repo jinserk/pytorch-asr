@@ -29,42 +29,41 @@ class PredictLoader(AudioDataset):
         return tensor
 
 
-def predict_conv(args):
-    # load model
-    conv = ConvAM(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
+class Predict(object):
 
-    for wav_file in args.wav_files:
+    def __init__(self, args):
+        if args.model == "conv":
+            self.model = ConvAM(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
+        else:
+            self.model = SsVae(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
+
+        self.data_loader = PredictLoader(use_cuda=args.use_cuda, resample=True, sample_rate=p.SAMPLE_RATE,
+                                         frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT)
+
+    def __call__(self, wav_files):
+        for wav_file in wav_files:
+            self._predict(wav_file)
+
+    def _predict(self, wav_file, logging=False):
         # prepare data
-        data_loader = PredictLoader(use_cuda=args.use_cuda, resample=True, sample_rate=p.SAMPLE_RATE,
-                                    frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT)
-        xs = data_loader.load(wav_file)
+        xs = self.data_loader.load(wav_file)
         xs = Variable(xs)
         # classify phones
         with torch.no_grad():
-            alpha = conv.classifier(xs)
+            alpha = self.model.classifier(xs)
 
         res, phn_idx = torch.topk(alpha, 1)
-        phns = list(torch.squeeze(phn_idx).cpu().numpy())
-        logger.info(f"prediction of {wav_file}: {phns}")
+        if args.use_cuda:
+            phns = list(torch.squeeze(phn_idx).cpu().numpy())
+        else:
+            phns = list(torch.squeeze(phn_idx).numpy())
+        if logging:
+            logger.info(f"prediction of {wav_file}: {phns}")
+        return phns
 
-
-def predict_ssvae(args):
-    # load model
-    ss_vae = SsVae(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
-
-    for wav_file in args.wav_files:
-        # prepare data
-        data_loader = PredictLoader(use_cuda=args.use_cuda, resample=True, sample_rate=p.SAMPLE_RATE,
-                                    frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT)
-        xs = data_loader.load(wav_file)
-        xs = Variable(xs)
-        # classify phones
-        with torch.no_grad():
-            alpha = ss_vae.classifier(xs)
-
-        res, phn_idx = torch.topk(alpha, 1)
-        phns = list(torch.squeeze(phn_idx).cpu().numpy())
-        logger.info(f"prediction of {wav_file}: {phns}")
+    def decode(self, wav_files):
+        for wav_file in wav_files:
+            phns = _predict(wav_file)
 
 
 if __name__ == "__main__":
@@ -110,7 +109,6 @@ if __name__ == "__main__":
         torch.set_default_tensor_type("torch.cuda.FloatTensor")
 
     # run prediction
-    if args.model == "conv":
-        predict_conv(args)
-    else:
-        predict_ssvae(args)
+    predict = Predict(args)
+    predict(args.wav_files)
+

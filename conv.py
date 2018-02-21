@@ -76,17 +76,14 @@ class ConvAM(nn.Module):
         ys = ys.scatter_(1, ind, 1.0)
         return ys
 
-    def train_epoch(self, data_loaders, train_data_size):
+    def train_epoch(self, data_loader):
         # initialize variables to store loss values
         epoch_loss = 0.
 
-        # setup the iterators for training data loaders
-        train_iter = iter(data_loaders["train"])
-
         # count the number of supervised batches seen in this epoch
-        for i in tqdm(range(train_data_size), desc="training  "):
+        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc="training  "):
             # extract the corresponding batch
-            xs, ys = next(train_iter)
+            xs, ys = data
             res, ind = torch.topk(ys, 1)
             ys = ind.long().squeeze()
             xs, ys = Variable(xs), Variable(ys)
@@ -106,16 +103,13 @@ class ConvAM(nn.Module):
         avg_loss = epoch_loss.cpu().data[0] / train_data_size
         return avg_loss
 
-    def get_accuracy(self, data_loader, val_num, desc=None):
+    def get_accuracy(self, data_loader, desc=None):
         """
         compute the accuracy over the supervised training set or the testing set
         """
-        # use the appropriate data loader
-        data_iter = iter(data_loader)
-
         predictions, actuals = [], []
-        for i in tqdm(range(val_num), desc=desc):
-            xs, ys = next(data_iter)
+        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
+            xs, ys = data
             xs, ys = Variable(xs), Variable(ys)
             # use classification function to compute all predictions for each batch
             with torch.no_grad():
