@@ -21,7 +21,7 @@ def train_conv(args):
     conv_am = ConvAM(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
 
     # if you want to limit the datasets' entry size
-    sizes = { "train": 200000, "dev": 1000 }
+    sizes = { "train": 100000, "dev": 1000 }
 
     # prepare data loaders
     datasets, data_loaders = dict(), dict()

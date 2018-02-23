@@ -49,7 +49,7 @@ class ConvAM(nn.Module):
 
     def __setup_networks(self):
         # define the neural networks used later in the model and the guide.
-        self.encoder = ConvEncoderY(x_dim=self.x_dim, y_dim=self.y_dim, softmax=False)
+        self.encoder = DenseEncoderY(x_dim=self.x_dim, y_dim=self.y_dim, softmax=False)
 
         # setup the optimizer
         parameters = self.encoder.parameters()
@@ -100,7 +100,7 @@ class ConvAM(nn.Module):
             del loss, y_hats
 
         # compute average epoch loss i.e. loss per example
-        avg_loss = epoch_loss.cpu().data[0] / train_data_size
+        avg_loss = epoch_loss.cpu().data[0] / len(data_loader)
         return avg_loss
 
     def get_accuracy(self, data_loader, desc=None):

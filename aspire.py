@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 import subprocess as sp
+import random
 
 import numpy as np
 
@@ -258,8 +259,12 @@ class Aspire(AudioDataset):
         logger.info(f"loading dataset manifest {manifest_file} ...")
         with open(manifest_file, "r") as f:
             manifest = f.readlines()
+        self.entries = [tuple(x.strip().split(',')) for x in manifest]
+        # drop short entries less than 1 sec
+        self.entries = [e for e in self.entries if (_samples2frames(int(e[2])) > 100)]
+        # randomly choose a number of data_size
         size = min(self.data_size, len(manifest))
-        self.entries = [tuple(x.strip().split(',')) for x in manifest[:size]]
+        self.entries = random.sample(self.entries, size)
         if self.mode == "train_unsup":
             self.entry_frames = [_samples2frames(int(e[2])) for e in self.entries]
         else:
