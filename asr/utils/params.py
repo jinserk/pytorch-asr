@@ -1,10 +1,14 @@
-import scipy as sp
+#!python
+from scipy.signal import tukey
+
+# global constants
+MODEL_SUFFIX = "pth.tar"
 
 # feature frames params
 SAMPLE_RATE = 8000
 WINDOW_SHIFT = 0.010  # sec
 WINDOW_SIZE = 0.025   # sec
-WINDOW = sp.signal.tukey
+WINDOW = tukey
 
 # spectrogram
 NFFT = 256
@@ -25,3 +29,5 @@ NUM_HIDDEN = [256, 256]
 NUM_STYLE = 256
 EPS = 1e-9
 
+# for capsule network
+NUM_ROUTING_ITERATIONS = 5

@@ -8,10 +8,10 @@ import numpy as np
 from tqdm import tqdm
 import torch
 
-from utils.audio import AudioDataset, AudioDataLoader, Int2OneHot
-from utils.kaldi_io import smart_open, read_string, read_vec_int
-from utils.logger import logger
-import utils.params as p
+from .utils.audio import AudioDataset, AudioDataLoader, Int2OneHot
+from .utils.kaldi_io import smart_open, read_string, read_vec_int
+from .utils.logger import logger
+from .utils import params as p
 
 
 """

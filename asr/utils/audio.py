@@ -452,6 +452,23 @@ class AudioDataLoader(DataLoader):
         return AudioDataLoaderIter(self)
 
 
+class PredictDataLoader:
+
+    def __init__(self, dataset, use_cuda=False, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dataset = dataset
+        self.use_cuda = use_cuda
+
+    def load(self, wav_file):
+        # read and transform wav file
+        if self.dataset.transform is not None:
+            tensor = self.dataset.transform(wav_file)
+        tensor = torch.stack(tensor)
+        if self.use_cuda:
+            tensor = tensor.cuda()
+        return tensor
+
+
 if __name__ == "__main__":
     # test Augment
     if False:
