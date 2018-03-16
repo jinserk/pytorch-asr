@@ -1,28 +1,44 @@
-# Semisupervised Sequential Variational Autoencoder
+# ASR with Pytorch and Pyro
 
-This repository maintains an experimental code of SS-VAE implementation <span id="a1">[[1]](#f1)</span> using [Pytorch](https://github.com/pytorch/pytorch) and [Pyro](https://github.com/pyro/pyro).
-The code was tested with Python 3.6.4, Pytorch 0.4.0a0, and Pyro.
+This repository maintains an experimental code for speech recognition using [Pytorch](https://github.com/pytorch/pytorch) and [Pyro](https://github.com/pyro/pyro).
+The Kaldi latgen decoder is integrated with Pytorch binding for CTC based acoustic model training.
+The code was tested with Python 3.6.4, Pytorch 0.4.0a0, and Pyro 0.2.0a.
 
 ## Installation
 
 We recommend [pyenv](https://github.com/pyenv/pyenv). We assume you already have pyenv and Python 3.6.4 and Pytorch 0.4.0a0 under it.
+Do not forget to set `pyenv local 3.6.4` in the local repo if you decide to use pyenv.
 
-Download [ss-vae](https://github.com/jinserk/ss-vae.git"):
+Download:
 ```
-$ git clone https://github.com/jinserk/ss-vae.git
+$ git clone https://github.com/jinserk/pytorch-asr.git
 ```
 
 Install required Python modules:
 ```
-$ cd ss-vae
+$ cd pytorch-asr
 $ pip install -r requrements.txt
 ```
 
-Done!
+Modify the Kaldi path in `_path.py`:
+```
+$ cd asr/kaldi
+$ vi _path.py
+
+KALDI_ROOT = <Kaldi installation path>
+```
+
+Build up Pytorch-binding of Kaldi decoder:
+```
+$ python build.py
+```
+This takes a while to download the Kaldi's official ASpIRE chain model and its post-processing.
+You can use the asr/kaldi/graph/tokens.txt file as the CTC labels in training.
+
 
 ## Train and checking
 
-Do not forget to set `pyenv local 3.6.4` in the local repo
+This repository is a kind of framework to support multi acoustic models. You have to specify one of model to train or predict.
 
 Running visdom server if you give the commandline options `--visualize`
 ```
@@ -31,18 +47,17 @@ $ python -m visdom.server
 
 In order to start a new training:
 ```
-$ python train.py
+$ python train.py <model-name>
 ```
+add `--help` option to see what parameters are available for each model.
 
 If you want to resume training from a model file:
 ```
-$ python train.py --continue_from <model_filename>
+$ python train.py <model-name> --continue_from <model-file>
 ```
 
-You can see the sampled digits and latent variable T-SNE plots via web browser:
+You can predict a sample with trained model file:
 ```
-https://localhost:8097
+$ python predict.py <model-name> --continue_from <model-file> <target-wav-file>
 ```
 
-## Reference
-[1] <span id="f1"></span> Kingma, Diederik P, Danilo J Rezende, Shakir Mohamed, and Max Welling, “Semi-Supervised Learning with Deep Generative Models.”, 2014 (http://arxiv.org/abs/1406.5298) [$\hookleftarrow$](#a1)
