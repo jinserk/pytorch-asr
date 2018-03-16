@@ -105,3 +105,10 @@ data/
 logs*/
 tsne/
 temp/
+
+# c/c++
+*.d
+*.o
+asr/kaldi/_ext
+asr/kaldi/scripts/aspire
+asr/kaldi/graph
