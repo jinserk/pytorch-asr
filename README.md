@@ -25,10 +25,11 @@ Modify the Kaldi path in `_path.py`:
 $ cd asr/kaldi
 $ vi _path.py
 
-KALDI_ROOT = <Kaldi installation path>
+KALDI_ROOT = <kaldi-installation-path>
 ```
 
 Build up Pytorch-binding of Kaldi decoder:
+To avoid the `-fPIC` related compile error, you need configured with `--shared` option when install Kaldi itself.
 ```
 $ python build.py
 ```
