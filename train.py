@@ -7,11 +7,10 @@ from pathlib import Path
 from asr import convnet
 from asr import densenet
 from asr import capsule1
-
-data_root = Path.cwd().resolve() / "data" / "aspire"
+from asr import capsule2
 
 argv = sys.argv[1:]
-models = set(["convnet", "densenet", "capsule1"])
+models = set(["convnet", "densenet", "capsule1", "capsule2"])
 model = None
 for opt in argv:
     if opt in models:
@@ -20,11 +19,13 @@ for opt in argv:
         break
 
 if model == "convnet":
-    convnet.train(argv, data_root)
+    convnet.train(argv)
 elif model == "densenet":
-    densenet.train(argv, data_root)
+    densenet.train(argv)
 elif model == "capsule1":
-    capsule1.train(argv, data_root)
+    capsule1.train(argv)
+elif model == "capsule2":
+    capsule2.train(argv)
 else:
     print(f"Error: choose one of models in {models}")
     sys.exit(1)

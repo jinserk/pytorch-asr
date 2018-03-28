@@ -6,7 +6,7 @@ from aspire import Aspire
 from utils.audio import AudioDataLoader
 import utils.params as p
 
-from ssvae import SsVae
+from model import SsVae
 from conv import ConvAM
 from capsule import CapsuleModel
 

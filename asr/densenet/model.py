@@ -49,7 +49,7 @@ class DenseNetModel(nn.Module):
 
     def __setup_networks(self):
         # define the neural networks used later in the model and the guide.
-        self.encoder = DenseNet(x_dim=self.x_dim, y_dim=self.y_dim, softmax=False)
+        self.encoder = DenseNet(x_dim=self.x_dim, y_dim=self.y_dim)
 
         # setup the optimizer
         parameters = self.encoder.parameters()
@@ -74,7 +74,7 @@ class DenseNetModel(nn.Module):
         # convert the digit(s) to one-hot tensor(s)
         ys = Variable(torch.zeros(alpha.size()))
         ys = ys.scatter_(1, ind, 1.0)
-        return ys
+        return ys, ind
 
     def train_epoch(self, data_loader):
         # initialize variables to store loss values
@@ -113,7 +113,8 @@ class DenseNetModel(nn.Module):
             xs, ys = Variable(xs), Variable(ys)
             # use classification function to compute all predictions for each batch
             with torch.no_grad():
-                predictions.append(self.classifier(xs))
+                y_hat, _ = self.classifier(xs)
+                predictions.append(y_hat)
             actuals.append(ys)
 
         # compute the number of accurate predictions

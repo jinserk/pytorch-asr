@@ -13,12 +13,13 @@ if not GRAPH_PATH.exists():
     print("ERROR: no graph path found. please run build.py first")
     sys.exit(1)
 
-DEFAULT_TOKEN = GRAPH_PATH.joinpath("tokens.txt")
-DEFAULT_GRAPH = GRAPH_PATH.joinpath("TLG.fst")
+DEFAULT_GRAPH = GRAPH_PATH.joinpath("CLG.fst")
+DEFAULT_TOKEN = GRAPH_PATH.joinpath("phones.txt")
 DEFAULT_WORDS = GRAPH_PATH.joinpath("words.txt")
 
 
 class LatGenDecoder(Function):
+    """ decoder using position-dependent phones as the acoustic model labels """
 
     def __init__(self, beam=16.0, max_active=8000, min_active=200,
                  acoustic_scale=1.0, allow_partial=True,
@@ -35,6 +36,12 @@ class LatGenDecoder(Function):
         wd_in_filename = wd_file.encode('ascii')
         latgen_lib.initialize(beam, max_active, min_active, acoustic_scale,
                               allow_partial, fst_in_filename, wd_in_filename)
+        # load words table
+        self.words = list()
+        with open(wd_file, "r") as f:
+            for line in f:
+                record = line.strip().split()
+                self.words.append(record[0])
 
     def forward(self, loglikes):
         assert loglikes.dim() == 3 and loglikes.shape[-1] == self.num_token
@@ -48,3 +55,15 @@ class LatGenDecoder(Function):
 
     def backward(self, grad_output):
         pass
+
+
+DEFAULT_CTC_GRAPH = GRAPH_PATH.joinpath("TLG.fst")
+DEFAULT_CTC_TOKEN = GRAPH_PATH.joinpath("tokens.txt")
+
+class LatGenCTCDecoder(LatGenDecoder):
+    """ decoder using CTC tokens with blank label in the acoustic model """
+
+    def __init__(self, token_file=str(DEFAULT_CTC_TOKEN), fst_file=str(DEFAULT_CTC_GRAPH),
+                 *args, **kwargs):
+        super().__init__(token_file=token_file, fst_file=fst_file, *args, **kwargs)
+

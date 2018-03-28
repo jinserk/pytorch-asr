@@ -10,7 +10,7 @@ from ..utils.logger import logger, set_logfile
 from ..utils.audio import AudioDataLoader
 from ..utils import misc
 from ..utils import params as p
-from ..aspire import Aspire
+from ..dataset.aspire import Aspire
 
 from .model import ConvNetModel
 

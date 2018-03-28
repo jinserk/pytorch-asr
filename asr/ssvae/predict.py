@@ -7,7 +7,7 @@ from utils.logger import logger, set_logfile
 from utils.audio import AudioDataset
 import utils.params as p
 
-from ssvae import SsVae
+from model import SsVae
 from conv import ConvAM
 
 MODEL_SUFFIX = "pth.tar"

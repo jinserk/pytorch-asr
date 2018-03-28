@@ -75,7 +75,6 @@ else
   echo "LG.fst already exists and is new"
 fi
 
-# FIXME: Do we need to make CLG?  
 if false; then
   N=3 #$(tree-info $tree | grep "context-width" | cut -d' ' -f2) || { echo "Error when getting context-width"; exit 1; }
   P=1 #$(tree-info $tree | grep "central-position" | cut -d' ' -f2) || { echo "Error when getting central-position"; exit 1; }
@@ -93,19 +92,22 @@ if false; then
     mv $clg_tmp $clg_fst
     mv $ilabels_tmp $ilabels
     fstisstochastic $clg_fst || echo "[info]: $clg_fst is not stochastic."
-  fi
-  fsttablecompose $t_fst $clg_fst > $out_dir/TCLG.fst || exit 1;
-  echo "Composing decoding graph TCLG.fst succeeded"
-else
-  tlg_fst=$out_dir/TLG.fst
-  tlg_tmp=$tlg_fst.$$
-  trap "rm -f $tlg_tmp" EXIT HUP INT PIPE TERM
-  if [[ ! -s $tlg_fst || $tlg_fst -ot $t_fst || $tlg_fst -ot $lg_fst ]]; then
-    fsttablecompose $t_fst $lg_fst > $tlg_tmp || exit 1;
-    mv $tlg_tmp $tlg_fst
-    echo "Composing decoding graph TLG.fst succeeded"
   else
-    echo "TLG.fst already exists and is new"
+    echo "CLG.fst already exists and is new"
   fi
+
+  #fsttablecompose $t_fst $clg_fst > $out_dir/TCLG.fst || exit 1;
+  #echo "Composing decoding graph TCLG.fst succeeded"
+fi
+
+tlg_fst=$out_dir/TLG.fst
+
+trap "rm -f $tlg_tmp" EXIT HUP INT PIPE TERM
+if [[ ! -s $tlg_fst || $tlg_fst -ot $t_fst || $tlg_fst -ot $lg_fst ]]; then
+  fsttablecompose $t_fst $lg_fst > $tlg_tmp || exit 1;
+  mv $tlg_tmp $tlg_fst
+  echo "Composing decoding graph TLG.fst succeeded"
+else
+  echo "TLG.fst already exists and is new"
 fi
 

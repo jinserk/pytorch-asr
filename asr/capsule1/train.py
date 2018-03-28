@@ -9,7 +9,7 @@ import torch
 from ..utils.logger import logger, set_logfile
 from ..utils.audio import AudioDataLoader
 from ..utils import misc
-from ..aspire import Aspire
+from ..dataset.aspire import Aspire
 
 from .model import FirstCapsuleNetModel
 

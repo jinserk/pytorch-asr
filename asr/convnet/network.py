@@ -6,7 +6,7 @@ from torch.autograd import Variable
 
 from pyro.nn import ClippedSoftmax, ClippedSigmoid
 
-from ..common import View, MultiOut, Swish
+from ..utils.misc import View, MultiOut, Swish
 from ..utils import params as p
 
 

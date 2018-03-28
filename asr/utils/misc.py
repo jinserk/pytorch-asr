@@ -22,6 +22,15 @@ class View(nn.Module):
         return x.view(*self.dim)
 
 
+class MultiOut(nn.ModuleList):
+
+    def __init__(self, modules):
+        super().__init__(modules)
+
+    def forward(self, *args, **kwargs):
+        return (m.forward(*args, **kwargs) for m in self)
+
+
 class Swish(nn.Module):
 
     def forward(self, x):

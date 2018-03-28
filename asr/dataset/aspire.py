@@ -8,10 +8,11 @@ import numpy as np
 from tqdm import tqdm
 import torch
 
-from .utils.audio import AudioDataset, AudioDataLoader, Int2OneHot
-from .utils.kaldi_io import smart_open, read_string, read_vec_int
-from .utils.logger import logger
-from .utils import params as p
+from ..utils.audio import AudioDataset, AudioDataLoader, Int2OneHot
+from ..utils.kaldi_io import smart_open, read_string, read_vec_int
+from ..utils.logger import logger
+from ..utils import params as p
+from ..kaldi._path import KALDI_ROOT
 
 
 """
@@ -19,14 +20,14 @@ This recipe requires Kaldi's egs/aspire/s5 recipe directory containing the resul
 of its own scripts, especially the data/ and the exp/
 """
 
-KALDI_ROOT = Path("/home/jbaik/kaldi").resolve()
-ASPIRE_ROOT = Path(KALDI_ROOT, "egs/aspire/ics").resolve()
-DATA_ROOT = (Path(__file__).parent / "data" / "aspire").resolve()
+KALDI_PATH = Path(KALDI_ROOT).resolve()
+ASPIRE_PATH = Path(KALDI_PATH, "egs/aspire/ics").resolve()
+DATA_PATH = (Path(__file__).parents[2] / "data" / "aspire").resolve()
 
-assert KALDI_ROOT.exists(), \
-    f"no such path \"{str(KALDI_ROOT)}\" not found"
-assert ASPIRE_ROOT.exists(), \
-    f"no such path \"{str(ASPIRE_ROOT)}\" not found"
+assert KALDI_PATH.exists(), \
+    f"no such path \"{str(KALDI_PATH)}\" not found"
+assert ASPIRE_PATH.exists(), \
+    f"no such path \"{str(ASPIRE_PATH)}\" not found"
 
 WIN_SAMP_SIZE = p.SAMPLE_RATE * p.WINDOW_SIZE
 WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
@@ -54,7 +55,7 @@ def split_wav(mode, target_dir):
     import io
     import wave
 
-    data_dir = Path(ASPIRE_ROOT, "data", mode).resolve()
+    data_dir = Path(ASPIRE_PATH, "data", mode).resolve()
     segments_file = Path(data_dir, "segments")
     logger.info(f"processing {str(segments_file)} file ...")
     segments = dict()
@@ -99,7 +100,7 @@ def split_wav(mode, target_dir):
 
 
 def get_transcripts(mode, target_dir):
-    data_dir = Path(ASPIRE_ROOT, "data", mode).resolve()
+    data_dir = Path(ASPIRE_PATH, "data", mode).resolve()
     texts_file = Path(data_dir, "text")
     logger.info(f"processing {str(texts_file)} file ...")
     manifest = dict()
@@ -121,15 +122,16 @@ def get_alignments(target_dir):
     import pipes
     import gzip
 
-    exp_dir = Path(ASPIRE_ROOT, "exp", "tri5a").resolve()
+    exp_dir = Path(ASPIRE_PATH, "exp", "tri5a").resolve()
     models = exp_dir.glob("*.mdl")
     model = sorted(models, key=lambda x: x.stat().st_mtime)[-1]
 
     logger.info("processing alignment files ...")
+    logger.info(f"using the trained kaldi model: {model}")
     manifest = dict()
     alis = [x for x in exp_dir.glob("ali.*.gz")]
     for ali in tqdm(alis):
-        cmd = [ str(Path(KALDI_ROOT, "src", "bin", "ali-to-phones")),
+        cmd = [ str(Path(KALDI_PATH, "src", "bin", "ali-to-phones")),
                 "--per-frame", f"{model}", f"ark:-", f"ark,f:-" ]
         with gzip.GzipFile(ali, "rb") as a:
             p = sp.run(cmd, stdout=sp.PIPE, stderr=sp.PIPE, input=a.read())
@@ -149,14 +151,18 @@ def get_alignments(target_dir):
     return manifest
 
 
-def prepare_data(target_dir):
+def prepare_data(target_dir=None):
     """
     since the target time-alignment exists only on the train set,
     we split the train set into train and dev set
     """
-    #train_wav_manifest = split_wav("train", DATA_ROOT)
-    train_txt_manifest = get_transcripts("train", DATA_ROOT)
-    #phn_manifest = get_alignments(DATA_ROOT)
+    if target_dir is None:
+        target_dir = DATA_PATH
+    logger.info(f"target data path : {target_dir}")
+
+    train_wav_manifest = split_wav("train", target_dir)
+    train_txt_manifest = get_transcripts("train", target_dir)
+    phn_manifest = get_alignments(target_dir)
 
     logger.info("generating manifest files ...")
     with open(Path(target_dir, "train.csv"), "w") as f1:
@@ -211,7 +217,7 @@ class Aspire(AudioDataset):
         mode (str): either one of "train", "dev", or "test"
         data_dir (path): dir containing the processed data and manifests
     """
-    root = DATA_ROOT
+    root = DATA_PATH
     entries = list()
     entry_frames = list()
 
@@ -253,7 +259,7 @@ class Aspire(AudioDataset):
         manifest_file = self.root / f"{self.mode}.csv"
         if not self.root.exists() or not manifest_file.exists():
             logger.error(f"no such path {self.root} or manifest file {manifest_file} found. "
-                         f"need to run 'python {__file__}' first")
+                         f"need to run 'python prepare.py aspire' first")
             sys.exit(1)
 
         logger.info(f"loading dataset manifest {manifest_file} ...")
@@ -274,7 +280,7 @@ class Aspire(AudioDataset):
 
 if __name__ == "__main__":
     if False:
-        reconstruct_manifest(DATA_ROOT)
+        reconstruct_manifest(DATA_PATH)
 
     if True:
         train_dataset = Aspire(mode="test")

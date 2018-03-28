@@ -81,10 +81,11 @@ class DenseNet(nn.Module):
         drop_rate (float) - dropout rate after each dense layer
     """
     def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, growth_rate=4, block_config=(6, 12, 24, 48, 16),
-                 num_init_features=64, bn_size=4, drop_rate=0, softmax=True, eps=p.EPS):
+                 num_init_features=64, bn_size=4, drop_rate=0, eps=p.EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
+        self.eps = eps
         # First convolution
         self.hidden = nn.Sequential(OrderedDict([
             ("view.i", View(dim=(-1, 2, 129, 21))),
@@ -112,8 +113,6 @@ class DenseNet(nn.Module):
         self.hidden.add_module("pool.f", nn.AvgPool2d(kernel_size=2, stride=1))
         self.hidden.add_module("view.f", View(dim=(-1, 195 * 4)))
         self.hidden.add_module("class.f", nn.Linear(195 * 4, y_dim))
-        if softmax:
-            self.hidden.add_module("softmax.f", ClippedSoftmax(eps, dim=1))
 
         # Official init from torch repo.
         for m in self.modules():
@@ -125,9 +124,12 @@ class DenseNet(nn.Module):
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
 
-    def forward(self, x):
+    def forward(self, x, softmax=False):
         out = self.hidden(x)
-        return out
+        if softmax:
+            return ClippedSoftmax(self.eps, dim=1)(out)
+        else:
+            return out
 
     def test(self):
         xs = torch.randn(10, self.x_dim)

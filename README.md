@@ -46,6 +46,12 @@ Running visdom server if you give the commandline options `--visualize`
 $ python -m visdom.server
 ```
 
+If you do training for the first time, you have to prepare the dataset. Currently we support only the Kaldi's ASpIRE recipe datatset, originated from LDC's fisher corpus.
+It uses the phone alignment data from the result of the Kaldi recipe, so you need running the recipe at least once.
+```
+$ python prepare.py aspire
+```
+
 In order to start a new training:
 ```
 $ python train.py <model-name>
