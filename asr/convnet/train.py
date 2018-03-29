@@ -10,7 +10,7 @@ from ..utils.logger import logger, set_logfile
 from ..utils.audio import AudioDataLoader
 from ..utils import misc
 from ..utils import params as p
-from ..dataset.aspire import Aspire
+from ..dataset.aspire import AspireDataset
 
 from .model import ConvNetModel
 
@@ -18,6 +18,7 @@ from .model import ConvNetModel
 def parse_options(argv):
     parser = argparse.ArgumentParser(description="CNN AM with fully supervised training")
     # for training
+    parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
     parser.add_argument('--num-workers', default=16, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=1000, type=int, help="number of epochs to run")
     parser.add_argument('--batch-size', default=1024, type=int, help="number of images (and labels) to be considered in a batch")
@@ -52,7 +53,7 @@ def parse_options(argv):
     return args
 
 
-def train(argv, data_root=None):
+def train(argv):
     args = parse_options(argv)
 
     def get_model_file_path(desc):
@@ -74,7 +75,7 @@ def train(argv, data_root=None):
         # prepare data loaders
         datasets, data_loaders = dict(), dict()
         for mode in ["train", "dev"]:
-            datasets[mode] = Aspire(root=data_root, mode=mode, data_size=sizes[mode])
+            datasets[mode] = AspireDataset(root=args.data_path, mode=mode, data_size=sizes[mode])
             data_loaders[mode] = AudioDataLoader(datasets[mode], batch_size=args.batch_size,
                                                  num_workers=args.num_workers, shuffle=True,
                                                  use_cuda=args.use_cuda, pin_memory=True)

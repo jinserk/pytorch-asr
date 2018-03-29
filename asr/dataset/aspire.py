@@ -8,7 +8,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 
-from ..utils.audio import AudioDataset, AudioDataLoader, Int2OneHot
+from ..utils.audio import AudioDataset, AudioCTCDataset
 from ..utils.kaldi_io import smart_open, read_string, read_vec_int
 from ..utils.logger import logger
 from ..utils import params as p
@@ -204,34 +204,59 @@ def reconstruct_manifest(target_dir):
     logger.info("data preparation finished.")
 
 
-def _samples2frames(samples):
-    num_samples = samples - 2 * SAMPLE_MARGIN
-    return int((num_samples - WIN_SAMP_SIZE) // WIN_SAMP_SHIFT + 1)
+MODES = ["train_sup", "train_unsup", "train", "dev", "test"]
 
 
-class Aspire(AudioDataset):
-    """Kaldi's ASpIRE recipe (LDC Fisher dataset)
-       loading Kaldi's frame-aligned phones target and the corresponding audio files
+def load_manifest(data_root, mode, data_size):
+    assert mode in MODES, f"invalid mode options: either one of {MODES}"
+    manifest_file = data_root / f"{mode}.csv"
+    if not data_root.exists() or not manifest_file.exists():
+        logger.error(f"no such path {data_root} or manifest file {manifest_file} found. "
+                     f"need to run 'python prepare.py aspire' first")
+        sys.exit(1)
 
-    Args:
-        mode (str): either one of "train", "dev", or "test"
-        data_dir (path): dir containing the processed data and manifests
+    logger.info(f"loading dataset manifest {manifest_file} ...")
+    with open(manifest_file, "r") as f:
+        manifest = f.readlines()
+    entries = [tuple(x.strip().split(',')) for x in manifest]
+
+    def _smp2frm(samples):
+        num_samples = samples - 2 * SAMPLE_MARGIN
+        return int((num_samples - WIN_SAMP_SIZE) // WIN_SAMP_SHIFT + 1)
+
+    # drop short entries less than 1 sec
+    entries = [e for e in entries if (_smp2frm(int(e[2])) > 100)]
+    # randomly choose a number of data_size
+    size = min(data_size, len(manifest))
+    selected_entries = random.sample(entries, size)
+    # count each entry's number of frames
+    if mode == "train_unsup":
+        entry_frames = [_smp2frm(int(e[2])) for e in selected_entries]
+    else:
+        entry_frames = [int(e[4]) for e in selected_entries]
+
+    logger.info(f"{len(selected_entries)} entries, {sum(entry_frames)} frames are loaded.")
+    return selected_entries, entry_frames
+
+
+class AspireDataset(AudioDataset):
+    """
+    Kaldi's ASpIRE recipe (LDC Fisher dataset) for frame based training
+    loading Kaldi's frame-aligned phones target and the corresponding audio files
     """
     root = DATA_PATH
     entries = list()
     entry_frames = list()
 
     def __init__(self, root=None, mode=None, data_size=1e30, *args, **kwargs):
-        assert mode in ["train_sup", "train_unsup", "train", "dev", "test"], \
-            "invalid mode options: either one of \"train_sup\", \"train_unsup\", \"train\", \"dev\", or \"test\""
         self.mode = mode
         self.data_size = data_size
         if root is not None:
             self.root = Path(root).resolve()
-        self._load_manifest()
         super().__init__(frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT,
                          window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                         target_transform=Int2OneHot(p.NUM_LABELS), *args, **kwargs)
+                         *args, **kwargs)
+        self.entries, self.entry_frames = load_manifest(self.root, mode, data_size)
 
     def __getitem__(self, index):
         uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
@@ -255,30 +280,46 @@ class Aspire(AudioDataset):
     def __len__(self):
         return len(self.entries)
 
-    def _load_manifest(self):
-        manifest_file = self.root / f"{self.mode}.csv"
-        if not self.root.exists() or not manifest_file.exists():
-            logger.error(f"no such path {self.root} or manifest file {manifest_file} found. "
-                         f"need to run 'python prepare.py aspire' first")
-            sys.exit(1)
 
-        logger.info(f"loading dataset manifest {manifest_file} ...")
-        with open(manifest_file, "r") as f:
-            manifest = f.readlines()
-        self.entries = [tuple(x.strip().split(',')) for x in manifest]
-        # drop short entries less than 1 sec
-        self.entries = [e for e in self.entries if (_samples2frames(int(e[2])) > 100)]
-        # randomly choose a number of data_size
-        size = min(self.data_size, len(manifest))
-        self.entries = random.sample(self.entries, size)
+class AspireCTCDataset(AudioCTCDataset):
+    """
+    Kaldi's ASpIRE recipe (LDC Fisher dataset) for frame based training
+    loading Kaldi's frame-aligned phones target and the corresponding audio files
+    """
+    root = DATA_PATH
+    entries = list()
+    entry_frames = list()
+
+    def __init__(self, root=None, mode=None, data_size=1e30, *args, **kwargs):
+        self.mode = mode
+        self.data_size = data_size
+        if root is not None:
+            self.root = Path(root).resolve()
+        super().__init__(frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT,
+                         window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
+                         *args, **kwargs)
+        self.entries, self.entry_frames = load_manifest(self.root, mode, data_size)
+
+    def __getitem__(self, index):
+        uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
+        # read and transform wav file
+        if self.transform is not None:
+            tensors = self.transform(wav_file)
         if self.mode == "train_unsup":
-            self.entry_frames = [_samples2frames(int(e[2])) for e in self.entries]
-        else:
-            self.entry_frames = [int(e[4]) for e in self.entries]
-        logger.info(f"{len(self.entries)} entries, {sum(self.entry_frames)} frames are loaded.")
+            return tensors, None
+        # read phn file
+        targets = np.loadtxt(phn_file, dtype="int").tolist()
+        targets = torch.IntTensor(targets)
+        return tensors, targets
+
+    def __len__(self):
+        return len(self.entries)
+
 
 
 if __name__ == "__main__":
+    from ..util.audio import AudioDataLoader, AudioCTCDataLoader
+
     if False:
         reconstruct_manifest(DATA_PATH)
 

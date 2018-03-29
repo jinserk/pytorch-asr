@@ -6,7 +6,9 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+import torchnet as tnt
 
+from ..utils.misc import onehot2int
 from ..utils.logger import logger
 from ..utils import params as p
 
@@ -36,6 +38,10 @@ class DenseNetModel(nn.Module):
         self.init_lr = init_lr
         self.epoch = 1
 
+        self.meter_loss = tnt.meter.AverageValueMeter()
+        self.meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
+        self.meter_confusion = tnt.meter.ConfusionMeter(p.NUM_LABELS, normalized=True)
+
         if continue_from is None:
             # define and instantiate the neural networks representing
             # the paramters of various distributions in the model
@@ -56,6 +62,11 @@ class DenseNetModel(nn.Module):
         self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8)
         self.loss = nn.CrossEntropyLoss()
 
+    def __reset_meters(self):
+        self.meter_loss.reset()
+        self.meter_accuracy.reset()
+        self.meter_confusion.reset()
+
     def classifier(self, xs):
         """
         classify an image (or a batch of images)
@@ -63,71 +74,51 @@ class DenseNetModel(nn.Module):
         :param xs: a batch of scaled vectors of pixels from an image
         :return: a batch of the corresponding class labels (as one-hots)
         """
-        # use the trained model q(y|x) = categorical(alpha(x))
         # compute all class probabilities for the image(s)
-        alpha = self.encoder.forward(xs)
-
-        # get the index (digit) that corresponds to
-        # the maximum predicted class probability
-        res, ind = torch.topk(alpha, 1)
-
-        # convert the digit(s) to one-hot tensor(s)
-        ys = Variable(torch.zeros(alpha.size()))
-        ys = ys.scatter_(1, ind, 1.0)
-        return ys, ind
+        ys_hat = self.encoder(xs)
+        # convert one-hot tensor(s) to the digit(s)
+        return onehot2int(ys_hat)
 
     def train_epoch(self, data_loader):
-        # initialize variables to store loss values
-        epoch_loss = 0.
-
+        self.__reset_meters()
         # count the number of supervised batches seen in this epoch
-        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc="training  "):
+        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc="training"):
             # extract the corresponding batch
             xs, ys = data
-            res, ind = torch.topk(ys, 1)
-            ys = ind.long().squeeze()
-            xs, ys = Variable(xs), Variable(ys)
             # run the inference for each loss (loss with size_avarage=True)
             self.optimizer.zero_grad()
-            y_hats = self.encoder(xs)
-            loss = self.loss(y_hats, ys)
-            epoch_loss += loss
+            ys_hat = self.encoder(xs)
+            ys_int = onehot2int(ys)
+            loss = self.loss(ys_hat, ys_int)
             # compute gradient
             loss.backward()
+            # update meters
+            self.meter_loss.add(loss)
+            self.meter_accuracy.add(ys_hat.data, ys_int)
+            self.meter_confusion.add(ys_hat.data, ys_int)
+            # optimize
             self.optimizer.step()
             if self.use_cuda:
                 torch.cuda.synchronize()
-            del loss, y_hats
+            # free
+            del loss, ys_hat
 
-        # compute average epoch loss i.e. loss per example
-        avg_loss = epoch_loss.cpu().data[0] / len(data_loader)
-        return avg_loss
-
-    def get_accuracy(self, data_loader, desc=None):
-        """
-        compute the accuracy over the supervised training set or the testing set
-        """
-        predictions, actuals = [], []
-        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
+    def test(self, data_loader):
+        self.__reset_meters()
+        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc="testing "):
             xs, ys = data
-            xs, ys = Variable(xs), Variable(ys)
             # use classification function to compute all predictions for each batch
             with torch.no_grad():
-                y_hat, _ = self.classifier(xs)
-                predictions.append(y_hat)
-            actuals.append(ys)
-
-        # compute the number of accurate predictions
-        accurate_preds = 0
-        for pred, act in zip(predictions, actuals):
-            pred, act = pred.long(), act.long()
-            for i in range(pred.size(0)):
-                v = torch.sum(pred[i] == act[i])
-                accurate_preds += (v.data[0] == pred.size(1))
-
-        # calculate the accuracy between 0 and 1
-        accuracy = (accurate_preds * 1.0) / (len(predictions) * self.batch_size)
-        return accuracy
+                ys_hat = self.encoder(xs)
+                ys_int = onehot2int(ys)
+                loss = self.loss(xs, ys_int)
+                # update meters
+                self.meter_loss.add(loss)
+                self.meter_accuracy.add(ys_hat.data, ys_int)
+                self.meter_confusion.add(ys_hat.data, ys_int)
+                if self.use_cuda:
+                    torch.cuda.synchronize()
+                del loss, ys_hat
 
     def save(self, file_path, **kwargs):
         Path(file_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -145,7 +136,11 @@ class DenseNetModel(nn.Module):
             logger.error(f"no such file {file_path} exists")
             sys.exit(1)
         logger.info(f"loading the model from {file_path}")
-        states = torch.load(file_path)
+        if not self.use_cuda:
+            #states = torch.load(file_path, map_location=lambda storage, loc: storage)
+            states = torch.load(file_path, map_location="cpu")
+        else:
+            states = torch.load(file_path)
         self.epoch = states["epoch"]
 
         self.__setup_networks()

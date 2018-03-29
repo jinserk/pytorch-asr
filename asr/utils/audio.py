@@ -186,6 +186,37 @@ class AudioDataset(Dataset):
             ])
         else:
             self.transform = transform
+
+        if target_transform is None:
+            self.target_transform = Int2OneHot(p.NUM_LABELS)
+        else:
+            self.target_transform = target_transform
+
+
+class AudioCTCDataset(Dataset):
+
+    def __init__(self,
+                 transform=None, target_transform=None,
+                 resample=False, sample_rate=p.SAMPLE_RATE,
+                 tempo=False, tempo_range=p.TEMPO_RANGE,
+                 gain=False, gain_range=p.GAIN_RANGE,
+                 noise=False, noise_range=p.NOISE_RANGE,
+                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
+                 window=p.WINDOW, nfft=p.NFFT, normalize=True,
+                 frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if transform is None:
+            self.transform = torchaudio.transforms.Compose([
+                Augment(resample=resample, sample_rate=sample_rate,
+                        tempo=tempo, tempo_range=tempo_range,
+                        gain=gain, gain_range=gain_range,
+                        noise=noise, noise_range=noise_range),
+                Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
+                            window_size=window_size, window=window, nfft=nfft,
+                            normalize=normalize),
+            ])
+        else:
+            self.transform = transform
         self.target_transform = target_transform
 
 
@@ -198,7 +229,9 @@ class AudioBatchSampler(BatchSampler):
     def __iter__(self):
         batch = []
         for idx in self.sampler:
-            for fidx in iter(torch.randperm(self.frames[idx]).long()):
+            frame = np.arange(self.frames[idx])
+            np.random.shuffle(frame)
+            for fidx in frame:
                 batch.append((idx, fidx))
                 if len(batch) == self.batch_size:
                     yield batch
@@ -233,6 +266,24 @@ class AudioCollateFn(object):
         else:
             batch = torch.stack(tensors)
         return batch
+
+
+class AudioCTCCollateFn(object):
+
+    def __init__(self, use_cuda=False):
+        self.use_cuda = use_cuda
+
+    def __call__(self, batch):
+        batch_size = len(batch)
+        longest_tensor = max(batch, key=lambda x: x[0].size(2))[0]
+        longest_target = max(batch, key=lambda x: x[1].size(0))[1]
+        tensors = torch.zeros(batch_size, *longest_tensor.shape)
+        targets = torch.ones(batch_size, *longest_target.shape).int() * -1
+        for i in range(batch_size):
+            tensor, target = batch[i]
+            tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
+            targets[i].narrow(0, 0, target.size(0)).copy_(target)
+        return tensors, targets
 
 
 def _worker_loop(dataset, index_queue, data_queue, collate_fn, seed, init_fn, worker_id):
@@ -450,6 +501,19 @@ class AudioDataLoader(DataLoader):
 
     def __iter__(self):
         return AudioDataLoaderIter(self)
+
+
+
+class AudioCTCDataLoader(DataLoader):
+
+    def __init__(self, *args, **kwargs):
+        if "use_cuda" in kwargs:
+            use_cuda = kwargs["use_cuda"]
+            del(kwargs["use_cuda"])
+        else:
+            use_cuda = False
+        collate_fn = AudioCTCCollateFn(use_cuda)
+        super().__init__(collate_fn=collate_fn, *args, **kwargs)
 
 
 class PredictDataLoader:
