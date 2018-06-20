@@ -15,7 +15,7 @@ def get_model_file_path(log_dir, prefix, desc):
 
 def onehot2int(onehot, dim=1):
     _, idx = torch.topk(onehot, dim)
-    idx = idx.squeeze()
+    #idx = idx.squeeze()
     if idx.dim() == 0:
         return int(idx)
     else:

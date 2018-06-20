@@ -4,12 +4,6 @@ import sys
 import argparse
 from pathlib import Path
 
-from asr import convnet
-from asr import densenet
-from asr import densenet_ctc
-from asr import capsule1
-from asr import capsule2
-
 argv = sys.argv[1:]
 models = set(["convnet", "densenet", "densenet_ctc", "capsule1", "capsule2"])
 model = None
@@ -20,14 +14,19 @@ for opt in argv:
         break
 
 if model == "convnet":
+    from asr import convnet
     convnet.train(argv)
 elif model == "densenet":
+    from asr import densenet
     densenet.train(argv)
 elif model == "densenet_ctc":
+    from asr import densenet_ctc
     densenet_ctc.train(argv)
 elif model == "capsule1":
+    from asr import capsule1
     capsule1.train(argv)
 elif model == "capsule2":
+    from asr import capsule2
     capsule2.train(argv)
 else:
     print(f"Error: choose one of models in {models}")

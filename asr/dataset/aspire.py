@@ -207,7 +207,7 @@ def reconstruct_manifest(target_dir):
 MODES = ["train_sup", "train_unsup", "train", "dev", "test"]
 
 
-def load_manifest(data_root, mode, data_size):
+def load_manifest(data_root, mode, data_size, min_len=1, max_len=15):
     assert mode in MODES, f"invalid mode options: either one of {MODES}"
     manifest_file = data_root / f"{mode}.csv"
     if not data_root.exists() or not manifest_file.exists():
@@ -224,8 +224,10 @@ def load_manifest(data_root, mode, data_size):
         num_samples = samples - 2 * SAMPLE_MARGIN
         return int((num_samples - WIN_SAMP_SIZE) // WIN_SAMP_SHIFT + 1)
 
-    # drop short entries less than 1 sec
-    entries = [e for e in entries if (_smp2frm(int(e[2])) > 100)]
+    # pick up entries of 1 to 15 secs
+    MIN_FRAME = min_len / p.WINDOW_SHIFT
+    MAX_FRAME = max_len / p.WINDOW_SHIFT
+    entries = [e for e in entries if _smp2frm(int(e[2])) > MIN_FRAME and _smp2frm(int(e[2])) < MAX_FRAME ]
     # randomly choose a number of data_size
     size = min(data_size, len(manifest))
     selected_entries = random.sample(entries, size)
@@ -302,15 +304,16 @@ class AspireCTCDataset(AudioCTCDataset):
 
     def __getitem__(self, index):
         uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
+        ctc_file = phn_file.replace('phn', 'ctc')
         # read and transform wav file
         if self.transform is not None:
             tensors = self.transform(wav_file)
         if self.mode == "train_unsup":
             return tensors, None
         # read phn file
-        targets = np.loadtxt(phn_file, dtype="int").tolist()
+        targets = np.loadtxt(ctc_file, dtype="int", ndmin=1)
         targets = torch.IntTensor(targets)
-        return tensors, targets
+        return tensors, targets, ctc_file
 
     def __len__(self):
         return len(self.entries)

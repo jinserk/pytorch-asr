@@ -6,8 +6,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from pyro.nn import ClippedSoftmax
-
 from ..utils import params as p
 
 
@@ -31,13 +29,13 @@ class _DenseLayer(nn.Sequential):
 
     def __init__(self, num_input_features, growth_rate, bn_size, drop_rate):
         super().__init__()
-        self.add_module("norm.1", nn.BatchNorm2d(num_input_features)),
-        self.add_module("swish.1", Swish()),
-        self.add_module("conv.1", nn.Conv2d(num_input_features, bn_size *
+        self.add_module("norm_1", nn.BatchNorm2d(num_input_features)),
+        self.add_module("swish_1", Swish()),
+        self.add_module("conv_1", nn.Conv2d(num_input_features, bn_size *
                         growth_rate, kernel_size=1, stride=1, bias=False)),
-        self.add_module("norm.2", nn.BatchNorm2d(bn_size * growth_rate)),
-        self.add_module("swish.2", Swish()),
-        self.add_module("conv.2", nn.Conv2d(bn_size * growth_rate, growth_rate,
+        self.add_module("norm_2", nn.BatchNorm2d(bn_size * growth_rate)),
+        self.add_module("swish_2", Swish()),
+        self.add_module("conv_2", nn.Conv2d(bn_size * growth_rate, growth_rate,
                         kernel_size=3, stride=1, padding=1, bias=False)),
         self.drop_rate = drop_rate
 
@@ -88,11 +86,11 @@ class DenseNet(nn.Module):
         self.eps = eps
         # First convolution
         self.hidden = nn.Sequential(OrderedDict([
-            ("view.i", View(dim=(-1, 2, 129, 21))),
-            ("conv.i", nn.Conv2d(2, num_init_features, kernel_size=3, stride=1, padding=1, bias=False)),
-            ("norm.i", nn.BatchNorm2d(num_init_features)),
-            ("swish.i", Swish()),
-            ("pool.i", nn.MaxPool2d(kernel_size=3, stride=(2, 1), padding=1)),
+            ("view_i", View(dim=(-1, 2, 129, 21))),
+            ("conv_i", nn.Conv2d(2, num_init_features, kernel_size=3, stride=1, padding=1, bias=False)),
+            ("norm_i", nn.BatchNorm2d(num_init_features)),
+            ("swish_i", Swish()),
+            ("pool_i", nn.MaxPool2d(kernel_size=3, stride=(2, 1), padding=1)),
         ]))
 
         # Each denseblock
@@ -108,11 +106,11 @@ class DenseNet(nn.Module):
                 num_features = num_features // 2
 
         # Final layer
-        self.hidden.add_module("norm.f", nn.BatchNorm2d(num_features))
-        self.hidden.add_module("swish.f", Swish())
-        self.hidden.add_module("pool.f", nn.AvgPool2d(kernel_size=2, stride=1))
-        self.hidden.add_module("view.f", View(dim=(-1, 195 * 4)))
-        self.hidden.add_module("class.f", nn.Linear(195 * 4, y_dim))
+        self.hidden.add_module("norm_f", nn.BatchNorm2d(num_features))
+        self.hidden.add_module("swish_f", Swish())
+        self.hidden.add_module("pool_f", nn.AvgPool2d(kernel_size=2, stride=1))
+        self.hidden.add_module("view_f", View(dim=(-1, 195 * 4)))
+        self.hidden.add_module("class_f", nn.Linear(195 * 4, y_dim))
 
         # Official init from torch repo.
         for m in self.modules():
@@ -127,7 +125,7 @@ class DenseNet(nn.Module):
     def forward(self, x, softmax=False):
         out = self.hidden(x)
         if softmax:
-            return ClippedSoftmax(self.eps, dim=1)(out)
+            return nn.Softmax(self.eps, dim=1)(out)
         else:
             return out
 

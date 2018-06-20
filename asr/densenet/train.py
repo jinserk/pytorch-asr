@@ -69,7 +69,7 @@ def train(argv):
     # run inference for a certain number of epochs
     for i in range(model.epoch, args.num_epochs):
         # if you want to limit the datasets' entry size
-        sizes = { "train": 10, "dev": 1 }
+        sizes = { "train": 100000, "dev": 1000 }
 
         # prepare data loaders
         datasets, data_loaders = dict(), dict()
@@ -82,13 +82,13 @@ def train(argv):
         model.train_epoch(data_loaders["train"])
         logger.info(f"epoch {model.epoch:03d}: "
                     f"training loss {model.meter_loss.value()[0]:5.3f} "
-                    f"training_accuracy {model.meter_accuracy.value()[0]:6.3f}")
+                    f"training accuracy {model.meter_accuracy.value()[0]:6.3f}")
 
         # validate
         model.test(data_loaders["dev"])
         logger.info(f"epoch {model.epoch:03d}: "
                     f"validating loss {model.meter_loss.value()[0]:5.3f} "
-                    f"validating_accuracy {model.meter_accuracy.value()[0]:6.3f}")
+                    f"validating accuracy {model.meter_accuracy.value()[0]:6.3f}")
 
         # update the best validation accuracy and the corresponding
         # testing accuracy and the state of the parent module (including the networks)

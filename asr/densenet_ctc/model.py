@@ -5,15 +5,18 @@ from tqdm import tqdm
 
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
+from warpctc_pytorch import CTCLoss
+import torchnet as tnt
 
+from ..utils.misc import onehot2int
 from ..utils.logger import logger
 from ..utils import params as p
+from ..utils.audio import FrameSplitter
 
 from .network import *
 
 
-class DenseNetModel(nn.Module):
+class DenseNetCTCModel:
     """
     This class encapsulates the parameters (neural networks) and models & guides
     needed to train a supervised DenseNet on the Aspire audio dataset
@@ -23,7 +26,7 @@ class DenseNetModel(nn.Module):
     :param init_lr: initial learning rate to setup the optimizer
     :param continue_from: model file path to load the model states
     """
-    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, use_cuda=False,
+    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, device=torch.device("cpu"),
                  batch_size=100, init_lr=0.001, continue_from=None, *args, **kwargs):
         super().__init__()
 
@@ -31,110 +34,123 @@ class DenseNetModel(nn.Module):
         self.x_dim = x_dim
         self.y_dim = y_dim
 
-        self.use_cuda = use_cuda
+        self.device = device
         self.batch_size = batch_size
         self.init_lr = init_lr
         self.epoch = 1
 
+        self.meter_loss = tnt.meter.AverageValueMeter()
+        #self.meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
+        #self.meter_confusion = tnt.meter.ConfusionMeter(p.NUM_LABELS, normalized=True)
+
         if continue_from is None:
-            # define and instantiate the neural networks representing
-            # the paramters of various distributions in the model
             self.__setup_networks()
         else:
             self.load(continue_from)
 
-        # using GPUs for faster training of the networks
-        if self.use_cuda:
-            self.cuda()
-
     def __setup_networks(self):
-        # define the neural networks used later in the model and the guide.
         self.encoder = DenseNet(x_dim=self.x_dim, y_dim=self.y_dim)
+        self.encoder.cuda()
 
-        # setup the optimizer
         parameters = self.encoder.parameters()
         self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8)
-        self.loss = nn.CrossEntropyLoss()
+        self.loss = CTCLoss()
 
-    def classifier(self, xs):
-        """
-        classify an image (or a batch of images)
-
-        :param xs: a batch of scaled vectors of pixels from an image
-        :return: a batch of the corresponding class labels (as one-hots)
-        """
-        # use the trained model q(y|x) = categorical(alpha(x))
-        # compute all class probabilities for the image(s)
-        alpha = self.encoder.forward(xs)
-
-        # get the index (digit) that corresponds to
-        # the maximum predicted class probability
-        res, ind = torch.topk(alpha, 1)
-
-        # convert the digit(s) to one-hot tensor(s)
-        ys = Variable(torch.zeros(alpha.size()))
-        ys = ys.scatter_(1, ind, 1.0)
-        return ys, ind
+    def __reset_meters(self):
+        self.meter_loss.reset()
+        #self.meter_accuracy.reset()
+        #self.meter_confusion.reset()
 
     def train_epoch(self, data_loader):
-        # initialize variables to store loss values
-        epoch_loss = 0.
-
+        self.encoder.train()
+        self.__reset_meters()
         # count the number of supervised batches seen in this epoch
         for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc="training  "):
-            # extract the corresponding batch
-            xs, ys = data
-            res, ind = torch.topk(ys, 1)
-            ys = ind.long().squeeze()
-            xs, ys = Variable(xs), Variable(ys)
-            # run the inference for each loss (loss with size_avarage=True)
-            self.optimizer.zero_grad()
-            y_hats = self.encoder(xs)
-            loss = self.loss(y_hats, ys)
-            epoch_loss += loss
-            # compute gradient
-            loss.backward()
+            xs, ys, frame_lens, label_lens, filenames = data
+            xs = xs.cuda()
+            #ys_hat = self.encoder.test(xs.shape)
+            ys_hat = self.encoder(xs)
+            ys_hat = ys_hat.transpose(0, 1).transpose(0, 2).contiguous()  # TxNxH
+            #ys_hat = ys_hat.to(torch.device('cpu'))
+            #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
+            try:
+                loss = self.loss(ys_hat, ys, frame_lens, label_lens)
+
+                loss = loss / xs.size(0)  # average the loss by minibatch
+                loss_sum = loss.data.sum()
+                inf = float("inf")
+                if loss_sum == inf or loss_sum == -inf:
+                    logger.warning("received an inf loss, setting loss value to 0")
+                    loss_value = 0
+                else:
+                    loss_value = loss.data[0]
+
+                self.optimizer.zero_grad()
+                loss.backward()
+            except Exception as e:
+                print(e)
+                print(filenames, frame_lens, label_lens)
+                #sys.exit(1)
+            #ys_hat = ys_hat.transpose(0, 1).cpu()
+            #ys_int = onehot2int(ys_hat).squeeze()
+            self.meter_loss.add(loss_value)
+            #self.meter_accuracy.add(ys_int, ys)
+            #self.meter_confusion.add(ys_int, ys)
             self.optimizer.step()
-            if self.use_cuda:
-                torch.cuda.synchronize()
-            del loss, y_hats
+            del xs, ys, ys_hat, loss
 
-        # compute average epoch loss i.e. loss per example
-        avg_loss = epoch_loss.cpu().data[0] / len(data_loader)
-        return avg_loss
+    def test(self, data_loader, desc=None):
+        self.encoder.eval()
+        self.__reset_meters()
+        with torch.no_grad():
+            for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
+                xs, ys, frame_lens, label_lens, filenames = data
+                xs = xs.cuda()
+                ys_hat = self.encoder(xs)
+                ys_hat = ys_hat.transpose(0, 1).transpose(0, 2).contiguous()  # TxNxH
+                #ys_int = onehot2int(ys)
+                loss = self.loss(ys_hat, ys, frame_lens, label_lens)
 
-    def get_accuracy(self, data_loader, desc=None):
-        """
-        compute the accuracy over the supervised training set or the testing set
-        """
-        predictions, actuals = [], []
-        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
-            xs, ys = data
-            xs, ys = Variable(xs), Variable(ys)
-            # use classification function to compute all predictions for each batch
-            with torch.no_grad():
-                y_hat, _ = self.classifier(xs)
-                predictions.append(y_hat)
-            actuals.append(ys)
+                loss = loss / xs.size(0)  # average the loss by minibatch
+                loss_sum = loss.data.sum()
+                inf = float("inf")
+                if loss_sum == inf or loss_sum == -inf:
+                    logger.warning("received an inf loss, setting loss value to 0")
+                    loss_value = 0
+                else:
+                    loss_value = loss.data[0]
 
-        # compute the number of accurate predictions
-        accurate_preds = 0
-        for pred, act in zip(predictions, actuals):
-            pred, act = pred.long(), act.long()
-            for i in range(pred.size(0)):
-                v = torch.sum(pred[i] == act[i])
-                accurate_preds += (v.data[0] == pred.size(1))
+                self.meter_loss.add(loss_value)
+                #self.meter_accuracy.add(ys_hat.data, ys_int)
+                #self.meter_confusion.add(ys_hat.data, ys_int)
+                del loss, ys_hat
 
-        # calculate the accuracy between 0 and 1
-        accuracy = (accurate_preds * 1.0) / (len(predictions) * self.batch_size)
-        return accuracy
+    def wer(self, s1, s2):
+        import Levenshtein as Lev
+        # build mapping of words to integers
+        b = set(s1.split() + s2.split())
+        word2char = dict(zip(b, range(len(b))))
+        # map the words to a char array (Levenshtein packages only accepts strings)
+        w1 = [chr(word2char[w]) for w in s1.split()]
+        w2 = [chr(word2char[w]) for w in s2.split()]
+        return Lev.distance(''.join(w1), ''.join(w2))
+
+    def cer(self, s1, s2, is_char=False):
+        import Levenshtein as Lev
+        if is_char:
+            s1, s2, = s1.replace(' ', ''), s2.replace(' ', '')
+            return Lev.distance(s1, s2)
+        else:
+            c1 = [chr(c) for c in s1]
+            c2 = [chr(c) for c in s2]
+            return Lev.distance(''.join(c1), ''.join(c2))
 
     def save(self, file_path, **kwargs):
         Path(file_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
         logger.info(f"saving the model to {file_path}")
         states = kwargs
         states["epoch"] = self.epoch
-        states["model"] = self.state_dict()
+        states["model"] = self.encoder.state_dict()
         states["optimizer"] = self.optimizer.state_dict()
         torch.save(states, file_path)
 
@@ -150,8 +166,9 @@ class DenseNetModel(nn.Module):
 
         self.__setup_networks()
         try:
-            self.load_state_dict(states["model"])
-        except: # for backward compatibility
-            self.load_state_dict(states["conv"])
+            self.encoder.load_state_dict(states["model"])
+        except:
+            self.encoder.load_state_dict(states["conv"])
         self.optimizer.load_state_dict(states["optimizer"])
+        self.encoder.to(self.device)
 

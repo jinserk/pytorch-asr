@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile as tmp
 
 import numpy as np
-import scipy as sp
+import scipy.io.wavfile
 import sox
 
 import torch
@@ -15,7 +15,7 @@ from torch._C import _set_worker_signal_handlers, _update_worker_pids, _remove_w
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.dataloader import _worker_manager_loop, _set_SIGCHLD_handler, \
                                         pin_memory_batch, ExceptionWrapper
-from torch.utils.data.sampler import BatchSampler, RandomSampler, SequentialSampler
+from torch.utils.data.sampler import Sampler, BatchSampler, SequentialSampler
 import torchaudio
 
 from . import params as p
@@ -85,12 +85,12 @@ class Augment(object):
             tmp_name = next(tmp._get_candidate_names())
             tmp_file = Path(tmp_dir, tmp_name + ".wav")
             tfm.build(str(wav_file), str(tmp_file))
-            sr, wav = sp.io.wavfile.read(tmp_file)
+            sr, wav = scipy.io.wavfile.read(tmp_file)
             os.unlink(tmp_file)
         else:
             Path(tar_file).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
             tfm.build(str(wav_file), str(tar_file))
-            sr, wav = sp.io.wavfile.read(tar_file)
+            sr, wav = scipy.io.wavfile.read(tar_file)
 
         if self.noise:
             noise = np.random.normal(0, 1, wav.shape)  # TODO: noise range?
@@ -110,8 +110,8 @@ class Spectrogram(object):
 
     def __call__(self, data):
         # STFT
-        bins, frames, z = sp.signal.stft(data, nfft=self.nfft, nperseg=self.nperseg, noverlap=self.noverlap,
-                                         window=self.window, boundary=None, padded=False)
+        bins, frames, z = scipy.signal.stft(data, nfft=self.nfft, nperseg=self.nperseg, noverlap=self.noverlap,
+                                            window=self.window, boundary=None, padded=False)
         mag, ang = np.abs(z), np.angle(z)
         spect = torch.FloatTensor(np.log1p(mag))
         phase = torch.FloatTensor(ang)
@@ -276,14 +276,27 @@ class AudioCTCCollateFn(object):
     def __call__(self, batch):
         batch_size = len(batch)
         longest_tensor = max(batch, key=lambda x: x[0].size(2))[0]
-        longest_target = max(batch, key=lambda x: x[1].size(0))[1]
+        #shape = (*tuple(longest_tensor.shape)[:-1], 2000)
+        #longest_target = max(batch, key=lambda x: x[1].size(0))[1]
+        #tensors = torch.zeros(batch_size, *shape)
         tensors = torch.zeros(batch_size, *longest_tensor.shape)
-        targets = torch.ones(batch_size, *longest_target.shape).int() * -1
+        #targets = torch.ones(batch_size, *longest_target.shape).int() * -1
+        targets = []
+        tensor_lens = []
+        target_lens = []
+        filenames = []
         for i in range(batch_size):
-            tensor, target = batch[i]
+            tensor, target, filename = batch[i]
             tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
-            targets[i].narrow(0, 0, target.size(0)).copy_(target)
-        return tensors, targets
+            #targets[i].narrow(0, 0, target.size(0)).copy_(target)
+            targets.append(target)
+            tensor_lens.append(tensor.size(2))
+            target_lens.append(target.size(0))
+            filenames.append(filename)
+        targets = torch.cat(targets)
+        tensor_lens = torch.IntTensor(tensor_lens)
+        target_lens = torch.IntTensor(target_lens)
+        return tensors, targets, tensor_lens, target_lens, filenames
 
 
 def _worker_loop(dataset, index_queue, data_queue, collate_fn, seed, init_fn, worker_id):
@@ -481,6 +494,20 @@ class AudioDataLoaderIter(object):
             self._shutdown_workers()
 
 
+class AudioRandomSampler(Sampler):
+
+    cpu = torch.device('cpu')
+
+    def __init__(self, data_source):
+        self.data_source = data_source
+
+    def __iter__(self):
+        return iter(torch.randperm(len(self.data_source), device=self.cpu).tolist())
+
+    def __len__(self):
+        return len(self.data_source)
+
+
 class AudioDataLoader(DataLoader):
 
     def __init__(self, dataset, batch_size,
@@ -490,7 +517,7 @@ class AudioDataLoader(DataLoader):
         if batch_sampler is None:
             if sampler is None:
                 if shuffle:
-                    sampler = RandomSampler(dataset)
+                    sampler = AudioRandomSampler(dataset)
                 else:
                     sampler = SequentialSampler(dataset)
             batch_sampler = AudioBatchSampler(sampler, batch_size, drop_last)
@@ -501,7 +528,6 @@ class AudioDataLoader(DataLoader):
 
     def __iter__(self):
         return AudioDataLoaderIter(self)
-
 
 
 class AudioCTCDataLoader(DataLoader):

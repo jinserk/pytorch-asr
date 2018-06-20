@@ -4,10 +4,6 @@ import sys
 import argparse
 from pathlib import Path
 
-from asr import convnet
-from asr import densenet
-from asr import capsule1
-
 data_root = Path.cwd().resolve() / "data" / "aspire"
 
 argv = sys.argv[1:]
@@ -20,10 +16,13 @@ for opt in argv:
         break
 
 if model == "convnet":
+    from asr import convnet
     convnet.predict(argv)
 elif model == "densenet":
+    from asr import densenet
     densenet.predict(argv)
 elif model == "capsule1":
+    from asr import capsule1
     capsule1.predict(argv)
 else:
     print(f"Error: choose one of models in {models}")

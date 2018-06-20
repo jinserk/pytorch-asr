@@ -4,8 +4,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from pyro.nn import ClippedSoftmax, ClippedSigmoid
-
 from ..utils.misc import View, MultiOut, Swish
 from ..utils import params as p
 
@@ -70,7 +68,7 @@ class ConvEncoderY(nn.Module):
             nn.BatchNorm2d(y_dim),
         ]
         if softmax:
-            layers.append(ClippedSoftmax(eps, dim=1))
+            layers.append(nn.Softmax(eps, dim=1))
         self.hidden = nn.Sequential(*layers)
 
     def forward(self, xs, *args, **kwargs):
@@ -110,7 +108,7 @@ class ConvDecoder(nn.Module):
             Swish(),
             View(dim=(-1, p.CHANNEL * p.WIDTH * p.HEIGHT)),
             nn.Linear(p.CHANNEL * p.WIDTH * p.HEIGHT, x_dim),
-            ClippedSigmoid(eps)
+            nn.Sigmoid(eps)
         ]
         self.hidden = nn.Sequential(*layers)
 

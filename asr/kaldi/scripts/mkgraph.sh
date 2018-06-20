@@ -13,9 +13,9 @@ export PATH=$KALDI_ROOT/tools/openfst/bin:$CWD:$PATH
 . $KALDI_ROOT/tools/config/common_path.sh
 export LC_ALL=C
 
-model_dir=$(readlink -f "$CWD/aspire")
-lang_dir=$(readlink -f "$model_dir/data/lang_pp_test")
-out_dir=$(readlink -f "$CWD/../graph")
+model_dir="$CWD/aspire"
+lang_dir="$model_dir/data/lang_pp_test"
+out_dir="$CWD/../graph"
 
 # aspire model directory check
 if [ ! -e $lang_dir ]; then

@@ -12,7 +12,7 @@ from ..utils.audio import AudioDataset, PredictDataLoader
 from ..utils import params as p
 from ..kaldi.latgen import LatGenDecoder
 
-from .model import DenseNetModel
+from .model import DenseNetCTCModel
 
 
 class Predict(object):
