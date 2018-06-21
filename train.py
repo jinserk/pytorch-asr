@@ -5,7 +5,7 @@ import argparse
 from pathlib import Path
 
 argv = sys.argv[1:]
-models = set(["convnet", "densenet", "densenet_ctc", "capsule1", "capsule2"])
+models = set(["convnet", "densenet", "densenet_ctc", "resnet_ctc", "capsule1", "capsule2"])
 model = None
 for opt in argv:
     if opt in models:
@@ -22,6 +22,9 @@ elif model == "densenet":
 elif model == "densenet_ctc":
     from asr import densenet_ctc
     densenet_ctc.train(argv)
+elif model == "resnet_ctc":
+    from asr import resnet_ctc
+    resnet_ctc.train(argv)
 elif model == "capsule1":
     from asr import capsule1
     capsule1.train(argv)
