@@ -27,7 +27,7 @@ class ResNetCTCModel:
     :param continue_from: model file path to load the model states
     """
     def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, device=torch.device("cpu"),
-                 batch_size=100, init_lr=0.001, continue_from=None, *args, **kwargs):
+                 viz=None, batch_size=100, init_lr=0.001, continue_from=None, *args, **kwargs):
         super().__init__()
 
         # initialize the class with all arguments provided to the constructor
@@ -37,11 +37,15 @@ class ResNetCTCModel:
         self.device = device
         self.batch_size = batch_size
         self.init_lr = init_lr
-        self.epoch = 1
+        self.epoch = 0
 
         self.meter_loss = tnt.meter.AverageValueMeter()
         #self.meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #self.meter_confusion = tnt.meter.ConfusionMeter(p.NUM_LABELS, normalized=True)
+
+        self.viz = viz
+        if self.viz is not None:
+            self.viz.add_plot(title='loss', xlabel='epoch')
 
         if continue_from is None:
             self.__setup_networks()
@@ -49,7 +53,7 @@ class ResNetCTCModel:
             self.load(continue_from)
 
     def __setup_networks(self):
-        self.encoder = resnet152(num_classes=self.y_dim)
+        self.encoder = resnet34(num_classes=self.y_dim)
         self.encoder.cuda()
 
         parameters = self.encoder.parameters()
@@ -65,11 +69,12 @@ class ResNetCTCModel:
         self.encoder.train()
         self.__reset_meters()
         # count the number of supervised batches seen in this epoch
-        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc="training  "):
+        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training ")
+        for i, (data) in t:
             xs, ys, frame_lens, label_lens, filenames = data
             xs = xs.cuda()
-            ys_hat = self.encoder.test(xs)
-            #ys_hat = self.encoder(xs)
+            #ys_hat = self.encoder.test(xs)
+            ys_hat = self.encoder(xs)
             ys_hat = ys_hat.transpose(0, 1).transpose(0, 2).contiguous()  # TxNxH
             #ys_hat = ys_hat.to(torch.device('cpu'))
             #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
@@ -78,12 +83,16 @@ class ResNetCTCModel:
 
                 loss = loss / xs.size(0)  # average the loss by minibatch
                 loss_sum = loss.data.sum()
+                print(loss.data)
                 inf = float("inf")
                 if loss_sum == inf or loss_sum == -inf:
                     logger.warning("received an inf loss, setting loss value to 0")
                     loss_value = 0
                 else:
                     loss_value = loss.data[0]
+
+                t.set_description(f"training (loss: {loss_value:.3f})")
+                t.refresh()
 
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -97,7 +106,16 @@ class ResNetCTCModel:
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
             self.optimizer.step()
+
+            if self.viz is not None:
+                self.viz.add_point(
+                    title = 'loss',
+                    x = self.epoch+i/len(data_loader),
+                    y = self.meter_loss.value()[0]
+                )
             del xs, ys, ys_hat, loss
+        # increase epoch #
+        self.epoch += 1
 
     def test(self, data_loader, desc=None):
         self.encoder.eval()

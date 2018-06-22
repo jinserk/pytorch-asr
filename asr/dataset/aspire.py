@@ -229,7 +229,7 @@ def load_manifest(data_root, mode, data_size, min_len=1, max_len=15):
     MAX_FRAME = max_len / p.WINDOW_SHIFT
     entries = [e for e in entries if _smp2frm(int(e[2])) > MIN_FRAME and _smp2frm(int(e[2])) < MAX_FRAME ]
     # randomly choose a number of data_size
-    size = min(data_size, len(manifest))
+    size = min(data_size, len(entries))
     selected_entries = random.sample(entries, size)
     # count each entry's number of frames
     if mode == "train_unsup":
@@ -286,7 +286,7 @@ class AspireDataset(AudioDataset):
 class AspireCTCDataset(AudioCTCDataset):
     """
     Kaldi's ASpIRE recipe (LDC Fisher dataset) for frame based training
-    loading Kaldi's frame-aligned phones target and the corresponding audio files
+    loading CTC blank-inserted token target and the corresponding audio files
     """
     root = DATA_PATH
     entries = list()

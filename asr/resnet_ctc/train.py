@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ..utils.logger import logger, set_logfile
+from ..utils.logger import logger, set_logfile, VisdomLog
 from ..utils.audio import AudioCTCDataLoader
 from ..utils import params as p
 from ..utils import misc
@@ -19,12 +19,13 @@ def parse_options(argv):
     parser = argparse.ArgumentParser(description="ResNet AM with fully supervised training")
     # for training
     parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
-    parser.add_argument('--num-workers', default=4, type=int, help="number of dataloader workers")
+    parser.add_argument('--num-workers', default=8, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=1000, type=int, help="number of epochs to run")
-    parser.add_argument('--batch-size', default=2, type=int, help="number of images (and labels) to be considered in a batch")
-    parser.add_argument('--init-lr', default=5e-7, type=float, help="initial learning rate for Adam optimizer")
+    parser.add_argument('--batch-size', default=8, type=int, help="number of images (and labels) to be considered in a batch")
+    parser.add_argument('--init-lr', default=1e-5, type=float, help="initial learning rate for Adam optimizer")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
+    parser.add_argument('--visdom', default=False, action='store_true', help="use visdom logging")
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
     parser.add_argument('--log-dir', default='./logs', type=str, help="filename for logging the outputs")
     parser.add_argument('--model-prefix', default='resnet_aspire', type=str, help="model file prefix to store")
@@ -61,15 +62,24 @@ def train(argv):
     def get_model_file_path(desc):
         return misc.get_model_file_path(args.log_dir, args.model_prefix, desc)
 
+    viz = None
+    if args.visdom:
+        try:
+            logger.info("using visdom")
+            from visdom import Visdom
+            viz = VisdomLog(Visdom())
+        except:
+            viz = None
+
     # batch_size: number of images (and labels) to be considered in a batch
-    model = ResNetCTCModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, device=device, **vars(args))
+    model = ResNetCTCModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, device=device, viz=viz, **vars(args))
 
     # initializing local variables to maintain the best validation accuracy
     # seen across epochs over the supervised training set
     best_valid_acc = 0.0
 
     # if you want to limit the datasets' entry size
-    sizes = { "train": 600000, "dev": 1000 }
+    sizes = { "train": 1600000, "dev": 1600 }
     #sizes = { "train": 10000, "dev": 100 }
 
     # prepare data loaders
@@ -100,8 +110,6 @@ def train(argv):
         #    best_valid_acc = model.meter_accuracy.value()[0]
         # save
         model.save(get_model_file_path(f"epoch_{model.epoch:04d}"))
-        # increase epoch num
-        model.epoch += 1
 
     # test
     #model.test(data_loaders["test"])
