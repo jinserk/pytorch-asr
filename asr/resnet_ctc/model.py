@@ -1,10 +1,12 @@
 #!python
 import sys
+import pdb
 from pathlib import Path
 from tqdm import tqdm
 
 import torch
 import torch.nn as nn
+import torchvision.utils as tvu
 from warpctc_pytorch import CTCLoss
 import torchnet as tnt
 
@@ -26,17 +28,18 @@ class ResNetCTCModel:
     :param init_lr: initial learning rate to setup the optimizer
     :param continue_from: model file path to load the model states
     """
-    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, device=torch.device("cpu"),
-                 viz=None, batch_size=100, init_lr=0.001, continue_from=None, *args, **kwargs):
+    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, use_cuda=False, viz=None, tbd=None,
+                 batch_size=100, init_lr=0.001, max_norm=400, continue_from=None, *args, **kwargs):
         super().__init__()
 
         # initialize the class with all arguments provided to the constructor
         self.x_dim = x_dim
         self.y_dim = y_dim
 
-        self.device = device
+        self.use_cuda = use_cuda
         self.batch_size = batch_size
         self.init_lr = init_lr
+        self.max_norm = max_norm
         self.epoch = 0
 
         self.meter_loss = tnt.meter.AverageValueMeter()
@@ -47,14 +50,17 @@ class ResNetCTCModel:
         if self.viz is not None:
             self.viz.add_plot(title='loss', xlabel='epoch')
 
+        self.tbd = tbd
+
         if continue_from is None:
             self.__setup_networks()
         else:
             self.load(continue_from)
 
     def __setup_networks(self):
-        self.encoder = resnet34(num_classes=self.y_dim)
-        self.encoder.cuda()
+        self.encoder = resnet50(num_classes=self.y_dim)
+        if self.use_cuda:
+            self.encoder.cuda()
 
         parameters = self.encoder.parameters()
         self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8)
@@ -65,55 +71,75 @@ class ResNetCTCModel:
         #self.meter_accuracy.reset()
         #self.meter_confusion.reset()
 
-    def train_epoch(self, data_loader):
+    def train_epoch(self, data_loader, prefix=None):
         self.encoder.train()
         self.__reset_meters()
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training ")
         for i, (data) in t:
             xs, ys, frame_lens, label_lens, filenames = data
-            xs = xs.cuda()
+            if self.use_cuda:
+                xs = xs.cuda()
             #ys_hat = self.encoder.test(xs)
             ys_hat = self.encoder(xs)
-            ys_hat = ys_hat.transpose(0, 1).transpose(0, 2).contiguous()  # TxNxH
-            #ys_hat = ys_hat.to(torch.device('cpu'))
+            #print(onehot3int(ys_hat[0]).squeeze())
+            frame_lens.div_(2)
+            #torch.set_printoptions(threshold=5000000)
             #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
+            #print(onehot2int(ys_hat).squeeze(), ys)
             try:
-                loss = self.loss(ys_hat, ys, frame_lens, label_lens)
+                loss = self.loss(ys_hat.transpose(0, 1).contiguous(), ys, frame_lens, label_lens)
+                #print(loss)
 
                 loss = loss / xs.size(0)  # average the loss by minibatch
                 loss_sum = loss.data.sum()
-                print(loss.data)
                 inf = float("inf")
                 if loss_sum == inf or loss_sum == -inf:
+                    #torch.set_printoptions(threshold=5000000)
+                    #print(filenames, ys_hat, frame_lens, label_lens)
                     logger.warning("received an inf loss, setting loss value to 0")
                     loss_value = 0
                 else:
                     loss_value = loss.data[0]
 
-                t.set_description(f"training (loss: {loss_value:.3f})")
-                t.refresh()
-
                 self.optimizer.zero_grad()
                 loss.backward()
+                nn.utils.clip_grad_norm_(self.encoder.parameters(), self.max_norm)
+                self.optimizer.step()
             except Exception as e:
                 print(e)
                 print(filenames, frame_lens, label_lens)
-                #sys.exit(1)
-            #ys_hat = ys_hat.transpose(0, 1).cpu()
+
             #ys_int = onehot2int(ys_hat).squeeze()
             self.meter_loss.add(loss_value)
+            t.set_description(f"training (loss: {self.meter_loss.value()[0]:.3f})")
+            t.refresh()
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
-            self.optimizer.step()
 
-            if self.viz is not None:
-                self.viz.add_point(
-                    title = 'loss',
-                    x = self.epoch+i/len(data_loader),
-                    y = self.meter_loss.value()[0]
-                )
+            if 0 < i < len(data_loader) and i % 1000 == 0:
+                if self.viz is not None:
+                    self.viz.add_point(
+                        title = 'loss',
+                        x = self.epoch+i/len(data_loader),
+                        y = self.meter_loss.value()[0]
+                    )
+
+                if self.tbd is not None:
+                    x = self.epoch * len(data_loader) + i
+                    self.tbd.add_graph(self.encoder, xs)
+                    xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
+                    self.tbd.add_image('xs', x, xs_img)
+                    ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
+                    self.tbd.add_image('ys_hat', x, ys_hat_img)
+                    self.tbd.add_scalars('loss', x, { 'loss': self.meter_loss.value()[0], })
+
+                if prefix is not None:
+                    self.save(prefix.replace("ckpt", f"ckpt_{i:07d}"))
+
             del xs, ys, ys_hat, loss
+            #input("press key to continue")
+
         # increase epoch #
         self.epoch += 1
 
@@ -123,9 +149,11 @@ class ResNetCTCModel:
         with torch.no_grad():
             for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
                 xs, ys, frame_lens, label_lens, filenames = data
-                xs = xs.cuda()
+                if self.use_cuda:
+                    xs = xs.cuda()
                 ys_hat = self.encoder(xs)
-                ys_hat = ys_hat.transpose(0, 1).transpose(0, 2).contiguous()  # TxNxH
+                ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
+                frame_lens.div_(2)
                 #ys_int = onehot2int(ys)
                 loss = self.loss(ys_hat, ys, frame_lens, label_lens)
 
@@ -142,6 +170,15 @@ class ResNetCTCModel:
                 #self.meter_accuracy.add(ys_hat.data, ys_int)
                 #self.meter_confusion.add(ys_hat.data, ys_int)
                 del loss, ys_hat
+
+    def predict(self, xs):
+        self.encoder.eval()
+        self.__reset_meters()
+        with torch.no_grad():
+            if self.use_cuda:
+                xs = xs.cuda()
+            ys_hat = self.encoder(xs, softmax=True)
+        return ys_hat
 
     def wer(self, s1, s2):
         import Levenshtein as Lev
@@ -179,7 +216,10 @@ class ResNetCTCModel:
             logger.error(f"no such file {file_path} exists")
             sys.exit(1)
         logger.info(f"loading the model from {file_path}")
-        states = torch.load(file_path)
+        if not self.use_cuda:
+            states = torch.load(file_path, map_location='cpu')
+        else:
+            states = torch.load(file_path)
         self.epoch = states["epoch"]
 
         self.__setup_networks()
@@ -188,5 +228,6 @@ class ResNetCTCModel:
         except:
             self.encoder.load_state_dict(states["conv"])
         self.optimizer.load_state_dict(states["optimizer"])
-        self.encoder.to(self.device)
+        if self.use_cuda:
+            self.encoder.cuda()
 

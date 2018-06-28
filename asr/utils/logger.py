@@ -73,3 +73,31 @@ class VisdomLog:
                 update = 'replace',
             )
 
+class TensorboardLog:
+
+    def __init__(self, log_dir):
+        log_path = Path(log_dir)
+        try:
+            Path.mkdir(log_path, parents=True, exist_ok=True)
+        except OSError as e:
+            if e.errno == errno.EEXIST:
+                log.warning(f'Tensorboard log directory already exists: {log_dir}')
+                for f in log_path.rglob("*"):
+                    f.unlink()
+            else:
+                raise
+
+        from tensorboardX import SummaryWriter
+        self.writer = SummaryWriter(str(log_dir))
+
+    def add_graph(self, model, xs):
+        self.writer.add_graph(model, (xs, ))
+
+    def add_text(self, title, x, txt):
+        self.writer.add_text(title, txt, x)
+
+    def add_image(self, title, x, img):
+        self.writer.add_image(title, img, x)
+
+    def add_scalars(self, title, x, y):
+        self.writer.add_scalars(title, y, x)

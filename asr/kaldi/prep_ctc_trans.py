@@ -38,8 +38,8 @@ if __name__ == '__main__':
     trans_path = sys.argv[3]
 
     unk_word = '<unk>'
-    space_word = '<blk>'
-    is_char = True
+    blk_word = '<blk>'
+    #is_char = True
 
     # read the lexicon into a dictionary data structure
     lexicons = {}
@@ -51,7 +51,7 @@ if __name__ == '__main__':
             for n in range(2, len(splits)):
                 letters += splits[n] + ' '
             lexicons[word] = letters.strip()
-    lexicons[space_word] = '0'
+    lexicons[blk_word] = '0'
 
     # read the dict file into a dictionary data structure
     words = {}
@@ -63,7 +63,7 @@ if __name__ == '__main__':
             for n in range(1, len(splits)):
                 letters += splits[n] + ' '
             words[word] = letters.strip()
-    words[space_word] = space_word
+    words[blk_word] = blk_word
 
     # assume that each line is formatted as "uttid word1 word2 word3 ...", with no multiple spaces appearing
     for trans_file in glob.iglob(os.path.join(trans_path, "**/*.txt"), recursive=True):
@@ -79,9 +79,9 @@ if __name__ == '__main__':
 
                     #uttid = line.split(' ')[0]  # the first field is always utterance id
                     #trans = line.replace(uttid, '').strip()
-                    trans = line
-                    if is_char:
-                        trans = trans.replace(' ', ' ' + space_word + ' ')
+                    trans = 'sil ' + line + ' sil'
+                    #if is_char:
+                    #    trans = trans.replace(' ', ' ' + blk_word + ' ')
                     splits = trans.split(' ')
 
                     #out_line += uttid + ' '
@@ -90,4 +90,6 @@ if __name__ == '__main__':
                           out_line += lexicons[words[splits[n]]] + ' '
                         except Exception:
                           out_line += lexicons[words[unk_word]] + ' '
+                    # insert blank symbols
+                    out_line = out_line.replace(' ', ' ' + blk_word + ' ')
                     wf.write(out_line.strip())

@@ -1,12 +1,12 @@
 #!python
 import sys
 import argparse
-from pathlib import Path
+from pathlib import Path, PurePath
 
 import numpy as np
 import torch
 
-from ..utils.logger import logger, set_logfile, VisdomLog
+from ..utils.logger import logger, set_logfile, VisdomLog, TensorboardLog
 from ..utils.audio import AudioCTCDataLoader
 from ..utils import params as p
 from ..utils import misc
@@ -19,13 +19,15 @@ def parse_options(argv):
     parser = argparse.ArgumentParser(description="ResNet AM with fully supervised training")
     # for training
     parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
-    parser.add_argument('--num-workers', default=8, type=int, help="number of dataloader workers")
-    parser.add_argument('--num-epochs', default=1000, type=int, help="number of epochs to run")
+    parser.add_argument('--num-workers', default=4, type=int, help="number of dataloader workers")
+    parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
     parser.add_argument('--batch-size', default=8, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--init-lr', default=1e-5, type=float, help="initial learning rate for Adam optimizer")
+    parser.add_argument('--max-norm', default=400, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--visdom', default=False, action='store_true', help="use visdom logging")
+    parser.add_argument('--tensorboard', default=False, action='store_true', help="use tensorboard logging")
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
     parser.add_argument('--log-dir', default='./logs', type=str, help="filename for logging the outputs")
     parser.add_argument('--model-prefix', default='resnet_aspire', type=str, help="model file prefix to store")
@@ -43,9 +45,6 @@ def parse_options(argv):
 
     if args.use_cuda:
         logger.info("using cuda")
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
 
     if args.seed is not None:
         torch.manual_seed(args.seed)
@@ -53,14 +52,14 @@ def parse_options(argv):
         if args.use_cuda:
             torch.cuda.manual_seed(args.seed)
 
-    return args, device
+    return args
 
 
 def train(argv):
-    args, device = parse_options(argv)
+    args = parse_options(argv)
 
     def get_model_file_path(desc):
-        return misc.get_model_file_path(args.log_dir, args.model_prefix, desc)
+        return str(misc.get_model_file_path(args.log_dir, args.model_prefix, desc))
 
     viz = None
     if args.visdom:
@@ -71,8 +70,17 @@ def train(argv):
         except:
             viz = None
 
+    tbd = None
+    if args.tensorboard:
+        #try:
+            logger.info("using tensorboard")
+            tbd = TensorboardLog(PurePath(args.log_dir, 'tensorboard'))
+        #except:
+        #    tbd = None
+
+
     # batch_size: number of images (and labels) to be considered in a batch
-    model = ResNetCTCModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, device=device, viz=viz, **vars(args))
+    model = ResNetCTCModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, viz=viz, tbd=tbd, **vars(args))
 
     # initializing local variables to maintain the best validation accuracy
     # seen across epochs over the supervised training set
@@ -93,7 +101,7 @@ def train(argv):
     # run inference for a certain number of epochs
     for i in range(model.epoch, args.num_epochs):
         # get the losses for an epoch
-        model.train_epoch(data_loaders["train"])
+        model.train_epoch(data_loaders["train"], prefix=get_model_file_path(f"epoch_{model.epoch:04d}_ckpt"))
         logger.info(f"epoch {model.epoch:03d}: "
                     f"training loss {model.meter_loss.value()[0]:5.3f} ")
                     #f"training accuracy {model.meter_accuracy.value()[0]:6.3f}")

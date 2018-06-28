@@ -4,11 +4,11 @@ import argparse
 from pathlib import Path
 
 import torch
-from torch.autograd import Variable
 from pyro.shim import parse_torch_version
 
 from ..utils.logger import logger, set_logfile
-from ..utils.audio import AudioDataset, PredictDataLoader
+from ..utils.audio import AudioCTCDataset, PredictDataLoader
+from ..utils.misc import onehot2int
 from ..utils import params as p
 from ..kaldi.latgen import LatGenDecoder
 
@@ -18,38 +18,34 @@ from .model import ResNetCTCModel
 class Predict(object):
 
     def __init__(self, args):
-        self.dataset = AudioDataset(resample=True, sample_rate=p.SAMPLE_RATE,
-                                    frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT)
-        self.dataloader = PredictDataLoader(dataset=self.dataset, use_cuda=args.use_cuda)
-        self.model = ResNetModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
+        self.dataset = AudioCTCDataset()
+        self.data_loader = PredictDataLoader(dataset=self.dataset, use_cuda=args.use_cuda)
+        self.model = ResNetCTCModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
         self.use_cuda = args.use_cuda
 
-        self._load_phn_table()
+        self._load_ctc_token_table()
 
-    def _load_phn_table(self):
-        filepath = Path(__file__).parents[1] / "kaldi/graph/phones.txt"
-        self.phns = list()
+    def _load_ctc_token_table(self):
+        filepath = Path(__file__).parents[1] / "kaldi/graph/tokens.txt"
+        self.tokens = list()
         with open(filepath, "r") as f:
             for line in f:
-                self.phns.append(line.strip().split()[0])
+                self.tokens.append(line.strip().split()[0])
 
     def predict(self, wav_files, logging=False):
-        for wav_file in wav_files:
-            xs = self.dataloader.load(wav_file)
-            xs = Variable(xs)
-            # classify phones
-            with torch.no_grad():
-                _, phn_idx = self.model.classifier(xs)
-
+        for i, wav_file in enumerate(wav_files):
+            xs, ys, txt = self.data_loader.load(wav_file)
+            ys_hat = self.model.predict(xs)
+            loglikes = -torch.log(ys_hat)
+            labels = onehot2int(ys_hat).squeeze()
             if self.use_cuda:
-                phns = list(torch.squeeze(phn_idx).cpu().numpy())
-            else:
-                phns = list(torch.squeeze(phn_idx).numpy())
+                labels = labels.cpu()
+            tokens = list(labels.numpy())
 
             if logging:
-                logger.info(f"prediction of {wav_file}: {phns}")
-                phn_sbls = [self.phns[i] for i, j in zip(phns[:-1], phns[1:]) if i != j]
-                logger.info(f"phone symbols: {phn_sbls}")
+                logger.info(f"prediction of {wav_files[i]}: {tokens}")
+                token_sbls = [self.tokens[x+1] for x, y in zip(tokens[:-1], tokens[1:]) if x != y and x != 0]
+                logger.info(f"token symbols: {token_sbls}")
 
     def decode(self, wav_files):
         # prepare kaldi latgen decoder
@@ -57,7 +53,6 @@ class Predict(object):
         # decode per each wav file
         for wav_file in wav_files:
             xs = self.dataloader.load(wav_file)
-            xs = Variable(xs)
             with torch.no_grad():
                 alpha = self.model.encoder(xs, softmax=True)
             # phones -> tokens
@@ -91,7 +86,6 @@ def predict(argv):
 
     if args.use_cuda:
         logger.info("using cuda")
-        torch.set_default_tensor_type("torch.cuda.FloatTensor")
 
     if args.continue_from is None:
         logger.error("model name is missing: add '--continue-from <model-name>' in options")

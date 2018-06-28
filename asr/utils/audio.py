@@ -63,6 +63,7 @@ class Augment(object):
 
     def __call__(self, wav_file, tar_file=None):
         if not Path(wav_file).exists():
+            print(wav_file)
             raise IOError
 
         tfm = sox.Transformer()
@@ -101,7 +102,7 @@ class Augment(object):
 # transformer: spectrogram
 class Spectrogram(object):
 
-    def __init__(self, sample_rate, window_shift, window_size, window, nfft, normalize=True):
+    def __init__(self, sample_rate, window_shift, window_size, window, nfft, normalize=False):
         self.nfft = nfft
         self.nperseg = int(sample_rate * window_size)
         self.noverlap = int(sample_rate * (window_size - window_shift))
@@ -170,7 +171,7 @@ class AudioDataset(Dataset):
                  gain=False, gain_range=p.GAIN_RANGE,
                  noise=False, noise_range=p.NOISE_RANGE,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                 window=p.WINDOW, nfft=p.NFFT, normalize=True,
+                 window=p.WINDOW, nfft=p.NFFT, normalize=False,
                  frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transform is None:
@@ -202,7 +203,7 @@ class AudioCTCDataset(Dataset):
                  gain=False, gain_range=p.GAIN_RANGE,
                  noise=False, noise_range=p.NOISE_RANGE,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                 window=p.WINDOW, nfft=p.NFFT, normalize=True,
+                 window=p.WINDOW, nfft=p.NFFT, normalize=False,
                  frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transform is None:
@@ -280,7 +281,6 @@ class AudioCTCCollateFn(object):
         #longest_target = max(batch, key=lambda x: x[1].size(0))[1]
         #tensors = torch.zeros(batch_size, *shape)
         tensors = torch.zeros(batch_size, *longest_tensor.shape)
-        #targets = torch.ones(batch_size, *longest_target.shape).int() * -1
         targets = []
         tensor_lens = []
         target_lens = []
@@ -288,7 +288,6 @@ class AudioCTCCollateFn(object):
         for i in range(batch_size):
             tensor, target, filename = batch[i]
             tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
-            #targets[i].narrow(0, 0, target.size(0)).copy_(target)
             targets.append(target)
             tensor_lens.append(tensor.size(2))
             target_lens.append(target.size(0))
@@ -553,10 +552,51 @@ class PredictDataLoader:
         # read and transform wav file
         if self.dataset.transform is not None:
             tensor = self.dataset.transform(wav_file)
-        tensor = torch.stack(tensor)
+        if isinstance(tensor, tuple):
+            tensor = torch.stack(tensor)
+        else:
+            tensor = tensor.unsqueeze(0)
         if self.use_cuda:
             tensor = tensor.cuda()
-        return tensor
+
+        ctc_file = wav_file.replace('wav', 'ctc')
+        ctc_target = None
+        if Path(ctc_file).exists():
+            ctc_target = np.loadtxt(ctc_file, dtype="int", ndmin=1)
+            ctc_target = torch.IntTensor(ctc_target)
+
+        txt_file = wav_file.replace('wav', 'txt')
+        txt_target = None
+        if Path(txt_file).exists():
+            with open(txt_file, 'r') as f:
+                txt_target = ' '.join(f.readlines()).strip().replace('\n', '')
+
+        return tensor, ctc_target, txt_target
+
+
+if __name__ == "__main__":
+    # test Augment
+    if False:
+        transformer = Augment(resample=True, sample_rate=p.SAMPLE_RATE)
+        wav_file = Path("/home/jbaik/src/enf/stt/test/conan1-8k.wav")
+        audio = transformer(wav_file)
+
+    # test Spectrogram
+    if True:
+        import matplotlib
+        matplotlib.use('TkAgg')
+        matplotlib.interactive(True)
+        import matplotlib.pyplot as plt
+
+        nperseg = int(p.SAMPLE_RATE * p.WINDOW_SIZE)
+        noverlap = int(p.SAMPLE_RATE * (p.WINDOW_SIZE - p.WINDOW_SHIFT))
+
+        wav_file = Path("../data/aspire/000/fe_03_00047-A-025005-025135.wav")
+        audio, _ = torchaudio.load(wav_file)
+
+        # pyplot specgram
+        audio = torch.squeeze(audio)
+        fig = plt.figure(0)
 
 
 if __name__ == "__main__":

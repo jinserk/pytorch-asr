@@ -7,7 +7,7 @@ from pathlib import Path
 data_root = Path.cwd().resolve() / "data" / "aspire"
 
 argv = sys.argv[1:]
-models = set(["convnet", "densenet", "capsule1"])
+models = set(["convnet", "densenet", "resnet_ctc", "capsule1"])
 model = None
 for opt in argv:
     if opt in models:
@@ -21,6 +21,9 @@ if model == "convnet":
 elif model == "densenet":
     from asr import densenet
     densenet.predict(argv)
+elif model == "resnet_ctc":
+    from asr import resnet_ctc
+    resnet_ctc.predict(argv)
 elif model == "capsule1":
     from asr import capsule1
     capsule1.predict(argv)
