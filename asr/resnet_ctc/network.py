@@ -116,12 +116,12 @@ class ResNet(nn.Module):
         self.fc1 = nn.Linear(256 * block.expansion, 512)
         self.fc2 = nn.Linear(512, 512)
         self.fc3 = nn.Linear(512, num_classes)
-        #for m in self.modules():
-        #    if isinstance(m, nn.Conv2d):
-        #        nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-        #    elif isinstance(m, nn.BatchNorm2d):
-        #        nn.init.constant_(m.weight, 1)
-        #        nn.init.constant_(m.bias, 0)
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
 
     def _make_layer(self, block, planes, blocks, stride=1):
         downsample = None

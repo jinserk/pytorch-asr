@@ -39,7 +39,8 @@ if __name__ == '__main__':
 
     unk_word = '<unk>'
     blk_word = '<blk>'
-    #is_char = True
+
+    insert_blank = False
 
     # read the lexicon into a dictionary data structure
     lexicons = {}
@@ -51,7 +52,8 @@ if __name__ == '__main__':
             for n in range(2, len(splits)):
                 letters += splits[n] + ' '
             lexicons[word] = letters.strip()
-    lexicons[blk_word] = '0'
+    if insert_blank:
+        lexicons[blk_word] = '0'
 
     # read the dict file into a dictionary data structure
     words = {}
@@ -63,7 +65,8 @@ if __name__ == '__main__':
             for n in range(1, len(splits)):
                 letters += splits[n] + ' '
             words[word] = letters.strip()
-    words[blk_word] = blk_word
+    if insert_blank:
+        words[blk_word] = blk_word
 
     # assume that each line is formatted as "uttid word1 word2 word3 ...", with no multiple spaces appearing
     for trans_file in glob.iglob(os.path.join(trans_path, "**/*.txt"), recursive=True):
@@ -90,6 +93,8 @@ if __name__ == '__main__':
                           out_line += lexicons[words[splits[n]]] + ' '
                         except Exception:
                           out_line += lexicons[words[unk_word]] + ' '
-                    # insert blank symbols
-                    out_line = out_line.replace(' ', ' ' + blk_word + ' ')
+                    out_line = out_line.strip()
+                    if insert_blank:
+                        # insert blank symbols
+                        out_line = out_line.replace(' ', ' ' + lexicons[blk_word] + ' ')
                     wf.write(out_line.strip())

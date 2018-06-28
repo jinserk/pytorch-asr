@@ -64,7 +64,7 @@ class ResNetCTCModel:
 
         parameters = self.encoder.parameters()
         self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8)
-        self.loss = CTCLoss()
+        self.loss = CTCLoss(size_average=True)
 
     def __reset_meters(self):
         self.meter_loss.reset()
@@ -91,7 +91,7 @@ class ResNetCTCModel:
                 loss = self.loss(ys_hat.transpose(0, 1).contiguous(), ys, frame_lens, label_lens)
                 #print(loss)
 
-                loss = loss / xs.size(0)  # average the loss by minibatch
+                #loss = loss / xs.size(0)  # average the loss by minibatch - size_average=True in CTC_Loss()
                 loss_sum = loss.data.sum()
                 inf = float("inf")
                 if loss_sum == inf or loss_sum == -inf:
@@ -117,7 +117,7 @@ class ResNetCTCModel:
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
 
-            if 0 < i < len(data_loader) and i % 1000 == 0:
+            if 0 < i < len(data_loader) and i % 10000 == 0:
                 if self.viz is not None:
                     self.viz.add_point(
                         title = 'loss',
