@@ -18,7 +18,7 @@ $ git clone https://github.com/jinserk/pytorch-asr.git
 Install required Python modules:
 ```
 $ cd pytorch-asr
-$ pip install -r requrements.txt
+$ pip install -r requirements.txt
 ```
 
 Modify the Kaldi path in `_path.py`:
@@ -39,7 +39,7 @@ This takes a while to download the Kaldi's official ASpIRE chain model and its p
 ## Training
 
 Pytorch-asr is targeted to develop a framework supporting multiple acoustic models. You have to specify one of model to train or predict.
-Currently, only `resnet_ctc` model only works. Try this model first.
+Currently, only `resnet_ctc` model works for training and prediction. Try this model first.
 
 If you do training for the first time, you have to prepare the dataset. Currently we support only the Kaldi's ASpIRE recipe datatset, originated from LDC's fisher corpus.
 ```
