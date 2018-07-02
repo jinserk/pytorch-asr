@@ -1,2 +1,2 @@
-from ._latgen import LatGenDecoder
+from ._latgen import LatGenDecoder, LatGenCTCDecoder
 

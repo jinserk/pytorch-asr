@@ -80,7 +80,7 @@ def train(argv):
 
 
     # batch_size: number of images (and labels) to be considered in a batch
-    model = ResNetCTCModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, viz=viz, tbd=tbd, **vars(args))
+    model = ResNetCTCModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_CTC_LABELS, viz=viz, tbd=tbd, **vars(args))
 
     # initializing local variables to maintain the best validation accuracy
     # seen across epochs over the supervised training set

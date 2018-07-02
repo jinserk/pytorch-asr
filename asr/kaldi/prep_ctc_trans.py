@@ -20,81 +20,90 @@
 # represented by their indices.
 
 import sys
-import os.path
-import glob
+import argparse
+from pathlib import Path
 
-if __name__ == '__main__':
-
-    if len(sys.argv) != 4:
-        print("Usage: {0} <lexicon_file> <word_file> <trans_path>".format(sys.argv[0]))
-        print("e.g., utils/prep_ctc_trans.py data/lang/lexicon_numbers.txt data/train/text <UNK>")
-        print("<lexicon_file> - the lexicon file in which entries have been represented by indices")
-        print("<word_file>    - the word file in which entries mapped into their indices")
-        print("<trans_path>   - the path contains word-based transcript files")
-        exit(1)
-
-    lexicon_file = sys.argv[1]
-    word_file = sys.argv[2]
-    trans_path = sys.argv[3]
-
+class PrepareCtc:
     unk_word = '<unk>'
     blk_word = '<blk>'
 
-    insert_blank = False
+    def __init__(self, lexicon_file, label_file, insert_blank=False):
+        self.insert_blank = insert_blank
 
-    # read the lexicon into a dictionary data structure
-    lexicons = {}
-    with open(lexicon_file, 'r') as f:
-        for line in f:
-            splits = line.strip().split(' ')  # assume there are no multiple spaces
-            word = splits[0]
-            letters = ''
-            for n in range(2, len(splits)):
-                letters += splits[n] + ' '
-            lexicons[word] = letters.strip()
-    if insert_blank:
-        lexicons[blk_word] = '0'
+        self.lexicons = {}
+        self.labels = {}
 
-    # read the dict file into a dictionary data structure
-    words = {}
-    with open(word_file, 'r') as f:
-        for line in f:
-            splits = line.strip().split(' ')  # assume there are no multiple spaces
-            word = splits[0]
-            letters = ''
-            for n in range(1, len(splits)):
-                letters += splits[n] + ' '
-            words[word] = letters.strip()
-    if insert_blank:
-        words[blk_word] = blk_word
+        self._load_lexicon_file(args.lexicon_file)
+        self._load_label_file(args.label_file)
 
-    # assume that each line is formatted as "uttid word1 word2 word3 ...", with no multiple spaces appearing
-    for trans_file in glob.iglob(os.path.join(trans_path, "**/*.txt"), recursive=True):
-        with open(trans_file, 'r') as rf:
-            ctc_file = trans_file.replace('txt', 'ctc')
-            print(f'{trans_file} -> {ctc_file}')
-            with open(ctc_file, 'w') as wf:
-                for line in rf:
-                    out_line = ''
-                    line = line.replace('\n','').strip()
-                    while '  ' in line:
-                        line = line.replace('  ', ' ')   # remove multiple spaces in the transcripts
+        # for counting priors per label
+        self.label_counts = [0] * len(self.labels)
 
-                    #uttid = line.split(' ')[0]  # the first field is always utterance id
-                    #trans = line.replace(uttid, '').strip()
-                    trans = 'sil ' + line + ' sil'
-                    #if is_char:
-                    #    trans = trans.replace(' ', ' ' + blk_word + ' ')
-                    splits = trans.split(' ')
+    def _load_lexicon_file(self, lexicon_file):
+        # read the lexicon into a dictionary data structure
+        with open(lexicon_file, 'r') as f:
+            for line in f:
+                splits = line.strip().split()
+                word = splits[0]
+                self.lexicons[word] = splits[2:]
 
-                    #out_line += uttid + ' '
-                    for n in range(0, len(splits)):
-                        try:
-                          out_line += lexicons[words[splits[n]]] + ' '
-                        except Exception:
-                          out_line += lexicons[words[unk_word]] + ' '
-                    out_line = out_line.strip()
-                    if insert_blank:
-                        # insert blank symbols
-                        out_line = out_line.replace(' ', ' ' + lexicons[blk_word] + ' ')
-                    wf.write(out_line.strip())
+    def _load_label_file(self, label_file):
+        # read the label file into a dictionary data structure
+        with open(label_file, 'r') as f:
+            for line in f:
+                splits = line.strip().split()
+                label = splits[0]
+                self.labels[label] = splits[1]
+        if self.insert_blank and self.blk_word not in self.labels:
+            self.labels[self.blk_word] = 1
+
+    def convert(self, trans_path):
+        # assume that each line is formatted as "word1 word2 word3 ...", with no multiple spaces appearing
+        for trans_file in Path(trans_path).rglob("*.txt"):
+            with open(trans_file, 'r') as rf:
+                ctc_file = str(trans_file).replace('txt', 'ctc')
+                print(f"{trans_file} -> {ctc_file}")
+                with open(ctc_file, 'w') as wf:
+                    for line in rf:
+                        trans = line.strip().split()
+
+                        out = list()
+                        for w in trans:
+                            try:
+                                for t in self.lexicons[w]:
+                                    out.append(self.labels[t])
+                            except Exception:
+                                out.extend([self.labels[t] for t in self.lexicons[self.unk_word]])
+
+                        for c in out:   # label counts for priors
+                            self.label_counts[int(c)] += 1
+
+                        out_line = ' '.join(out)
+                        if self.insert_blank:
+                            # insert blank symbols
+                            out_line = out_line.replace(' ', ' ' + self.labels[self.blk_word] + ' ')
+
+                        wf.write(out_line.strip())
+
+    def write_label_counts(self, count_file):
+        print(self.label_counts)
+        with open(count_file, 'w') as f:
+            counts = [str(c) for c in self.label_counts]
+            f.write(' '.join(counts))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Prepare CTC labels")
+    parser.add_argument('--lexicon-file', type=str, default='graph/align_lexicon.txt', help="the lexicon file in which entries have been represented by labels")
+    parser.add_argument('--label-file', type=str, default='graph/labels.txt', help="the label file in which entries mapped into their label indices")
+    parser.add_argument('--count-file', type=str, default='label_counts.txt', help="output file for occurence count of each label to calculate priors")
+    parser.add_argument('trans_paths', type=str, nargs='+', help="list of paths containing transcript txt files to be converted")
+    args = parser.parse_args()
+
+    h = PrepareCtc(lexicon_file=args.lexicon_file, label_file=args.label_file)
+
+    for trans_path in args.trans_paths:
+        h.convert(trans_path)
+
+    count_file = Path(args.trans_paths[0]).joinpath(args.count_file)
+    h.write_label_counts(count_file)

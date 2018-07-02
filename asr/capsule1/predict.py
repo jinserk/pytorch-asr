@@ -5,7 +5,6 @@ from pathlib import Path
 
 import torch
 from torch.autograd import Variable
-from pyro.shim import parse_torch_version
 
 from ..utils.logger import logger, set_logfile
 from ..utils.audio import AudioDataset, PredictDataLoader

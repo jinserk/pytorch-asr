@@ -14,7 +14,7 @@ if not GRAPH_PATH.exists():
     sys.exit(1)
 
 DEFAULT_GRAPH = GRAPH_PATH.joinpath("CLG.fst")
-DEFAULT_TOKEN = GRAPH_PATH.joinpath("phones.txt")
+DEFAULT_LABEL = GRAPH_PATH.joinpath("phones.txt")
 DEFAULT_WORDS = GRAPH_PATH.joinpath("words.txt")
 
 
@@ -23,14 +23,14 @@ class LatGenDecoder(Function):
 
     def __init__(self, beam=16.0, max_active=8000, min_active=200,
                  acoustic_scale=1.0, allow_partial=True,
-                 token_file=str(DEFAULT_TOKEN),
+                 label_file=str(DEFAULT_LABEL),
                  fst_file=str(DEFAULT_GRAPH), wd_file=str(DEFAULT_WORDS)):
-        # store number of tokens
+        # store number of labels
         lines = list()
-        with open(token_file, "r") as f:
+        with open(label_file, "r") as f:
             for line in f:
                 lines.append(line.strip().split())
-        self.num_token = len(lines)
+        self.num_labels = len(lines)
         # initialize
         fst_in_filename = fst_file.encode('ascii')
         wd_in_filename = wd_file.encode('ascii')
@@ -44,7 +44,7 @@ class LatGenDecoder(Function):
                 self.words.append(record[0])
 
     def forward(self, loglikes):
-        assert loglikes.dim() == 3 and loglikes.shape[-1] == self.num_token
+        assert loglikes.dim() == 3 and loglikes.size(2) == self.num_labels
         with torch.no_grad():
             # N: batch size, RxC: R frames for C classes
             words = torch.IntTensor().zero_()
@@ -58,12 +58,12 @@ class LatGenDecoder(Function):
 
 
 DEFAULT_CTC_GRAPH = GRAPH_PATH.joinpath("TLG.fst")
-DEFAULT_CTC_TOKEN = GRAPH_PATH.joinpath("tokens.txt")
+DEFAULT_CTC_LABEL = GRAPH_PATH.joinpath("labels.txt")
 
 class LatGenCTCDecoder(LatGenDecoder):
-    """ decoder using CTC tokens with blank label in the acoustic model """
+    """ decoder using CTC labels with blank label in the acoustic model """
 
-    def __init__(self, token_file=str(DEFAULT_CTC_TOKEN), fst_file=str(DEFAULT_CTC_GRAPH),
+    def __init__(self, label_file=str(DEFAULT_CTC_LABEL), fst_file=str(DEFAULT_CTC_GRAPH),
                  *args, **kwargs):
-        super().__init__(token_file=token_file, fst_file=fst_file, *args, **kwargs)
+        super().__init__(label_file=label_file, fst_file=fst_file, *args, **kwargs)
 

@@ -38,6 +38,7 @@ mkdir -p $out_dir
 cp $lang_dir/words.txt $out_dir
 cp $lang_dir/phones.txt $out_dir
 cp $lang_dir/phones/align_lexicon.int $out_dir
+cp $lang_dir/phones/align_lexicon.txt $out_dir
 
 # Get the full list of CTC tokens used in FST. These tokens include <eps>, the blank <blk>, the actual labels (e.g.,
 # phonemes), and the disambiguation symbols.  

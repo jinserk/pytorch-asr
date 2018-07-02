@@ -4,13 +4,13 @@ import argparse
 from pathlib import Path
 
 import torch
-from pyro.shim import parse_torch_version
+import numpy as np
 
 from ..utils.logger import logger, set_logfile
 from ..utils.audio import AudioCTCDataset, PredictDataLoader
 from ..utils.misc import onehot2int
 from ..utils import params as p
-from ..kaldi.latgen import LatGenDecoder
+from ..kaldi.latgen import LatGenCTCDecoder
 
 from .model import ResNetCTCModel
 
@@ -20,56 +20,67 @@ class Predict(object):
     def __init__(self, args):
         self.dataset = AudioCTCDataset()
         self.data_loader = PredictDataLoader(dataset=self.dataset, use_cuda=args.use_cuda)
-        self.model = ResNetCTCModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, **vars(args))
+        self.model = ResNetCTCModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_CTC_LABELS, **vars(args))
         self.use_cuda = args.use_cuda
 
-        self._load_ctc_token_table()
+        self._load_labels()
+        self._load_label_counts()
 
-    def _load_ctc_token_table(self):
-        filepath = Path(__file__).parents[1] / "kaldi/graph/tokens.txt"
-        self.tokens = list()
-        with open(filepath, "r") as f:
-            for line in f:
-                self.tokens.append(line.strip().split()[0])
-
-    def predict(self, wav_files, logging=False):
-        for i, wav_file in enumerate(wav_files):
-            xs, ys, txt = self.data_loader.load(wav_file)
-            ys_hat = self.model.predict(xs)
-            loglikes = -torch.log(ys_hat)
-            labels = onehot2int(ys_hat).squeeze()
-            if self.use_cuda:
-                labels = labels.cpu()
-            tokens = list(labels.numpy())
-
-            if logging:
-                logger.info(f"prediction of {wav_files[i]}: {tokens}")
-                token_sbls = [self.tokens[x+1] for x, y in zip(tokens[:-1], tokens[1:]) if x != y and x != 0]
-                logger.info(f"token symbols: {token_sbls}")
-
-    def decode(self, wav_files):
         # prepare kaldi latgen decoder
-        decoder = LatGenDecoder()
-        # decode per each wav file
-        for wav_file in wav_files:
-            xs = self.dataloader.load(wav_file)
-            with torch.no_grad():
-                alpha = self.model.encoder(xs, softmax=True)
-            # phones -> tokens
-            #tmp = torch.ones(alpha.shape[0], 1) * p.EPS
-            #alpha = torch.cat((alpha[:, 0].unsqueeze(1), tmp, alpha[:, 1:]), dim=1)
-            loglikes = torch.log(alpha).unsqueeze(0)
-            print(loglikes)
-            # decoding
-            words, alignment = decoder(loglikes)
-            # convert into text
-            text = ' '.join([decoder.words[i] for i in words.squeeze()])
-            print(text)
+        self.decoder = LatGenCTCDecoder()
+
+    def _load_labels(self):
+        file_path = Path(__file__).parents[1].joinpath("kaldi", "graph", "labels.txt")
+        self.labels = list()
+        with open(file_path, "r") as f:
+            for line in f:
+                self.labels.append(line.strip().split()[0])
+
+    def _load_label_counts(self):
+        file_path = Path(__file__).parents[2].joinpath("data", "aspire", "label_counts.txt")
+        priors = np.loadtxt(file_path, dtype="double", ndmin=1)
+        total = np.sum(priors)
+        priors = np.divide(priors, total)
+        priors[np.where(priors < 1e-10)] = 1. # to prevent divided zero error
+        self.priors = torch.log(torch.FloatTensor(priors))
+
+    def decode(self, wav_file, verbose=False):
+        # predict phones using AM
+        xs, ys, txt = self.data_loader.load(wav_file)
+        ys_hat = self.model.predict(xs)
+        # devide by priors
+        loglikes = torch.log(ys_hat) - self.priors
+
+        if verbose:
+            labels = onehot2int(loglikes).squeeze()
+            logger.info(f"labels: {' '.join([str(x) for x in labels.tolist()])}")
+
+            def remove_duplicates(labels):
+                p = -1
+                for x in labels:
+                    if x != p:
+                        p = x
+                        yield x
+                else:
+                    yield x
+
+            symbols = [self.labels[x] for x in remove_duplicates(labels) if self.labels[x] != "<blk>"]
+            logger.info(f"symbols: {' '.join(symbols)}")
+
+        # decode using Kaldi's latgen decoder
+        words, alignment = self.decoder(loglikes)
+        # convert into text
+        words = words.squeeze()
+        if words.dim():
+            text = ' '.join([self.decoder.words[i] for i in words])
+            logger.info(f"decoded text: {text}")
+        else:
+            logger.info("decoded text: <null output from decoder>")
 
 
 def predict(argv):
     parser = argparse.ArgumentParser(description="ResNet prediction")
-    parser.add_argument('--decode', default=False, action='store_true', help="retrieve Kaldi's latgen decoder")
+    parser.add_argument('--verbose', default=False, action='store_true', help="set true if you need to check AM output")
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--log-dir', default='./logs', type=str, help="filename for logging the outputs")
     parser.add_argument('--continue-from', type=str, help="model file path to make continued from")
@@ -94,10 +105,9 @@ def predict(argv):
 
     # run prediction
     predict = Predict(args)
-    if args.decode:
-        predict.decode(args.wav_files)
-    else:
-        predict.predict(args.wav_files, logging=True)
+    for i, wav_file in enumerate(args.wav_files):
+        logger.info(f"[{i}] decoding wav file: {wav_file}")
+        predict.decode(wav_file, verbose=args.verbose)
 
 
 if __name__ == "__main__":

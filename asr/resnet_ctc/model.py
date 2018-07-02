@@ -28,7 +28,7 @@ class ResNetCTCModel:
     :param init_lr: initial learning rate to setup the optimizer
     :param continue_from: model file path to load the model states
     """
-    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, use_cuda=False, viz=None, tbd=None,
+    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_CTC_LABELS, use_cuda=False, viz=None, tbd=None,
                  batch_size=100, init_lr=0.001, max_norm=400, continue_from=None, *args, **kwargs):
         super().__init__()
 
@@ -44,7 +44,7 @@ class ResNetCTCModel:
 
         self.meter_loss = tnt.meter.AverageValueMeter()
         #self.meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
-        #self.meter_confusion = tnt.meter.ConfusionMeter(p.NUM_LABELS, normalized=True)
+        #self.meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
 
         self.viz = viz
         if self.viz is not None:
@@ -64,7 +64,7 @@ class ResNetCTCModel:
 
         parameters = self.encoder.parameters()
         self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8)
-        self.loss = CTCLoss(size_average=True)
+        self.loss = CTCLoss(blank=0, size_average=True)
 
     def __reset_meters(self):
         self.meter_loss.reset()

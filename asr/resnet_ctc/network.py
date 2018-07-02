@@ -6,8 +6,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from ..utils import params as p
-
 
 class View(nn.Module):
 
@@ -199,5 +197,6 @@ def resnet152(**kwargs):
     return ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)
 
 if __name__ == "__main__":
+    from ..utils import params as p
     print("resnet")
-    net = resnet152(num_classes=p.NUM_LABELS)
+    net = resnet152(num_classes=p.NUM_CTC_LABELS)
