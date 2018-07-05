@@ -54,16 +54,12 @@ class Predict(object):
         if verbose:
             labels = onehot2int(loglikes).squeeze()
             logger.info(f"labels: {' '.join([str(x) for x in labels.tolist()])}")
-
             def remove_duplicates(labels):
                 p = -1
                 for x in labels:
                     if x != p:
                         p = x
                         yield x
-                else:
-                    yield x
-
             symbols = [self.labels[x] for x in remove_duplicates(labels) if self.labels[x] != "<blk>"]
             logger.info(f"symbols: {' '.join(symbols)}")
 

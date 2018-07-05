@@ -4,7 +4,6 @@ import sys
 import argparse
 from pathlib import Path
 
-from asr.dataset import aspire
 
 data_root = Path.cwd().resolve() / "data"
 
@@ -14,10 +13,12 @@ dataset = None
 for opt in argv:
     if opt in datasets:
         dataset = opt
+        argv.remove(opt)
         break
 
 if dataset == "aspire":
-    aspire.prepare_data(data_root / dataset)
+    from asr.dataset import aspire
+    aspire.prepare(argv)
 else:
     print(f"Error: choose one of datasets in {datasets}")
     sys.exit(1)

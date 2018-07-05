@@ -1,4 +1,5 @@
 import sys
+import argparse
 from pathlib import Path
 import subprocess as sp
 import random
@@ -22,12 +23,10 @@ of its own scripts, especially the data/ and the exp/
 
 KALDI_PATH = Path(KALDI_ROOT).resolve()
 ASPIRE_PATH = Path(KALDI_PATH, "egs/aspire/ics").resolve()
-DATA_PATH = (Path(__file__).parents[2] / "data" / "aspire").resolve()
+DATA_PATH = Path(__file__).parents[2].joinpath("data", "aspire").resolve()
 
-assert KALDI_PATH.exists(), \
-    f"no such path \"{str(KALDI_PATH)}\" not found"
-assert ASPIRE_PATH.exists(), \
-    f"no such path \"{str(ASPIRE_PATH)}\" not found"
+assert KALDI_PATH.exists(), f"no such path \"{str(KALDI_PATH)}\" not found"
+assert ASPIRE_PATH.exists(), f"no such path \"{str(ASPIRE_PATH)}\" not found"
 
 WIN_SAMP_SIZE = p.SAMPLE_RATE * p.WINDOW_SIZE
 WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
@@ -71,8 +70,8 @@ def split_wav(mode, target_dir):
     wav_scp = Path(data_dir, "wav.scp")
     logger.info(f"processing {str(wav_scp)} file ...")
     manifest = dict()
-    with smart_open(wav_scp, "r") as f:
-        for line in tqdm(f, total=get_num_lines(wav_scp)):
+    with smart_open(wav_scp, "r") as rf:
+        for line in tqdm(rf, total=get_num_lines(wav_scp)):
             wavid, cmd = line.strip().split(" ", 1)
             if not wavid in segments:
                 continue
@@ -89,13 +88,13 @@ def split_wav(mode, target_dir):
                     wav.rewind()
                     wav.setpos(fs)
                     signal = wav.readframes(fe - fs)
-                    tar_dir = Path(target_dir) / uttid[6:9]
-                    Path(tar_dir).mkdir(mode=0o755, parents=True, exist_ok=True)
-                    wav_file = str(Path(tar_dir, uttid + ".wav"))
-                    with wave.open(wav_file, "wb") as split_wav:
-                        split_wav.setparams(wav.getparams())
-                        split_wav.writeframes(signal)
-                    manifest[uttid] = (wav_file, fe - fs)
+                    tar_dir = Path(target_dir).joinpath(uttid[6:9])
+                    tar_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
+                    wav_file = tar_dir.joinpath(uttid + ".wav")
+                    with wave.open(str(wav_file), "wb") as wf:
+                        wf.setparams(wav.getparams())
+                        wf.writeframes(signal)
+                    manifest[uttid] = (str(wav_file), fe - fs)
     return manifest
 
 
@@ -108,12 +107,12 @@ def get_transcripts(mode, target_dir):
         for line in tqdm(f, total=get_num_lines(texts_file)):
             uttid, text = line.strip().split(" ", 1)
             text = strip_text(text)
-            tar_dir = Path(target_dir) / uttid[6:9]
+            tar_dir = Path(target_dir).joinpath(uttid[6:9])
             Path(tar_dir).mkdir(mode=0o755, parents=True, exist_ok=True)
-            txt_file = str(Path(tar_dir, uttid + ".txt"))
-            with open(txt_file, "w") as txt:
+            txt_file = tar_dir.joinpath(uttid + ".txt")
+            with open(str(txt_file), "w") as txt:
                 txt.write(text + "\n")
-            manifest[uttid] = (txt_file, text)
+            manifest[uttid] = (str(txt_file), text)
     return manifest
 
 
@@ -137,36 +136,58 @@ def get_alignments(target_dir):
             p = sp.run(cmd, stdout=sp.PIPE, stderr=sp.PIPE, input=a.read())
             with io.BytesIO(p.stdout) as f:
                 while True:
+                    # mkdir
                     try:
                         uttid = read_string(f)
                     except ValueError:
                         break
+                    tar_dir = Path(target_dir).joinpath(uttid[6:9])
+                    tar_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
+                    # store phn file
+                    phn_file = tar_dir.joinpath(uttid + ".phn")
                     phones = read_vec_int(f)
+                    np.savetxt(str(phn_file), phones, "%d")
+                    # prepare manifest elements
                     num_frms = len(phones)
-                    tar_dir = Path(target_dir) / uttid[6:9]
-                    Path(tar_dir).mkdir(mode=0o755, parents=True, exist_ok=True)
-                    phn_file = str(Path(tar_dir, uttid + ".phn"))
-                    np.savetxt(phn_file, phones, "%d")
-                    manifest[uttid] = (phn_file, num_frms, phones)
+                    manifest[uttid] = (str(phn_file), num_frms)
     return manifest
 
 
-def prepare_data(target_dir=None):
+def make_ctc_labels(target_dir):
+    def remove_duplicates(labels):
+        p = -1
+        for x in labels:
+            if p != x:
+                p = x
+                yield x
+    phn_files = [str(x) for x in Path(target_dir).rglob("*.phn")]
+    for phn_file in tqdm(phn_files):
+        phn_sbls = np.loadtxt(phn_file, dtype="int", ndmin=1)
+        # make ctc labelings by removing duplications
+        ctc_file = phn_file.replace("phn", "ctc")
+        ctc_sbls = np.array([x for x in remove_duplicates(phn_sbls)])
+        np.savetxt(str(ctc_file), ctc_sbls, "%d")
+
+
+def process(target_dir=None):
     """
     since the target time-alignment exists only on the train set,
     we split the train set into train and dev set
     """
     if target_dir is None:
-        target_dir = DATA_PATH
-    logger.info(f"target data path : {target_dir}")
+        target_path = DATA_PATH
+    else:
+        target_path = Path(target_dir).resolve()
+    logger.info(f"target data path : {target_path}")
 
-    train_wav_manifest = split_wav("train", target_dir)
-    train_txt_manifest = get_transcripts("train", target_dir)
-    phn_manifest = get_alignments(target_dir)
+    train_wav_manifest = split_wav("train", target_path)
+    train_txt_manifest = get_transcripts("train", target_path)
+    phn_manifest = get_alignments(target_path)
+    make_ctc_labels(target_path)
 
     logger.info("generating manifest files ...")
-    with open(Path(target_dir, "train.csv"), "w") as f1:
-        with open(Path(target_dir, "dev.csv"), "w") as f2:
+    with open(Path(target_path, "train.csv"), "w") as f1:
+        with open(Path(target_path, "dev.csv"), "w") as f2:
             for k, v in train_wav_manifest.items():
                 if not k in train_txt_manifest:
                     continue
@@ -174,7 +195,7 @@ def prepare_data(target_dir=None):
                     continue
                 wav_file, samples = v
                 txt_file, _ = train_txt_manifest[k]
-                phn_file, num_frms, _ = phn_manifest[k]
+                phn_file, num_frms = phn_manifest[k]
                 if 0 < int(k[6:11]) < 60:
                     f2.write(f"{k},{wav_file},{samples},{phn_file},{num_frms},{txt_file}\n")
                 else:
@@ -186,9 +207,10 @@ def reconstruct_manifest(target_dir):
     import wave
 
     logger.info("reconstructing manifest files ...")
-    with open(Path(target_dir, "train.csv"), "w") as f1:
-        with open(Path(target_dir, "dev.csv"), "w") as f2:
-            for wav_file in Path(target_dir).glob("**/*.wav"):
+    target_path = Path(target_dir).resolve()
+    with open(target_path.joinpath("train.csv"), "w") as f1:
+        with open(target_path.joinpath("dev.csv"), "w") as f2:
+            for wav_file in target_path.rglob("*.wav"):
                 uttid = wav_file.stem
                 txt_file = str(wav_file).replace("wav", "txt")
                 phn_file = str(wav_file).replace("wav", "phn")
@@ -202,6 +224,19 @@ def reconstruct_manifest(target_dir):
                 else:
                     f1.write(f"{uttid},{wav_file},{samples},{phn_file},{num_frms},{txt_file}\n")
     logger.info("data preparation finished.")
+
+
+def prepare(argv):
+    parser = argparse.ArgumentParser(description="Prepare ASpIRE dataset")
+    parser.add_argument('--manifest-only', default=False, action='store_true', help="if you want to reconstruct manifest only instead of the overall processing")
+    parser.add_argument('--path', default=None, type=str, help="path to store the processed data")
+    args = parser.parse_args(argv)
+
+    if args.manifest_only:
+        reconstruct_manifest(args.path)
+    else:
+        process(args.path)
+
 
 
 MODES = ["train_sup", "train_unsup", "train", "dev", "test"]
@@ -319,37 +354,35 @@ class AspireCTCDataset(AudioCTCDataset):
         return len(self.entries)
 
 
+def test_plot():
+    from ..util.audio import AudioDataLoader, AudioCTCDataLoader
+    train_dataset = Aspire(mode="test")
+    loader = AudioDataLoader(train_dataset, batch_size=10, num_workers=4, shuffle=True)
+    logger.info(f"num_workers={loader.num_workers}")
+
+    for i, data in enumerate(loader):
+        tensors, targets = data
+        #for tensors, targets in data:
+        logger.info("f{tensors}, {targets}")
+        if False:
+            import matplotlib
+            matplotlib.use('TkAgg')
+            matplotlib.interactive(True)
+            import matplotlib.pyplot as plt
+
+            for tensor, target in zip(tensors, targets):
+                tensor = tensor.view(-1, p.CHANNEL, p.WIDTH, p.HEIGHT)
+                t = np.arange(0, tensor.size(3)) / 8000
+                f = np.linspace(0, 4000, tensor.size(2))
+
+                fig = plt.figure(1)
+                p = plt.pcolormesh(t, f, np.log10(10 ** tensor[0][0] - 1), cmap='plasma')
+                plt.colorbar(p)
+                plt.show(block=True)
+        if i == 2:
+            break
+    #plt.close('all')
+
 
 if __name__ == "__main__":
-    from ..util.audio import AudioDataLoader, AudioCTCDataLoader
-
-    if False:
-        reconstruct_manifest(DATA_PATH)
-
-    if True:
-        train_dataset = Aspire(mode="test")
-        loader = AudioDataLoader(train_dataset, batch_size=10, num_workers=4, shuffle=True)
-        print(f"num_workers={loader.num_workers}")
-
-        for i, data in enumerate(loader):
-            tensors, targets = data
-            #for tensors, targets in data:
-            print(tensors, targets)
-            if False:
-                import matplotlib
-                matplotlib.use('TkAgg')
-                matplotlib.interactive(True)
-                import matplotlib.pyplot as plt
-
-                for tensor, target in zip(tensors, targets):
-                    tensor = tensor.view(-1, p.CHANNEL, p.WIDTH, p.HEIGHT)
-                    t = np.arange(0, tensor.size(3)) / 8000
-                    f = np.linspace(0, 4000, tensor.size(2))
-
-                    fig = plt.figure(1)
-                    p = plt.pcolormesh(t, f, np.log10(10 ** tensor[0][0] - 1), cmap='plasma')
-                    plt.colorbar(p)
-                    plt.show(block=True)
-            if i == 2:
-                break
-        #plt.close('all')
+    pass
