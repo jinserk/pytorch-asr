@@ -42,12 +42,18 @@ class Predict(object):
         total = np.sum(priors)
         priors = np.divide(priors, total)
         priors[np.where(priors < 1e-10)] = 1. # to prevent divided zero error
-        self.priors = torch.log(torch.FloatTensor(priors))
+        #priors = np.append([0], priors)
+        if self.use_cuda:
+            self.priors = torch.log(torch.cuda.FloatTensor(priors))
+        else:
+            self.priors = torch.log(torch.FloatTensor(priors))
 
     def decode(self, wav_file, verbose=False):
         # predict phones using AM
         xs, ys, txt = self.data_loader.load(wav_file)
         ys_hat = self.model.predict(xs)
+        #eps = torch.zeros(ys_hat.size(0), ys_hat.size(1), 1)
+        #ys_hat = torch.cat((eps, ys_hat), 2)
         # devide by priors
         loglikes = torch.log(ys_hat) - self.priors
 
@@ -64,6 +70,8 @@ class Predict(object):
             logger.info(f"symbols: {' '.join(symbols)}")
 
         # decode using Kaldi's latgen decoder
+        if self.use_cuda:
+            loglikes = loglikes.cpu()
         words, alignment = self.decoder(loglikes)
         # convert into text
         words = words.squeeze()

@@ -58,7 +58,7 @@ class ResNetCTCModel:
             self.load(continue_from)
 
     def __setup_networks(self):
-        self.encoder = resnet50(num_classes=self.y_dim)
+        self.encoder = resnet101(num_classes=self.y_dim)
         if self.use_cuda:
             self.encoder.cuda()
 
