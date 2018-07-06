@@ -74,7 +74,10 @@ class Augment(object):
 
         if self.tempo:
             tempo = np.random.uniform(*self.tempo_range)
-            tfm.tempo(tempo, audio_type='s')
+            if tempo < 0.9 or tempo > 1.1:
+                tfm.tempo(tempo, audio_type='s')
+            else:
+                tfm.stretch(tempo)
             self.last_tempo = tempo
 
         if self.gain:
@@ -94,8 +97,9 @@ class Augment(object):
             sr, wav = scipy.io.wavfile.read(tar_file)
 
         if self.noise:
-            noise = np.random.normal(0, 1, wav.shape)  # TODO: noise range?
-            wav += noise
+            snr = 10.0 ** (np.random.uniform(*self.noise_range) / 10.0)
+            noise = 1 / np.sqrt(2) * np.random.normal(0, 1, wav.shape)
+            wav = wav + snr * noise
         return wav
 
 
