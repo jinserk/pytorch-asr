@@ -112,7 +112,9 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 256, layers[3], stride=(2, 1))
         self.avgpool = nn.AvgPool2d(5, stride=1, padding=(0, 2))
         self.fc1 = nn.Linear(256 * block.expansion, 512)
+        self.do1 = nn.Dropout(p=0.5, inplace=True)
         self.fc2 = nn.Linear(512, 512)
+        self.do2 = nn.Dropout(p=0.5, inplace=True)
         self.fc3 = nn.Linear(512, num_classes)
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -148,7 +150,9 @@ class ResNet(nn.Module):
         # BxCxWxH -> BxHxCxW -> BxTxH
         x = x.transpose(2, 3).transpose(1, 2)
         x = self.fc1(x.view(x.size(0), x.size(1), -1))
+        x = self.do1(x)
         x = self.fc2(x)
+        x = self.do2(x)
         x = self.fc3(x)
         if softmax:
             return nn.Softmax(dim=2)(x)
