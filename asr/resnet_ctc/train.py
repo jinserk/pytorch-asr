@@ -31,6 +31,8 @@ def parse_options(argv):
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
     parser.add_argument('--log-dir', default='./logs', type=str, help="filename for logging the outputs")
     parser.add_argument('--model-prefix', default='resnet_aspire', type=str, help="model file prefix to store")
+    parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
+    parser.add_argument('--num-ckpt', default=10000, type=int, help="number of batch-run to save checkpoints")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
 
     args = parser.parse_args(argv)
@@ -97,37 +99,26 @@ def train(argv):
                                           tempo=True, gain=True, noise=True)
         data_loaders[mode] = AudioCTCDataLoader(datasets[mode], batch_size=args.batch_size,
                                                 num_workers=args.num_workers, shuffle=True,
-                                                use_cuda=args.use_cuda, pin_memory=True)
+                                                use_cuda=args.use_cuda, pin_memory=True,
+                                                frame_shift=4)
 
     # run inference for a certain number of epochs
     for i in range(model.epoch, args.num_epochs):
         # get the losses for an epoch
-        model.train_epoch(data_loaders["train"], prefix=get_model_file_path(f"epoch_{model.epoch:04d}_ckpt"))
-        logger.info(f"epoch {model.epoch:03d}: "
-                    f"training loss {model.meter_loss.value()[0]:5.3f} ")
-                    #f"training accuracy {model.meter_accuracy.value()[0]:6.3f}")
-
+        model.train_epoch(data_loaders["train"])
         # validate
         model.test(data_loaders["dev"], "validating")
-        logger.info(f"epoch {model.epoch:03d}: "
-                    f"validating loss {model.meter_loss.value()[0]:5.3f} ")
-                    #f"validating accuracy {model.meter_accuracy.value()[0]:6.3f}")
 
         # update the best validation accuracy and the corresponding
         # testing accuracy and the state of the parent module (including the networks)
         #if best_valid_acc < model.meter_accuracy.value()[0]:
         #    best_valid_acc = model.meter_accuracy.value()[0]
-        # save
-        model.save(get_model_file_path(f"epoch_{model.epoch:04d}"))
 
     # test
-    #model.test(data_loaders["test"])
+    #model.test(data_loaders["test"], "testing   ")
 
     #logger.info(f"best validation accuracy {best_valid_acc:6.3f} "
     #            f"test accuracy {model.meter_accuracy.value()[0]:6.3f}")
-
-    #save final model
-    model.save(get_model_file_path("final"), epoch=model.epoch)
 
 
 if __name__ == "__main__":

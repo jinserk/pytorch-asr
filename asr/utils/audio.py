@@ -2,6 +2,7 @@ import os
 import sys
 import threading
 import collections
+import random
 from pathlib import Path
 import tempfile as tmp
 
@@ -275,8 +276,8 @@ class AudioCollateFn(object):
 
 class AudioCTCCollateFn(object):
 
-    def __init__(self, use_cuda=False):
-        self.use_cuda = use_cuda
+    def __init__(self, frame_shift=0):
+        self.frame_shift = frame_shift
 
     def __call__(self, batch):
         batch_size = len(batch)
@@ -291,7 +292,15 @@ class AudioCTCCollateFn(object):
         filenames = []
         for i in range(batch_size):
             tensor, target, filename = batch[i]
-            tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
+            if frame_shift > 0:
+                offset = random.randint(0, frame_shift)
+                if offset == 0:
+                    tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
+                else:
+                    tensors[i].narrow(2, 0, offset).copy_(tensor[:, :, -offset:])
+                    tensors[i].narrow(2, 0, tensor.size(2)-offset).copy_(tensor[:, :, :-offset])
+            else:
+                tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
             targets.append(target)
             tensor_lens.append(tensor.size(2))
             target_lens.append(target.size(0))
@@ -541,7 +550,14 @@ class AudioCTCDataLoader(DataLoader):
             del(kwargs["use_cuda"])
         else:
             use_cuda = False
-        collate_fn = AudioCTCCollateFn(use_cuda)
+
+        if "frame_shift" in kwargs:
+            frame_shift = kwargs["frame_shift"]
+            del(kwargs["frame_shift"])
+        else:
+            frame_shift = 0
+
+        collate_fn = AudioCTCCollateFn(frame_shift)
         super().__init__(collate_fn=collate_fn, *args, **kwargs)
 
 
