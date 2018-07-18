@@ -168,7 +168,7 @@ class ResNetCTCModel:
                     xs = xs.cuda()
                 ys_hat = self.encoder(xs)
                 ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
-                frame_lens.div_(2)
+                frame_lens = torch.ceil(frame_lens.float() / 4.).int()
                 #ys_int = onehot2int(ys)
                 loss = self.loss(ys_hat, ys, frame_lens, label_lens)
 

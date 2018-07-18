@@ -292,8 +292,8 @@ class AudioCTCCollateFn(object):
         filenames = []
         for i in range(batch_size):
             tensor, target, filename = batch[i]
-            if frame_shift > 0:
-                offset = random.randint(0, frame_shift)
+            if self.frame_shift > 0:
+                offset = random.randint(0, self.frame_shift)
                 if offset == 0:
                     tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
                 else:
