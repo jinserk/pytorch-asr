@@ -5,3 +5,5 @@ t_sne_bhcuda
 tqdm
 sox
 visdom
+tensorboardx
+tensorboard
