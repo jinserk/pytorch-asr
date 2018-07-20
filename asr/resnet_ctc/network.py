@@ -3,7 +3,6 @@ from collections import OrderedDict
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.autograd import Variable
 
 
@@ -30,7 +29,7 @@ class Flatten(nn.Module):
 class Swish(nn.Module):
 
     def forward(self, x):
-        return x * F.sigmoid(x)
+        return x * torch.sigmoid(x)
 
 
 class BasicBlock(nn.Module):

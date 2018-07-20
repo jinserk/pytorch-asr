@@ -49,6 +49,7 @@ class ResNetCTCModel:
         self.num_ckpt = num_ckpt
 
         self.epoch = 0
+        self.opt = "sgd"
 
         self.viz = viz
         if self.viz is not None:
@@ -62,13 +63,20 @@ class ResNetCTCModel:
             self.load(continue_from)
 
     def __setup_networks(self):
+        # setup networks
         self.encoder = resnet50(num_classes=self.y_dim)
         if self.use_cuda:
             self.encoder.cuda()
-
-        parameters = self.encoder.parameters()
-        self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8)
+        # setup loss
         self.loss = CTCLoss(blank=0, size_average=True)
+        # setup optimizer
+        parameters = self.encoder.parameters()
+        if self.opt == "adam":
+            self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0005)
+            self.lr_scheduler = None
+        else:
+            self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9, weight_decay=0.0005)
+            self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
 
     def __get_model_name(self, desc):
         return str(get_model_file_path(self.log_dir, self.model_prefix, desc))
@@ -79,6 +87,10 @@ class ResNetCTCModel:
         meter_loss = tnt.meter.MovingAverageValueMeter(100)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
+
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step()
+            logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
 
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training ")
