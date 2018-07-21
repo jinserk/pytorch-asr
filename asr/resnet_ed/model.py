@@ -7,10 +7,9 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torchvision.utils as tvu
-from warpctc_pytorch import CTCLoss
 import torchnet as tnt
 
-from ..utils.misc import onehot2int, get_model_file_path
+from ..utils.misc import onehot2int, int2onehot, get_model_file_path
 from ..utils.logger import logger
 from ..utils import params as p
 from ..utils.audio import FrameSplitter
@@ -18,7 +17,7 @@ from ..utils.audio import FrameSplitter
 from .network import *
 
 
-class ResNetCTCModel:
+class ResNetEdModel:
     """
     This class encapsulates the parameters (neural networks) and models & guides
     needed to train a supervised ResNet on the Aspire audio dataset
@@ -68,7 +67,7 @@ class ResNetCTCModel:
         if self.use_cuda:
             self.encoder.cuda()
         # setup loss
-        self.loss = CTCLoss(blank=0, size_average=True)
+        self.loss = nn.CrossEntropyLoss()
         # setup optimizer
         parameters = self.encoder.parameters()
         if self.opt == "adam":
@@ -79,7 +78,7 @@ class ResNetCTCModel:
             logger.info("using SGDR")
             self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9)
             #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
-            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWithRestartsLR(self.optimizer, T_max=20, T_mult=2)
+            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
 
     def __get_model_name(self, desc):
         return str(get_model_file_path(self.log_dir, self.model_prefix, desc))
@@ -91,9 +90,9 @@ class ResNetCTCModel:
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
 
-        #if self.lr_scheduler is not None:
-        #    self.lr_scheduler.step()
-        #    logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step()
+            logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
 
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training ")
@@ -103,25 +102,18 @@ class ResNetCTCModel:
                 xs = xs.cuda()
             #ys_hat = self.encoder.test(xs)
             ys_hat = self.encoder(xs)
-            #print(onehot3int(ys_hat[0]).squeeze())
-            frame_lens = torch.ceil(frame_lens.float() / 4.).int()
+            tmp = list()
+            for b in range(ys_hat.size(0)):
+                tmp.append(ys_hat[b, :frame_lens[b], :])
+            ys_hat_cat = torch.cat(tmp)
+            if self.use_cuda:
+                ys = ys.cuda()
             #torch.set_printoptions(threshold=5000000)
             #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
             #print(onehot2int(ys_hat).squeeze(), ys)
             try:
-                loss = self.loss(ys_hat.transpose(0, 1).contiguous(), ys, frame_lens, label_lens)
+                loss = self.loss(ys_hat_cat, ys.long())
                 #print(loss)
-
-                #loss = loss / xs.size(0)  # average the loss by minibatch - size_average=True in CTC_Loss()
-                loss_sum = loss.data.sum()
-                inf = float("inf")
-                if loss_sum == inf or loss_sum == -inf:
-                    #torch.set_printoptions(threshold=5000000)
-                    #print(filenames, ys_hat, frame_lens, label_lens)
-                    logger.warning("received an inf loss, setting loss value to 0")
-                    loss_value = 0
-                else:
-                    loss_value = loss.item()
 
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -132,17 +124,13 @@ class ResNetCTCModel:
                 print(filenames, frame_lens, label_lens)
 
             #ys_int = onehot2int(ys_hat).squeeze()
-            meter_loss.add(loss_value)
+            meter_loss.add(loss.item())
             t.set_description(f"training (loss: {meter_loss.value()[0]:.3f})")
             t.refresh()
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
 
             if 0 < i < len(data_loader) and i % self.num_ckpt == 0:
-                if self.lr_scheduler is not None:
-                    self.lr_scheduler.step()
-                    logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
-
                 if self.viz is not None:
                     self.viz.add_point(
                         title = 'loss',

@@ -354,6 +354,28 @@ class AspireCTCDataset(AudioCTCDataset):
         return len(self.entries)
 
 
+class AspireEdDataset(AspireCTCDataset):
+
+    def __init__(self, *args, **kwargs):
+        if 'tempo' in kwargs:
+            kwargs['tempo'] = False
+        super().__init__(*args, **kwargs)
+
+    def __getitem__(self, index):
+        uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
+        # read and transform wav file
+        if self.transform is not None:
+            tensors = self.transform(wav_file)
+        if self.mode == "train_unsup":
+            return tensors, None
+        # read phn file
+        targets = np.loadtxt(phn_file, dtype="int", ndmin=1)
+        targets = torch.IntTensor(targets)
+        targets_len = len(targets)
+        start = (tensors.size(2) - targets_len) // 2
+        return tensors[:, :, start:start+targets_len], targets, phn_file
+
+
 def test_plot():
     from ..util.audio import AudioDataLoader, AudioCTCDataLoader
     train_dataset = Aspire(mode="test")
