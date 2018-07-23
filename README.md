@@ -6,10 +6,10 @@ The code was tested with Python 3.7 and PyTorch 0.5.
 
 ## Installation
 
-Prerequisites:
-    - Python 3.6+
-    - PyTorch 0.4.1+
-    - Kaldi 5.3+
+**Prerequisites:**
+    * Python 3.6+
+    * PyTorch 0.4.1+
+    * Kaldi 5.3+
 
 We recommend [pyenv](https://github.com/pyenv/pyenv).
 Do not forget to set `pyenv local 3.7.0` in the local repo if you're using pyenv.
