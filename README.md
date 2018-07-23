@@ -7,6 +7,10 @@ The code was tested with Python 3.7 and PyTorch 0.5.
 ## Installation
 
 We recommend [pyenv](https://github.com/pyenv/pyenv). We assume you already have pyenv and Python 3.7.0, PyTorch 0.5.0a0, and Kaldi 5.3+.
+
+Currently, AdamW and SGDR patch ([PR #4429](https://github.com/pytorch/pytorch/pull/4429) and [PR #7821](https://github.com/pytorch/pytorch/pull/7821)) has to be applied
+to Pytorch 0.5.0a0 ([git branch v0.4.1](https://github.com/pytorch/pytorch/tree/v0.4.1)) to use AdamW or SGDR optimizer. If you don't want to use this, please fix
+the each optimizer setup in `model.py` files to avoid errors.
 To avoid the `-fPIC` related compile error, you have to configure Kaldi with `--shared` option when you install it.
 Do not forget to set `pyenv local 3.7.0` in the local repo if you decide to use pyenv.
 
