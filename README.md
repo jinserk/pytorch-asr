@@ -6,13 +6,19 @@ The code was tested with Python 3.7 and PyTorch 0.5.
 
 ## Installation
 
-We recommend [pyenv](https://github.com/pyenv/pyenv). We assume you already have pyenv and Python 3.7.0, PyTorch 0.5.0a0, and Kaldi 5.3+.
+Prerequisites:
+    - Python 3.6+
+    - PyTorch 0.4.1+
+    - Kaldi 5.3+
+
+We recommend [pyenv](https://github.com/pyenv/pyenv).
+Do not forget to set `pyenv local 3.7.0` in the local repo if you're using pyenv.
 
 Currently, AdamW and SGDR patch ([PR #4429](https://github.com/pytorch/pytorch/pull/4429) and [PR #7821](https://github.com/pytorch/pytorch/pull/7821)) has to be applied
-to Pytorch 0.5.0a0 ([git branch v0.4.1](https://github.com/pytorch/pytorch/tree/v0.4.1)) to use AdamW or SGDR optimizer. If you don't want to use this, please fix
-the each optimizer setup in `model.py` files to avoid errors.
+to Pytorch 0.5.0a0 ([git branch v0.4.1](https://github.com/pytorch/pytorch/tree/v0.4.1)) to use AdamW or SGDR optimizer.
+If you don't want to use this, please correct each optimizer setting in the function of `__setup_networks()` in `model.py` files to avoid corresponding errors.
+
 To avoid the `-fPIC` related compile error, you have to configure Kaldi with `--shared` option when you install it.
-Do not forget to set `pyenv local 3.7.0` in the local repo if you decide to use pyenv.
 
 Download:
 ```
@@ -38,19 +44,24 @@ Build up PyTorch-binding of Kaldi decoder:
 $ python build.py
 ```
 This takes a while to download the Kaldi's official ASpIRE chain model and its post-processing.
+If you want to use your own language model or graphs, modify `asr/kaldi/scripts/mkgraph.sh` as your settings.
 
 
 ## Training
 
 Pytorch-asr is targeted to develop a framework supporting multiple acoustic models. You have to specify one of model to train or predict.
-Currently, only `resnet_ctc` and `resnet_ed` model works for training and prediction. Try this model first.
+Currently, `resnet_ctc`, `resnet_ed`, and `deepspeech` models work for training and prediction. Try these models first.
 
-If you do training for the first time, you have to prepare the dataset. Currently we support only the Kaldi's ASpIRE recipe datatset, originated from LDC's fisher corpus.
+If you do training for the first time, you have to prepare the dataset.
+Currently we support only the Kaldi's ASpIRE recipe datatset, originated from LDC's fisher corpus.
+Please modify `asr/dataset/aspire.py` according to the location of your corpus data.
 ```
 $ python prepare.py aspire
 ```
 
-To train CTC model, you need to make the ctc labeling files from each utterence's transcript.
+If you have any related Kaldi recipe and its `exp` directories which contains the result of training,
+you can use the phone alignment result for CTC training.
+If you don't use the Kaldi's training result, you can generate the ctc labeling files from each utterence's transcript and the corresponding lexicon dictionary.
 ```
 $ cd asr/kaldi
 $ python prep_ctc_trans.py ../../data/aspire
