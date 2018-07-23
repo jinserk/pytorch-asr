@@ -174,21 +174,16 @@ class ResNetEdModel:
                 if self.use_cuda:
                     xs = xs.cuda()
                 ys_hat = self.encoder(xs)
-                ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
-                frame_lens = torch.ceil(frame_lens.float() / 4.).int()
+                tmp = list()
+                for b in range(ys_hat.size(0)):
+                    tmp.append(ys_hat[b, :frame_lens[b], :])
+                ys_hat_cat = torch.cat(tmp)
+                if self.use_cuda:
+                    ys = ys.cuda()
+                #frame_lens = torch.ceil(frame_lens.float() / 4.).int()
                 #ys_int = onehot2int(ys)
-                loss = self.loss(ys_hat, ys, frame_lens, label_lens)
-
-                loss = loss / xs.size(0)  # average the loss by minibatch
-                loss_sum = loss.data.sum()
-                inf = float("inf")
-                if loss_sum == inf or loss_sum == -inf:
-                    logger.warning("received an inf loss, setting loss value to 0")
-                    loss_value = 0
-                else:
-                    loss_value = loss.item()
-
-                meter_loss.add(loss_value)
+                loss = self.loss(ys_hat_cat, ys.long())
+                meter_loss.add(loss.item())
                 #meter_accuracy.add(ys_hat.data, ys_int)
                 #meter_confusion.add(ys_hat.data, ys_int)
                 del loss, ys_hat
