@@ -83,6 +83,10 @@ class DeepSpeechModel:
     def __get_model_name(self, desc):
         return str(get_model_file_path(self.log_dir, self.model_prefix, desc))
 
+    def __remove_ckpt_files(self, epoch):
+        for ckpt in Path(self.log_dir).rglob(f"*_epoch_{epoch:03d}_ckpt_*"):
+            ckpt.unlink()
+
     def train_epoch(self, data_loader):
         self.encoder.train()
 
@@ -171,6 +175,7 @@ class DeepSpeechModel:
                     f"training loss {meter_loss.value()[0]:5.3f} ")
                     #f"training accuracy {meter_accuracy.value()[0]:6.3f}")
         self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
+        self.__remove_ckpt_files(self.epoch-1)
 
     def test(self, data_loader, desc=None):
         self.encoder.eval()
