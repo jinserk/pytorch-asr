@@ -285,7 +285,7 @@ class AspireDataset(AudioDataset):
     entries = list()
     entry_frames = list()
 
-    def __init__(self, root=None, mode=None, data_size=1e30, *args, **kwargs):
+    def __init__(self, root=None, mode=None, data_size=1e30, min_len=1, max_len=15, *args, **kwargs):
         self.mode = mode
         self.data_size = data_size
         if root is not None:
@@ -293,7 +293,7 @@ class AspireDataset(AudioDataset):
         super().__init__(frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT,
                          window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
                          *args, **kwargs)
-        self.entries, self.entry_frames = load_manifest(self.root, mode, data_size)
+        self.entries, self.entry_frames = load_manifest(self.root, mode, data_size, min_len, max_len)
 
     def __getitem__(self, index):
         uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
@@ -327,7 +327,7 @@ class AspireCTCDataset(AudioCTCDataset):
     entries = list()
     entry_frames = list()
 
-    def __init__(self, root=None, mode=None, data_size=1e30, *args, **kwargs):
+    def __init__(self, root=None, mode=None, data_size=1e30, min_len=1, max_len=15, *args, **kwargs):
         self.mode = mode
         self.data_size = data_size
         if root is not None:
@@ -335,7 +335,7 @@ class AspireCTCDataset(AudioCTCDataset):
         super().__init__(frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT,
                          window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
                          *args, **kwargs)
-        self.entries, self.entry_frames = load_manifest(self.root, mode, data_size)
+        self.entries, self.entry_frames = load_manifest(self.root, mode, data_size, min_len, max_len)
 
     def __getitem__(self, index):
         uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
