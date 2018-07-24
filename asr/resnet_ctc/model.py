@@ -91,7 +91,7 @@ class ResNetCTCModel:
     def train_epoch(self, data_loader):
         self.encoder.train()
 
-        meter_loss = tnt.meter.MovingAverageValueMeter(100)
+        meter_loss = tnt.meter.MovingAverageValueMeter(self.num_ckpt // 10)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
 
@@ -102,6 +102,10 @@ class ResNetCTCModel:
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training ")
         for i, (data) in t:
+            if self.lr_scheduler is not None and i % self.num_ckpt == 0:
+                self.lr_scheduler.step()
+                #logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
+
             xs, ys, frame_lens, label_lens, filenames = data
             if self.use_cuda:
                 xs = xs.cuda()
@@ -143,10 +147,6 @@ class ResNetCTCModel:
             #self.meter_confusion.add(ys_int, ys)
 
             if 0 < i < len(data_loader) and i % self.num_ckpt == 0:
-                if self.lr_scheduler is not None:
-                    self.lr_scheduler.step()
-                    logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
-
                 if self.viz is not None:
                     self.viz.add_point(
                         title = 'loss',
@@ -270,7 +270,7 @@ class ResNetCTCModel:
             self.encoder.load_state_dict(states["model"])
         except:
             self.encoder.load_state_dict(states["conv"])
-        #self.optimizer.load_state_dict(states["optimizer"])
+        self.optimizer.load_state_dict(states["optimizer"])
         if self.use_cuda:
             self.encoder.cuda()
 

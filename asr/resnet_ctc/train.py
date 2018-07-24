@@ -19,7 +19,7 @@ def parse_options(argv):
     parser = argparse.ArgumentParser(description="ResNet AM with fully supervised training")
     # for training
     parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
-    parser.add_argument('--num-workers', default=4, type=int, help="number of dataloader workers")
+    parser.add_argument('--num-workers', default=8, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
     parser.add_argument('--batch-size', default=8, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")

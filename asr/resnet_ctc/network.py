@@ -100,16 +100,31 @@ class ResNet(nn.Module):
     def __init__(self, block, layers, num_classes=1000):
         self.inplanes = 32
         super(ResNet, self).__init__()
-        self.conv1 = nn.Conv2d(2, self.inplanes, kernel_size=7, stride=(2, 1), padding=3, bias=False)
-        self.bn1 = nn.BatchNorm2d(self.inplanes)
-        #self.relu = nn.ReLU(inplace=True)
-        self.relu = Swish()
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+        #self.conv1 = nn.Conv2d(2, self.inplanes, kernel_size=7, stride=(2, 1), padding=3, bias=False)
+        #self.bn1 = nn.BatchNorm2d(self.inplanes)
+        ##self.relu = nn.ReLU(inplace=True)
+        #self.relu = Swish()
+        #self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.conv = nn.Sequential(
+            nn.Conv2d(2, 32, kernel_size=(41, 11), stride=(2, 2), padding=(20, 5)),
+            nn.BatchNorm2d(32),
+            #nn.Hardtanh(0, 20, inplace=True),
+            Swish(),
+            nn.Conv2d(32, 32, kernel_size=(21, 11), stride=(2, 1), padding=(10, 5)),
+            nn.BatchNorm2d(32),
+            #nn.Hardtanh(0, 20, inplace=True)
+            Swish(),
+            nn.Conv2d(32, 32, kernel_size=(11, 11), stride=(2, 1), padding=(5, 5)),
+            nn.BatchNorm2d(32),
+            #nn.Hardtanh(0, 20, inplace=True)
+            Swish(),
+        )
         self.layer1 = self._make_layer(block, self.inplanes, layers[0])
         self.layer2 = self._make_layer(block, 64, layers[1], stride=(2, 1))
         self.layer3 = self._make_layer(block, 128, layers[2], stride=(2, 1))
         self.layer4 = self._make_layer(block, 256, layers[3], stride=(2, 1))
-        self.avgpool = nn.AvgPool2d(5, stride=1, padding=(0, 2))
+        self.avgpool = nn.AvgPool2d(3, stride=1, padding=(0, 1))
         self.fc1 = nn.Linear(256 * block.expansion, 512)
         self.do1 = nn.Dropout(p=0.5, inplace=True)
         self.fc2 = nn.Linear(512, 512)
@@ -137,10 +152,10 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x, softmax=False):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
+        x = self.conv(x)
+        #x = self.bn1(x)
+        #x = self.relu(x)
+        #x = self.maxpool(x)
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
@@ -158,31 +173,6 @@ class ResNet(nn.Module):
         else:
             return x
 
-    def test(self, x):
-        print(x.shape)
-        x = self.conv1(x)
-        print(x.shape)
-        x = self.bn1(x)
-        print(x.shape)
-        x = self.relu(x)
-        print(x.shape)
-        x = self.maxpool(x)
-        print(x.shape)
-        x = self.layer1(x)
-        print('layer1', x.shape)
-        x = self.layer2(x)
-        print('layer2', x.shape)
-        x = self.layer3(x)
-        print('layer3', x.shape)
-        x = self.layer4(x)
-        print('layer4', x.shape)
-        x = self.avgpool(x)
-        print('avgpool', x.shape)
-        x = x.transpose(2, 3).transpose(1, 2)
-        x = self.fc1(x.view(x.size(0), x.size(1), -1))
-        x = self.fc2(x)
-        print(x.shape)
-        return x
 
 def resnet34(**kwargs):
     return ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
@@ -198,6 +188,7 @@ def resnet101(**kwargs):
 
 def resnet152(**kwargs):
     return ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)
+
 
 if __name__ == "__main__":
     from ..utils import params as p
