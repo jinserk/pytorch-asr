@@ -1,3 +1,3 @@
 #!python
 
-KALDI_ROOT = "/u3/jbaik/kaldi"
+KALDI_ROOT = "/d2/jbaik/kaldi"
