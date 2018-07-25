@@ -5,31 +5,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-
-class View(nn.Module):
-
-    def __init__(self, dim):
-        super().__init__()
-        self.dim = dim
-
-    def forward(self, x, *args):
-        return x.view(*self.dim)
-
-
-class Flatten(nn.Module):
-
-    def __init__(self):
-        super(Flatten, self).__init__()
-
-    def forward(self, x):
-        shape = x.size()
-        return x.view(x.size(0), -1)
-
-
-class Swish(nn.Module):
-
-    def forward(self, x):
-        return x * torch.sigmoid(x)
+from ..utils.misc import Swish
 
 
 class BasicBlock(nn.Module):
@@ -40,12 +16,12 @@ class BasicBlock(nn.Module):
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
         #self.relu1 = nn.ReLU(inplace=True)
-        self.relu1 = Swish()
+        self.relu1 = Swish(inplace=True)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
         #self.relu1 = nn.ReLU(inplace=True)
-        self.relu2 = Swish()
+        self.relu2 = Swish(inplace=True)
         self.stride = stride
 
     def forward(self, x):
@@ -70,16 +46,16 @@ class Bottleneck(nn.Module):
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
         #self.relu1 = nn.ReLU(inplace=True)
-        self.relu1 = Swish()
+        self.relu1 = Swish(inplace=True)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
         #self.relu2 = nn.ReLU(inplace=True)
-        self.relu2 = Swish()
+        self.relu2 = Swish(inplace=True)
         self.conv3 = nn.Conv2d(planes, planes * self.expansion, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(planes * self.expansion)
         self.downsample = downsample
         #self.relu3 = nn.ReLU(inplace=True)
-        self.relu3 = Swish()
+        self.relu3 = Swish(inplace=True)
         self.stride = stride
 
     def forward(self, x):
@@ -108,19 +84,19 @@ class ResNet(nn.Module):
         #self.conv1 = nn.Conv2d(2, self.inplanes, kernel_size=7, stride=(2, 1), padding=3, bias=False)
         #self.bn1 = nn.BatchNorm2d(self.inplanes)
         ##self.relu = nn.ReLU(inplace=True)
-        #self.relu = Swish()
+        #self.relu = Swish(inplace=True)
         #self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.conv = nn.Sequential(
             nn.Conv2d(2, self.inplanes, kernel_size=(41, 11), stride=(2, 2), padding=(0, 5)),
             nn.BatchNorm2d(self.inplanes),
             #nn.ReLU(inplace=True),
             #nn.Hardtanh(0, 20, inplace=True),
-            Swish(),
+            Swish(inplace=True),
             nn.Conv2d(self.inplanes, self.inplanes, kernel_size=(21, 11), stride=(2, 1), padding=(0, 5)),
             nn.BatchNorm2d(self.inplanes),
             #nn.ReLU(inplace=True),
             #nn.Hardtanh(0, 20, inplace=True)
-            Swish(),
+            Swish(inplace=True),
         )
 
         # Based on the conv formula (W - F + 2P) // S + 1

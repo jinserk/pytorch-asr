@@ -3,7 +3,6 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from . import params as p
 
@@ -43,6 +42,16 @@ class View(nn.Module):
         return x.view(*self.dim)
 
 
+class Flatten(nn.Module):
+
+    def __init__(self):
+        super(Flatten, self).__init__()
+
+    def forward(self, x):
+        shape = x.size()
+        return x.view(x.size(0), -1)
+
+
 class MultiOut(nn.ModuleList):
 
     def __init__(self, modules):
@@ -54,8 +63,16 @@ class MultiOut(nn.ModuleList):
 
 class Swish(nn.Module):
 
+    def __init__(self, inplace=False):
+        super().__init__()
+        self.inplace = inplace
+
     def forward(self, x):
-        return x * F.sigmoid(x)
+        if self.inplace:
+            x.mul_(torch.sigmoid(x))
+            return x
+        else:
+            return x * torch.sigmoid(x)
 
 
 if __name__ == "__main__":
