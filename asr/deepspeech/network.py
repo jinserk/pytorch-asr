@@ -12,6 +12,7 @@ from ..utils import params as p
 
 
 class SequenceWise(nn.Module):
+
     def __init__(self, module):
         """
         Collapses input of dim T*N*H to (T*N)*H, and applies to a module.
@@ -45,6 +46,7 @@ class InferenceBatchSoftmax(nn.Module):
 
 
 class TemporalRowConvolution(nn.Module):
+
     def __init__(self, input_size, kernel_size, stride=1, padding=0, feat_first=False, bias=False):
         super(TemporalRowConvolution, self).__init__()
         self.input_size = input_size
@@ -70,6 +72,7 @@ class TemporalRowConvolution(nn.Module):
 
 
 class BatchRNN(nn.Module):
+
     def __init__(self, input_size, hidden_size, rnn_type=nn.LSTM, bidirectional=False, batch_norm=True):
         super(BatchRNN, self).__init__()
         self.input_size = input_size
@@ -102,6 +105,7 @@ class Lookahead(nn.Module):
     # Wang et al 2016 - Lookahead Convolution Layer for Unidirectional Recurrent Neural Networks
     # input shape - sequence, batch, feature - TxNxH
     # output shape - same as input
+
     def __init__(self, n_features, context):
         # should we handle batch_first=True?
         super(Lookahead, self).__init__()
@@ -139,6 +143,7 @@ class Lookahead(nn.Module):
 
 
 class DeepSpeech(nn.Module):
+
     def __init__(self, rnn_type=nn.LSTM, num_classes=p.NUM_CTC_LABELS,
                  rnn_hidden_size=512, nb_layers=4, bidirectional=True, context=20):
         super(DeepSpeech, self).__init__()
@@ -150,29 +155,26 @@ class DeepSpeech(nn.Module):
         self._bidirectional = bidirectional
 
         self.conv = nn.Sequential(
-            nn.Conv2d(2, 32, kernel_size=(41, 11), stride=(2, 2), padding=(20, 5)),
+            nn.Conv2d(2, 32, kernel_size=(41, 11), stride=(2, 2), padding=(0, 5)),
             nn.BatchNorm2d(32),
             #nn.Hardtanh(0, 20, inplace=True),
+            #nn.ReLU(inplace=True),
             Swish(),
-            nn.Conv2d(32, 32, kernel_size=(21, 11), stride=(2, 1), padding=(10, 5)),
+            nn.Conv2d(32, 32, kernel_size=(21, 11), stride=(2, 1), padding=(0, 5)),
             nn.BatchNorm2d(32),
             #nn.Hardtanh(0, 20, inplace=True)
+            #nn.ReLU(inplace=True),
             Swish(),
-            nn.Conv2d(32, 32, kernel_size=(11, 11), stride=(2, 1), padding=(5, 5)),
-            nn.BatchNorm2d(32),
-            #nn.Hardtanh(0, 20, inplace=True)
-            Swish()
         )
 
         # Based on above convolutions and spectrogram size using conv formula (W - F + 2P)/ S+1
-        num_freq = 129
-        rnn_input_size = int((num_freq - 41 + 2*20) // 2 + 1)
-        rnn_input_size = int((rnn_input_size - 21 + 2*10) // 2 + 1)
-        rnn_input_size = int((rnn_input_size - 11 + 2*5) // 2 + 1)
-        rnn_input_size *= 32
+        freq_size = 129
+        freq_size = (freq_size - 41) // 2 + 1
+        freq_size = (freq_size - 21) // 2 + 1
+        freq_size *= 32
 
         rnns = []
-        rnn = BatchRNN(input_size=rnn_input_size, hidden_size=rnn_hidden_size, rnn_type=rnn_type,
+        rnn = BatchRNN(input_size=freq_size, hidden_size=rnn_hidden_size, rnn_type=rnn_type,
                        bidirectional=bidirectional, batch_norm=False)
         rnns.append(('0', rnn))
         for x in range(nb_layers - 1):
@@ -183,8 +185,9 @@ class DeepSpeech(nn.Module):
         self.lookahead = nn.Sequential(
             # consider adding batch norm?
             Lookahead(rnn_hidden_size, context=context),
-            Swish()
             #nn.Hardtanh(0, 20, inplace=True)
+            #nn.ReLU(inplace=True),
+            Swish()
         ) if not bidirectional else None
 
         fully_connected = nn.Sequential(
