@@ -79,7 +79,7 @@ class ResNetCTCModel:
             logger.info("using SGDR")
             self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9)
             #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
-            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWithRestartsLR(self.optimizer, T_max=20, T_mult=2)
+            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
 
     def __get_model_name(self, desc):
         return str(get_model_file_path(self.log_dir, self.model_prefix, desc))
@@ -90,22 +90,18 @@ class ResNetCTCModel:
 
     def train_epoch(self, data_loader):
         self.encoder.train()
-
         meter_loss = tnt.meter.MovingAverageValueMeter(self.num_ckpt // 10)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
-
-        #if self.lr_scheduler is not None:
-        #    self.lr_scheduler.step()
-        #    logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
-
+        if self.lr_scheduler is not None:
+            self.lr_scheduler.step()
+            logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training ")
         for i, (data) in t:
-            if self.lr_scheduler is not None and i % self.num_ckpt == 0:
-                self.lr_scheduler.step()
-                #logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
-
+            #if self.lr_scheduler is not None and i % self.num_ckpt == 0:
+            #    self.lr_scheduler.step()
+            #    #logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
             xs, ys, frame_lens, label_lens, filenames = data
             if self.use_cuda:
                 xs = xs.cuda()
@@ -130,7 +126,6 @@ class ResNetCTCModel:
                     loss_value = 0
                 else:
                     loss_value = loss.item()
-
                 self.optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.encoder.parameters(), self.max_norm)
@@ -138,14 +133,12 @@ class ResNetCTCModel:
             except Exception as e:
                 print(e)
                 print(filenames, frame_lens, label_lens)
-
             #ys_int = onehot2int(ys_hat).squeeze()
             meter_loss.add(loss_value)
             t.set_description(f"training (loss: {meter_loss.value()[0]:.3f})")
             t.refresh()
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
-
             if 0 < i < len(data_loader) and i % self.num_ckpt == 0:
                 if self.viz is not None:
                     self.viz.add_point(
@@ -153,7 +146,6 @@ class ResNetCTCModel:
                         x = self.epoch+i/len(data_loader),
                         y = meter_loss.value()[0]
                     )
-
                 if self.tbd is not None:
                     x = self.epoch * len(data_loader) + i
                     self.tbd.add_graph(self.encoder, xs)
@@ -162,15 +154,12 @@ class ResNetCTCModel:
                     ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
                     self.tbd.add_image('ys_hat', x, ys_hat_img)
                     self.tbd.add_scalars('loss', x, { 'loss': meter_loss.value()[0], })
-
                 if self.checkpoint:
                     logger.info(f"training loss at epoch_{self.epoch:03d}_ckpt_{i:07d}: "
                                 f"{meter_loss.value()[0]:5.3f}")
                     self.save(self.__get_model_name(f"epoch_{self.epoch:03d}_ckpt_{i:07d}"))
-
             del xs, ys, ys_hat, loss
             #input("press key to continue")
-
         self.epoch += 1
         logger.info(f"epoch {self.epoch:03d}: "
                     f"training loss {meter_loss.value()[0]:5.3f} ")
@@ -180,47 +169,41 @@ class ResNetCTCModel:
 
     def test(self, data_loader, desc=None):
         self.encoder.eval()
-
         meter_loss = tnt.meter.AverageValueMeter()
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
+        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
+            xs, ys, frame_lens, label_lens, filenames = data
+            if self.use_cuda:
+                xs = xs.cuda()
+            ys_hat = self.encoder(xs)
+            ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
+            frame_lens = torch.ceil(frame_lens.float() / 2.).int()
+            #ys_int = onehot2int(ys)
+            loss = self.loss(ys_hat, ys, frame_lens, label_lens)
 
-        with torch.no_grad():
-            for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
-                xs, ys, frame_lens, label_lens, filenames = data
-                if self.use_cuda:
-                    xs = xs.cuda()
-                ys_hat = self.encoder(xs)
-                ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
-                frame_lens = torch.ceil(frame_lens.float() / 2.).int()
-                #ys_int = onehot2int(ys)
-                loss = self.loss(ys_hat, ys, frame_lens, label_lens)
+            loss = loss / xs.size(0)  # average the loss by minibatch
+            loss_sum = loss.data.sum()
+            inf = float("inf")
+            if loss_sum == inf or loss_sum == -inf:
+                logger.warning("received an inf loss, setting loss value to 0")
+                loss_value = 0
+            else:
+                loss_value = loss.item()
 
-                loss = loss / xs.size(0)  # average the loss by minibatch
-                loss_sum = loss.data.sum()
-                inf = float("inf")
-                if loss_sum == inf or loss_sum == -inf:
-                    logger.warning("received an inf loss, setting loss value to 0")
-                    loss_value = 0
-                else:
-                    loss_value = loss.item()
-
-                meter_loss.add(loss_value)
-                #meter_accuracy.add(ys_hat.data, ys_int)
-                #meter_confusion.add(ys_hat.data, ys_int)
-                del loss, ys_hat
-
+            meter_loss.add(loss_value)
+            #meter_accuracy.add(ys_hat.data, ys_int)
+            #meter_confusion.add(ys_hat.data, ys_int)
+            del loss, ys_hat
         logger.info(f"epoch {self.epoch:03d}: "
                     f"validating loss {meter_loss.value()[0]:5.3f} ")
                     #f"validating accuracy {meter_accuracy.value()[0]:6.3f}")
 
     def predict(self, xs):
         self.encoder.eval()
-
-        with torch.no_grad():
-            if self.use_cuda:
-                xs = xs.cuda()
-            ys_hat = self.encoder(xs, softmax=True)
+        if self.use_cuda:
+            xs = xs.cuda()
+        ys_hat = self.encoder(xs, softmax=True)
         return ys_hat
 
     def wer(self, s1, s2):
