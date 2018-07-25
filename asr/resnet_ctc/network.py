@@ -78,7 +78,7 @@ class Bottleneck(nn.Module):
         self.conv3 = nn.Conv2d(planes, planes * self.expansion, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(planes * self.expansion)
         self.downsample = downsample
-        #self.relu = nn.ReLU(inplace=True)
+        #self.relu3 = nn.ReLU(inplace=True)
         self.relu3 = Swish()
         self.stride = stride
 
@@ -113,10 +113,12 @@ class ResNet(nn.Module):
         self.conv = nn.Sequential(
             nn.Conv2d(2, self.inplanes, kernel_size=(41, 11), stride=(2, 2), padding=(0, 5)),
             nn.BatchNorm2d(self.inplanes),
+            #nn.ReLU(inplace=True),
             #nn.Hardtanh(0, 20, inplace=True),
             Swish(),
             nn.Conv2d(self.inplanes, self.inplanes, kernel_size=(21, 11), stride=(2, 1), padding=(0, 5)),
             nn.BatchNorm2d(self.inplanes),
+            #nn.ReLU(inplace=True),
             #nn.Hardtanh(0, 20, inplace=True)
             Swish(),
         )

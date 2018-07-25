@@ -89,15 +89,12 @@ class ResNetEdModel:
 
     def train_epoch(self, data_loader):
         self.encoder.train()
-
         meter_loss = tnt.meter.MovingAverageValueMeter(100)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
-
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
             logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
-
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training ")
         for i, (data) in t:
@@ -118,7 +115,6 @@ class ResNetEdModel:
             try:
                 loss = self.loss(ys_hat_cat, ys.long())
                 #print(loss)
-
                 self.optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.encoder.parameters(), self.max_norm)
@@ -126,14 +122,12 @@ class ResNetEdModel:
             except Exception as e:
                 print(e)
                 print(filenames, frame_lens, label_lens)
-
             #ys_int = onehot2int(ys_hat).squeeze()
             meter_loss.add(loss.item())
             t.set_description(f"training (loss: {meter_loss.value()[0]:.3f})")
             t.refresh()
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
-
             if 0 < i < len(data_loader) and i % self.num_ckpt == 0:
                 if self.viz is not None:
                     self.viz.add_point(
@@ -141,7 +135,6 @@ class ResNetEdModel:
                         x = self.epoch+i/len(data_loader),
                         y = meter_loss.value()[0]
                     )
-
                 if self.tbd is not None:
                     x = self.epoch * len(data_loader) + i
                     self.tbd.add_graph(self.encoder, xs)
@@ -150,15 +143,12 @@ class ResNetEdModel:
                     ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
                     self.tbd.add_image('ys_hat', x, ys_hat_img)
                     self.tbd.add_scalars('loss', x, { 'loss': meter_loss.value()[0], })
-
                 if self.checkpoint:
                     logger.info(f"training loss at epoch_{self.epoch:03d}_ckpt_{i:07d}: "
                                 f"{meter_loss.value()[0]:5.3f}")
                     self.save(self.__get_model_name(f"epoch_{self.epoch:03d}_ckpt_{i:07d}"))
-
             del xs, ys, ys_hat, loss
             #input("press key to continue")
-
         self.epoch += 1
         logger.info(f"epoch {self.epoch:03d}: "
                     f"training loss {meter_loss.value()[0]:5.3f} ")
@@ -168,42 +158,36 @@ class ResNetEdModel:
 
     def test(self, data_loader, desc=None):
         self.encoder.eval()
-
         meter_loss = tnt.meter.AverageValueMeter()
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
-
-        with torch.no_grad():
-            for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
-                xs, ys, frame_lens, label_lens, filenames = data
-                if self.use_cuda:
-                    xs = xs.cuda()
-                ys_hat = self.encoder(xs)
-                tmp = list()
-                for b in range(ys_hat.size(0)):
-                    tmp.append(ys_hat[b, :frame_lens[b], :])
-                ys_hat_cat = torch.cat(tmp)
-                if self.use_cuda:
-                    ys = ys.cuda()
-                #frame_lens = torch.ceil(frame_lens.float() / 4.).int()
-                #ys_int = onehot2int(ys)
-                loss = self.loss(ys_hat_cat, ys.long())
-                meter_loss.add(loss.item())
-                #meter_accuracy.add(ys_hat.data, ys_int)
-                #meter_confusion.add(ys_hat.data, ys_int)
-                del loss, ys_hat
-
+        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
+            xs, ys, frame_lens, label_lens, filenames = data
+            if self.use_cuda:
+                xs = xs.cuda()
+            ys_hat = self.encoder(xs)
+            tmp = list()
+            for b in range(ys_hat.size(0)):
+                tmp.append(ys_hat[b, :frame_lens[b], :])
+            ys_hat_cat = torch.cat(tmp)
+            if self.use_cuda:
+                ys = ys.cuda()
+            #frame_lens = torch.ceil(frame_lens.float() / 4.).int()
+            #ys_int = onehot2int(ys)
+            loss = self.loss(ys_hat_cat, ys.long())
+            meter_loss.add(loss.item())
+            #meter_accuracy.add(ys_hat.data, ys_int)
+            #meter_confusion.add(ys_hat.data, ys_int)
+            del loss, ys_hat
         logger.info(f"epoch {self.epoch:03d}: "
                     f"validating loss {meter_loss.value()[0]:5.3f} ")
                     #f"validating accuracy {meter_accuracy.value()[0]:6.3f}")
 
     def predict(self, xs):
         self.encoder.eval()
-
-        with torch.no_grad():
-            if self.use_cuda:
-                xs = xs.cuda()
-            ys_hat = self.encoder(xs, softmax=True)
+        if self.use_cuda:
+            xs = xs.cuda()
+        ys_hat = self.encoder(xs, softmax=True)
         return ys_hat
 
     def wer(self, s1, s2):
@@ -233,6 +217,7 @@ class ResNetEdModel:
         states["epoch"] = self.epoch
         states["model"] = self.encoder.state_dict()
         states["optimizer"] = self.optimizer.state_dict()
+        states["lr_scheduler"] = self.lr_scheduler.state_dict()
         torch.save(states, file_path)
 
     def load(self, file_path):
@@ -254,6 +239,7 @@ class ResNetEdModel:
         except:
             self.encoder.load_state_dict(states["conv"])
         #self.optimizer.load_state_dict(states["optimizer"])
+        #self.lr_scheduler.load_state_dict(states["lr_scheduler"])
         if self.use_cuda:
             self.encoder.cuda()
 

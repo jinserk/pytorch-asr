@@ -64,7 +64,7 @@ class ResNetCTCModel:
 
     def __setup_networks(self):
         # setup networks
-        self.encoder = resnet50(num_classes=self.y_dim)
+        self.encoder = resnet101(num_classes=self.y_dim)
         if self.use_cuda:
             self.encoder.cuda()
         # setup loss
@@ -115,7 +115,6 @@ class ResNetCTCModel:
             try:
                 loss = self.loss(ys_hat.transpose(0, 1).contiguous(), ys, frame_lens, label_lens)
                 #print(loss)
-
                 #loss = loss / xs.size(0)  # average the loss by minibatch - size_average=True in CTC_Loss()
                 loss_sum = loss.data.sum()
                 inf = float("inf")
@@ -181,8 +180,7 @@ class ResNetCTCModel:
             frame_lens = torch.ceil(frame_lens.float() / 2.).int()
             #ys_int = onehot2int(ys)
             loss = self.loss(ys_hat, ys, frame_lens, label_lens)
-
-            loss = loss / xs.size(0)  # average the loss by minibatch
+            #loss = loss / xs.size(0)  # average the loss by minibatch
             loss_sum = loss.data.sum()
             inf = float("inf")
             if loss_sum == inf or loss_sum == -inf:
@@ -190,7 +188,6 @@ class ResNetCTCModel:
                 loss_value = 0
             else:
                 loss_value = loss.item()
-
             meter_loss.add(loss_value)
             #meter_accuracy.add(ys_hat.data, ys_int)
             #meter_confusion.add(ys_hat.data, ys_int)
