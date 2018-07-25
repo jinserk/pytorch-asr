@@ -229,6 +229,7 @@ class DeepSpeechModel:
         states["epoch"] = self.epoch
         states["model"] = self.encoder.state_dict()
         states["optimizer"] = self.optimizer.state_dict()
+        states["lr_scheduler"] = self.lr_scheduler.state_dict()
         torch.save(states, file_path)
 
     def load(self, file_path):
@@ -249,7 +250,8 @@ class DeepSpeechModel:
             self.encoder.load_state_dict(states["model"])
         except:
             self.encoder.load_state_dict(states["conv"])
-        #self.optimizer.load_state_dict(states["optimizer"])
+        self.optimizer.load_state_dict(states["optimizer"])
+        self.lr_scheduler.load_state_dict(states["lr_scheduler"])
         if self.use_cuda:
             self.encoder.cuda()
 
