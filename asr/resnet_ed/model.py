@@ -89,7 +89,7 @@ class ResNetEdModel:
 
     def train_epoch(self, data_loader):
         self.encoder.train()
-        meter_loss = tnt.meter.MovingAverageValueMeter(100)
+        meter_loss = tnt.meter.MovingAverageValueMeter(self.num_ckpt // 10)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
         if self.lr_scheduler is not None:

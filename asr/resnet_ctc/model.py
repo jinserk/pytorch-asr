@@ -230,6 +230,7 @@ class ResNetCTCModel:
         states["epoch"] = self.epoch
         states["model"] = self.encoder.state_dict()
         states["optimizer"] = self.optimizer.state_dict()
+        states["lr_scheduler"] = self.lr_scheduler.state_dict()
         torch.save(states, file_path)
 
     def load(self, file_path):
@@ -251,6 +252,7 @@ class ResNetCTCModel:
         except:
             self.encoder.load_state_dict(states["conv"])
         self.optimizer.load_state_dict(states["optimizer"])
+        self.lr_scheduler.load_state_dict(states["lr_scheduler"])
         if self.use_cuda:
             self.encoder.cuda()
 

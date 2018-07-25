@@ -100,7 +100,7 @@ def train(argv):
         data_loaders[mode] = AudioCTCDataLoader(datasets[mode], batch_size=args.batch_size,
                                                 num_workers=args.num_workers, shuffle=True,
                                                 use_cuda=args.use_cuda, pin_memory=True,
-                                                frame_shift=4)
+                                                frame_shift=2)
 
     # run inference for a certain number of epochs
     for i in range(model.epoch, args.num_epochs):

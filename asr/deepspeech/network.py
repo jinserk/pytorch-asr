@@ -9,6 +9,7 @@ from torch.nn.parameter import Parameter
 from torch.autograd import Variable
 
 from ..utils import params as p
+from ..utils.misc import Swish
 
 
 class SequenceWise(nn.Module):
@@ -95,12 +96,6 @@ class BatchRNN(nn.Module):
         return x
 
 
-class Swish(nn.Module):
-
-    def forward(self, x):
-        return x * torch.sigmoid(x)
-
-
 class Lookahead(nn.Module):
     # Wang et al 2016 - Lookahead Convolution Layer for Unidirectional Recurrent Neural Networks
     # input shape - sequence, batch, feature - TxNxH
@@ -159,12 +154,12 @@ class DeepSpeech(nn.Module):
             nn.BatchNorm2d(32),
             #nn.Hardtanh(0, 20, inplace=True),
             #nn.ReLU(inplace=True),
-            Swish(),
+            Swish(inplace=True),
             nn.Conv2d(32, 32, kernel_size=(21, 11), stride=(2, 1), padding=(0, 5)),
             nn.BatchNorm2d(32),
             #nn.Hardtanh(0, 20, inplace=True)
             #nn.ReLU(inplace=True),
-            Swish(),
+            Swish(inplace=True),
         )
 
         # Based on above convolutions and spectrogram size using conv formula (W - F + 2P)/ S+1
@@ -187,7 +182,7 @@ class DeepSpeech(nn.Module):
             Lookahead(rnn_hidden_size, context=context),
             #nn.Hardtanh(0, 20, inplace=True)
             #nn.ReLU(inplace=True),
-            Swish()
+            Swish(inplace=True)
         ) if not bidirectional else None
 
         fully_connected = nn.Sequential(

@@ -95,8 +95,8 @@ def train(argv):
     # prepare data loaders
     datasets, data_loaders = dict(), dict()
     for mode in ["train", "dev"]:
-        datasets[mode] = AspireEdDataset(root=args.data_path, mode=mode, data_size=sizes[mode],
-                                         tempo=True, gain=True, noise=True)
+        datasets[mode] = AspireCTCDataset(root=args.data_path, mode=mode, data_size=sizes[mode],
+                                          max_len=3, tempo=True, gain=True, noise=True)
         data_loaders[mode] = AudioCTCDataLoader(datasets[mode], batch_size=args.batch_size,
                                                 num_workers=args.num_workers, shuffle=True,
                                                 use_cuda=args.use_cuda, pin_memory=True)

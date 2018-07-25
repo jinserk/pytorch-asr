@@ -20,7 +20,7 @@ class BasicBlock(nn.Module):
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
         self.downsample = downsample
-        #self.relu1 = nn.ReLU(inplace=True)
+        #self.relu2 = nn.ReLU(inplace=True)
         self.relu2 = Swish(inplace=True)
         self.stride = stride
 
