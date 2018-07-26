@@ -10,15 +10,15 @@ from ..utils.logger import logger, set_logfile, VisdomLog, TensorboardLog
 from ..utils.audio import AudioCTCDataLoader
 from ..utils import params as p
 from ..utils import misc
-from ..dataset.aspire import AspireCTCDataset
+from ..dataset.aspire import AspireEdDataset
 
-from .model import DeepSpeechModel
+from .model import DeepSpeechEdModel
 
 
 def parse_options(argv):
-    parser = argparse.ArgumentParser(description="DeepSpeech AM with fully supervised training")
+    parser = argparse.ArgumentParser(description="DeepSpeech AM with fully supervised training with edit distance loss")
     # for training
-    parser.add_argument('--data-path', default='data/aspire2', type=str, help="dataset path to use in training")
+    parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
     parser.add_argument('--num-workers', default=16, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
     parser.add_argument('--batch-size', default=32, type=int, help="number of images (and labels) to be considered in a batch")
@@ -32,7 +32,7 @@ def parse_options(argv):
     parser.add_argument('--log-dir', default='./logs', type=str, help="filename for logging the outputs")
     parser.add_argument('--model-prefix', default='deepspeech_aspire', type=str, help="model file prefix to store")
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
-    parser.add_argument('--num-ckpt', default=1000, type=int, help="number of batch-run to save checkpoints")
+    parser.add_argument('--num-ckpt', default=10000, type=int, help="number of batch-run to save checkpoints")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
 
     args = parser.parse_args(argv)
@@ -82,7 +82,7 @@ def train(argv):
 
 
     # batch_size: number of images (and labels) to be considered in a batch
-    model = DeepSpeechModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_CTC_LABELS, viz=viz, tbd=tbd, **vars(args))
+    model = DeepSpeechEdModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_CTC_LABELS, viz=viz, tbd=tbd, **vars(args))
 
     # initializing local variables to maintain the best validation accuracy
     # seen across epochs over the supervised training set
@@ -95,12 +95,11 @@ def train(argv):
     # prepare data loaders
     datasets, data_loaders = dict(), dict()
     for mode in ["train", "dev"]:
-        datasets[mode] = AspireCTCDataset(root=args.data_path, mode=mode, data_size=sizes[mode],
-                                          max_len=5, tempo=True, gain=True, noise=True)
+        datasets[mode] = AspireEdDataset(root=args.data_path, mode=mode, data_size=sizes[mode],
+                                          max_len=3, tempo=True, gain=True, noise=True)
         data_loaders[mode] = AudioCTCDataLoader(datasets[mode], batch_size=args.batch_size,
                                                 num_workers=args.num_workers, shuffle=True,
-                                                use_cuda=args.use_cuda, pin_memory=True,
-                                                frame_shift=2)
+                                                use_cuda=args.use_cuda, pin_memory=True)
 
     # run inference for a certain number of epochs
     for i in range(model.epoch, args.num_epochs):

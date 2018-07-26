@@ -99,20 +99,14 @@ class ResNetEdModel:
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training ")
         for i, (data) in t:
             xs, ys, frame_lens, label_lens, filenames = data
-            if self.use_cuda:
-                xs = xs.cuda()
-            #ys_hat = self.encoder.test(xs)
-            ys_hat = self.encoder(xs)
-            tmp = list()
-            for b in range(ys_hat.size(0)):
-                tmp.append(ys_hat[b, :frame_lens[b], :])
-            ys_hat_cat = torch.cat(tmp)
-            if self.use_cuda:
-                ys = ys.cuda()
-            #torch.set_printoptions(threshold=5000000)
-            #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
-            #print(onehot2int(ys_hat).squeeze(), ys)
             try:
+                if self.use_cuda:
+                    xs, ys = xs.cuda(), ys.cuda()
+                ys_hat = self.encoder(xs)
+                ys_hat_cat = torch.cat([ys_hat[b, :frame_lens[b], :] for b in range(ys_hat.size(0))])
+                #torch.set_printoptions(threshold=5000000)
+                #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
+                #print(onehot2int(ys_hat).squeeze(), ys)
                 loss = self.loss(ys_hat_cat, ys.long())
                 #print(loss)
                 self.optimizer.zero_grad()
@@ -164,14 +158,9 @@ class ResNetEdModel:
         for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
             xs, ys, frame_lens, label_lens, filenames = data
             if self.use_cuda:
-                xs = xs.cuda()
+                xs, ys = xs.cuda(), ys.cuda()
             ys_hat = self.encoder(xs)
-            tmp = list()
-            for b in range(ys_hat.size(0)):
-                tmp.append(ys_hat[b, :frame_lens[b], :])
-            ys_hat_cat = torch.cat(tmp)
-            if self.use_cuda:
-                ys = ys.cuda()
+            ys_hat_cat = torch.cat([ys_hat[b, :frame_lens[b], :] for b in range(ys_hat.size(0))])
             #frame_lens = torch.ceil(frame_lens.float() / 4.).int()
             #ys_int = onehot2int(ys)
             loss = self.loss(ys_hat_cat, ys.long())

@@ -103,28 +103,25 @@ class ResNetCTCModel:
             #    self.lr_scheduler.step()
             #    #logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
             xs, ys, frame_lens, label_lens, filenames = data
-            if self.use_cuda:
-                xs = xs.cuda()
-            #ys_hat = self.encoder.test(xs)
-            ys_hat = self.encoder(xs)
-            #print(onehot3int(ys_hat[0]).squeeze())
-            frame_lens = torch.ceil(frame_lens.float() / 2.).int()
-            #torch.set_printoptions(threshold=5000000)
-            #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
-            #print(onehot2int(ys_hat).squeeze(), ys)
             try:
+                if self.use_cuda:
+                    xs = xs.cuda()
+                ys_hat = self.encoder(xs)
+                #print(onehot3int(ys_hat[0]).squeeze())
+                frame_lens = torch.ceil(frame_lens.float() / 2.).int()
+                #torch.set_printoptions(threshold=5000000)
+                #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
+                #print(onehot2int(ys_hat).squeeze(), ys)
                 loss = self.loss(ys_hat.transpose(0, 1).contiguous(), ys, frame_lens, label_lens)
                 #print(loss)
                 #loss = loss / xs.size(0)  # average the loss by minibatch - size_average=True in CTC_Loss()
-                loss_sum = loss.data.sum()
+                loss_value = loss.item()
                 inf = float("inf")
-                if loss_sum == inf or loss_sum == -inf:
+                if loss_value == inf or loss_value == -inf:
                     #torch.set_printoptions(threshold=5000000)
                     #print(filenames, ys_hat, frame_lens, label_lens)
                     logger.warning("received an inf loss, setting loss value to 0")
                     loss_value = 0
-                else:
-                    loss_value = loss.item()
                 self.optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.encoder.parameters(), self.max_norm)
@@ -181,13 +178,11 @@ class ResNetCTCModel:
             #ys_int = onehot2int(ys)
             loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             #loss = loss / xs.size(0)  # average the loss by minibatch
-            loss_sum = loss.data.sum()
+            loss_value = loss.item()
             inf = float("inf")
-            if loss_sum == inf or loss_sum == -inf:
+            if loss_value == inf or loss_value == -inf:
                 logger.warning("received an inf loss, setting loss value to 0")
                 loss_value = 0
-            else:
-                loss_value = loss.item()
             meter_loss.add(loss_value)
             #meter_accuracy.add(ys_hat.data, ys_int)
             #meter_confusion.add(ys_hat.data, ys_int)

@@ -4,10 +4,17 @@ import sys
 import argparse
 from pathlib import Path
 
-data_root = Path.cwd().resolve() / "data" / "aspire"
-
 argv = sys.argv[1:]
-models = set(["convnet", "densenet", "deepspeech", "resnet_ctc", "resnet_ed", "capsule1"])
+models = set([
+    "convnet",
+    "densenet",
+    "deepspeech",
+    "deepspeech_ed",
+    "resnet_ctc",
+    "resnet_ed",
+    "capsule1",
+])
+
 model = None
 for opt in argv:
     if opt in models:
@@ -24,6 +31,9 @@ elif model == "densenet":
 elif model == "deepspeech":
     from asr import deepspeech
     deepspeech.predict(argv)
+elif model == "deepspeech_ed":
+    from asr import deepspeech_ed
+    deepspeech_ed.predict(argv)
 elif model == "resnet_ctc":
     from asr import resnet_ctc
     resnet_ctc.predict(argv)

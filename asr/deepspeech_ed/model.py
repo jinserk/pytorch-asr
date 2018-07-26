@@ -7,17 +7,16 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 import torchvision.utils as tvu
-from warpctc_pytorch import CTCLoss
 import torchnet as tnt
 
-from ..utils.misc import onehot2int, get_model_file_path
+from ..utils.misc import onehot2int, int2onehot, get_model_file_path
 from ..utils.logger import logger
 from ..utils import params as p
 
 from .network import *
 
 
-class DeepSpeechModel:
+class DeepSpeechEdModel:
     """
     This class encapsulates the parameters (neural networks) and models & guides
     needed to train a supervised ResNet on the Aspire audio dataset
@@ -67,7 +66,7 @@ class DeepSpeechModel:
         if self.use_cuda:
             self.encoder.cuda()
         # setup loss
-        self.loss = CTCLoss(blank=0, size_average=True)
+        self.loss = nn.CrossEntropyLoss()
         # setup optimizer
         parameters = self.encoder.parameters()
         if self.opt == "adam":
@@ -98,29 +97,17 @@ class DeepSpeechModel:
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training ")
         for i, (data) in t:
-            #if self.lr_scheduler is not None and i % self.num_ckpt == 0:
-            #    self.lr_scheduler.step()
-            #    #logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
             xs, ys, frame_lens, label_lens, filenames = data
             try:
                 if self.use_cuda:
-                    xs = xs.cuda()
+                    xs, ys = xs.cuda(), ys.cuda()
                 ys_hat = self.encoder(xs)
-                #print(onehot3int(ys_hat[0]).squeeze())
-                frame_lens = torch.ceil(frame_lens.float() / 2.).int()
+                ys_hat_cat = torch.cat([ys_hat[b, :frame_lens[b], :] for b in range(ys_hat.size(0))])
                 #torch.set_printoptions(threshold=5000000)
                 #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
                 #print(onehot2int(ys_hat).squeeze(), ys)
-                loss = self.loss(ys_hat.transpose(0, 1).contiguous(), ys, frame_lens, label_lens)
+                loss = self.loss(ys_hat_cat, ys.long())
                 #print(loss)
-                #loss = loss / xs.size(0)  # average the loss by minibatch - size_average=True in CTC_Loss()
-                loss_value = loss.item()
-                inf = float("inf")
-                if loss_value == inf or loss_value == -inf:
-                    #torch.set_printoptions(threshold=5000000)
-                    #print(filenames, ys_hat, frame_lens, label_lens)
-                    logger.warning("received an inf loss, setting loss value to 0")
-                    loss_value = 0
                 self.optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.encoder.parameters(), self.max_norm)
@@ -129,7 +116,7 @@ class DeepSpeechModel:
                 print(e)
                 print(filenames, frame_lens, label_lens)
             #ys_int = onehot2int(ys_hat).squeeze()
-            meter_loss.add(loss_value)
+            meter_loss.add(loss.item())
             t.set_description(f"training (loss: {meter_loss.value()[0]:.3f})")
             t.refresh()
             #self.meter_accuracy.add(ys_int, ys)
@@ -170,19 +157,13 @@ class DeepSpeechModel:
         for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
             xs, ys, frame_lens, label_lens, filenames = data
             if self.use_cuda:
-                xs = xs.cuda()
+                xs, ys = xs.cuda(), ys.cuda()
             ys_hat = self.encoder(xs)
-            ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
-            frame_lens = torch.ceil(frame_lens.float() / 2.).int()
+            ys_hat_cat = torch.cat([ys_hat[b, :frame_lens[b], :] for b in range(ys_hat.size(0))])
+            #frame_lens = torch.ceil(frame_lens.float() / 4.).int()
             #ys_int = onehot2int(ys)
-            loss = self.loss(ys_hat, ys, frame_lens, label_lens)
-            #loss = loss / xs.size(0)  # average the loss by minibatch
-            loss_value = loss.item()
-            inf = float("inf")
-            if loss_value == inf or loss_value == -inf:
-                logger.warning("received an inf loss, setting loss value to 0")
-                loss_value = 0
-            meter_loss.add(loss_value)
+            loss = self.loss(ys_hat_cat, ys.long())
+            meter_loss.add(loss.item())
             #meter_accuracy.add(ys_hat.data, ys_int)
             #meter_confusion.add(ys_hat.data, ys_int)
             del loss, ys_hat
