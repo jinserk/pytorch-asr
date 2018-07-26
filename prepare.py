@@ -19,10 +19,10 @@ for opt in argv:
         break
 
 if dataset == "aspire":
-    from asr.dataset import aspire
+    from asr.utils import aspire
     aspire.prepare(argv)
 if dataset == "tedlium":
-    from asr.dataset import tedlium
+    from asr.utils import tedlium
     tedlium.prepare(argv)
 else:
     print(f"Error: choose one of datasets in {datasets}")

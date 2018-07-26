@@ -1,4 +1,3 @@
-from . import aspire
 from . import dataset
 from . import dataloader
 
