@@ -12,7 +12,6 @@ import torchnet as tnt
 from ..utils.misc import onehot2int, int2onehot, get_model_file_path
 from ..utils.logger import logger
 from ..utils import params as p
-from ..utils.audio import FrameSplitter
 
 from .network import *
 

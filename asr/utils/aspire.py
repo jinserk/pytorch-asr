@@ -9,7 +9,6 @@ import numpy as np
 from tqdm import tqdm
 import torch
 
-from ..utils.audio import AudioDataset, AudioCTCDataset
 from ..utils.kaldi_io import smart_open, read_string, read_vec_int
 from ..utils.logger import logger
 from ..utils import params as p
@@ -22,11 +21,11 @@ of its own scripts, especially the data/ and the exp/
 """
 
 KALDI_PATH = Path(KALDI_ROOT).resolve()
-ASPIRE_PATH = Path(KALDI_PATH, "egs/aspire/ics").resolve()
+RECIPE_PATH = Path(KALDI_PATH, "egs/aspire/ics").resolve()
 DATA_PATH = Path(__file__).parents[2].joinpath("data", "aspire").resolve()
 
 assert KALDI_PATH.exists(), f"no such path \"{str(KALDI_PATH)}\" not found"
-assert ASPIRE_PATH.exists(), f"no such path \"{str(ASPIRE_PATH)}\" not found"
+assert RECIPE_PATH.exists(), f"no such path \"{str(RECIPE_PATH)}\" not found"
 
 WIN_SAMP_SIZE = p.SAMPLE_RATE * p.WINDOW_SIZE
 WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
@@ -54,7 +53,7 @@ def split_wav(mode, target_dir):
     import io
     import wave
 
-    data_dir = Path(ASPIRE_PATH, "data", mode).resolve()
+    data_dir = Path(RECIPE_PATH, "data", mode).resolve()
     segments_file = Path(data_dir, "segments")
     logger.info(f"processing {str(segments_file)} file ...")
     segments = dict()
@@ -99,7 +98,7 @@ def split_wav(mode, target_dir):
 
 
 def get_transcripts(mode, target_dir):
-    data_dir = Path(ASPIRE_PATH, "data", mode).resolve()
+    data_dir = Path(RECIPE_PATH, "data", mode).resolve()
     texts_file = Path(data_dir, "text")
     logger.info(f"processing {str(texts_file)} file ...")
     manifest = dict()
@@ -121,7 +120,7 @@ def get_alignments(target_dir):
     import pipes
     import gzip
 
-    exp_dir = Path(ASPIRE_PATH, "exp", "tri5a").resolve()
+    exp_dir = Path(RECIPE_PATH, "exp", "tri5a").resolve()
     models = exp_dir.glob("*.mdl")
     model = sorted(models, key=lambda x: x.stat().st_mtime)[-1]
 
@@ -236,174 +235,6 @@ def prepare(argv):
         reconstruct_manifest(args.path)
     else:
         process(args.path)
-
-
-
-MODES = ["train_sup", "train_unsup", "train", "dev", "test"]
-
-
-def load_manifest(data_root, mode, data_size, min_len=1, max_len=15):
-    assert mode in MODES, f"invalid mode options: either one of {MODES}"
-    manifest_file = data_root / f"{mode}.csv"
-    if not data_root.exists() or not manifest_file.exists():
-        logger.error(f"no such path {data_root} or manifest file {manifest_file} found. "
-                     f"need to run 'python prepare.py aspire' first")
-        sys.exit(1)
-
-    logger.info(f"loading dataset manifest {manifest_file} ...")
-    with open(manifest_file, "r") as f:
-        manifest = f.readlines()
-    entries = [tuple(x.strip().split(',')) for x in manifest]
-
-    def _smp2frm(samples):
-        num_samples = samples - 2 * SAMPLE_MARGIN
-        return int((num_samples - WIN_SAMP_SIZE) // WIN_SAMP_SHIFT + 1)
-
-    # pick up entries of 1 to 15 secs
-    MIN_FRAME = min_len / p.WINDOW_SHIFT
-    MAX_FRAME = max_len / p.WINDOW_SHIFT
-    entries = [e for e in entries if _smp2frm(int(e[2])) > MIN_FRAME and _smp2frm(int(e[2])) < MAX_FRAME ]
-    # randomly choose a number of data_size
-    size = min(data_size, len(entries))
-    selected_entries = random.sample(entries, size)
-    # count each entry's number of frames
-    if mode == "train_unsup":
-        entry_frames = [_smp2frm(int(e[2])) for e in selected_entries]
-    else:
-        entry_frames = [int(e[4]) for e in selected_entries]
-
-    logger.info(f"{len(selected_entries)} entries, {sum(entry_frames)} frames are loaded.")
-    return selected_entries, entry_frames
-
-
-class AspireDataset(AudioDataset):
-    """
-    Kaldi's ASpIRE recipe (LDC Fisher dataset) for frame based training
-    loading Kaldi's frame-aligned phones target and the corresponding audio files
-    """
-    root = DATA_PATH
-    entries = list()
-    entry_frames = list()
-
-    def __init__(self, root=None, mode=None, data_size=1e30, min_len=1, max_len=15, *args, **kwargs):
-        self.mode = mode
-        self.data_size = data_size
-        if root is not None:
-            self.root = Path(root).resolve()
-        super().__init__(frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT,
-                         window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                         *args, **kwargs)
-        self.entries, self.entry_frames = load_manifest(self.root, mode, data_size, min_len, max_len)
-
-    def __getitem__(self, index):
-        uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
-        # read and transform wav file
-        if self.transform is not None:
-            tensors = self.transform(wav_file)
-        if self.mode == "train_unsup":
-            return tensors, None
-        # read phn file
-        targets = np.loadtxt(phn_file, dtype="int").tolist()
-        if self.target_transform is not None:
-            targets = self.target_transform(targets)
-        # manipulating when the length of data and targets are mismatched
-        l0, l1 = len(tensors), len(targets)
-        if l0 > l1:
-            tensors = tensors[:l1]
-        elif l0 < l1:
-            tensors.extend([torch.zeros_like(tensors[0]) for i in range(l1 - l0)])
-        return tensors, targets
-
-    def __len__(self):
-        return len(self.entries)
-
-
-class AspireCTCDataset(AudioCTCDataset):
-    """
-    Kaldi's ASpIRE recipe (LDC Fisher dataset) for frame based training
-    loading CTC blank-inserted token target and the corresponding audio files
-    """
-    root = DATA_PATH
-    entries = list()
-    entry_frames = list()
-
-    def __init__(self, root=None, mode=None, data_size=1e30, min_len=1, max_len=15, *args, **kwargs):
-        self.mode = mode
-        self.data_size = data_size
-        if root is not None:
-            self.root = Path(root).resolve()
-        super().__init__(frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT,
-                         window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                         *args, **kwargs)
-        self.entries, self.entry_frames = load_manifest(self.root, mode, data_size, min_len, max_len)
-
-    def __getitem__(self, index):
-        uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
-        ctc_file = phn_file.replace('phn', 'ctc')
-        # read and transform wav file
-        if self.transform is not None:
-            tensors = self.transform(wav_file)
-        if self.mode == "train_unsup":
-            return tensors, None
-        # read phn file
-        targets = np.loadtxt(ctc_file, dtype="int", ndmin=1)
-        targets = torch.IntTensor(targets)
-        return tensors, targets, ctc_file
-
-    def __len__(self):
-        return len(self.entries)
-
-
-class AspireEdDataset(AspireCTCDataset):
-
-    def __init__(self, *args, **kwargs):
-        if 'tempo' in kwargs:
-            kwargs['tempo'] = False
-        super().__init__(*args, **kwargs)
-
-    def __getitem__(self, index):
-        uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
-        # read and transform wav file
-        if self.transform is not None:
-            tensors = self.transform(wav_file)
-        if self.mode == "train_unsup":
-            return tensors, None
-        # read phn file
-        targets = np.loadtxt(phn_file, dtype="int", ndmin=1)
-        targets = torch.IntTensor(targets)
-        targets_len = len(targets)
-        start = (tensors.size(2) - targets_len) // 2
-        return tensors[:, :, start:start+targets_len], targets, phn_file
-
-
-def test_plot():
-    from ..util.audio import AudioDataLoader, AudioCTCDataLoader
-    train_dataset = Aspire(mode="test")
-    loader = AudioDataLoader(train_dataset, batch_size=10, num_workers=4, shuffle=True)
-    logger.info(f"num_workers={loader.num_workers}")
-
-    for i, data in enumerate(loader):
-        tensors, targets = data
-        #for tensors, targets in data:
-        logger.info("f{tensors}, {targets}")
-        if False:
-            import matplotlib
-            matplotlib.use('TkAgg')
-            matplotlib.interactive(True)
-            import matplotlib.pyplot as plt
-
-            for tensor, target in zip(tensors, targets):
-                tensor = tensor.view(-1, p.CHANNEL, p.WIDTH, p.HEIGHT)
-                t = np.arange(0, tensor.size(3)) / 8000
-                f = np.linspace(0, 4000, tensor.size(2))
-
-                fig = plt.figure(1)
-                p = plt.pcolormesh(t, f, np.log10(10 ** tensor[0][0] - 1), cmap='plasma')
-                plt.colorbar(p)
-                plt.show(block=True)
-        if i == 2:
-            break
-    #plt.close('all')
 
 
 if __name__ == "__main__":

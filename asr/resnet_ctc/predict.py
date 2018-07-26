@@ -7,7 +7,8 @@ import torch
 import numpy as np
 
 from ..utils.logger import logger, set_logfile
-from ..utils.audio import AudioCTCDataset, PredictDataLoader
+from ..utils.dataset import NonSplitDataset
+from ..utils.dataloader import PredictDataLoader
 from ..utils.misc import onehot2int
 from ..utils import params as p
 from ..kaldi.latgen import LatGenCTCDecoder
@@ -18,8 +19,8 @@ from .model import ResNetCTCModel
 class Predict(object):
 
     def __init__(self, args):
-        self.dataset = AudioCTCDataset()
-        self.data_loader = PredictDataLoader(dataset=self.dataset, use_cuda=args.use_cuda)
+        self.dataset = NonSplitDataset()
+        self.data_loader = PredictDataLoader(dataset=self.dataset)
         self.model = ResNetCTCModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_CTC_LABELS, **vars(args))
         self.use_cuda = args.use_cuda
 

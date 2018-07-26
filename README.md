@@ -53,9 +53,11 @@ If you want to use your own language model or graphs, modify `asr/kaldi/scripts/
 Pytorch-asr is targeted to develop a framework supporting multiple acoustic models. You have to specify one of model to train or predict.
 Currently, `resnet_ctc`, `resnet_ed`, and `deepspeech` models work for training and prediction. Try these models first.
 
-If you do training for the first time, you have to prepare the dataset.
-Currently we support only the Kaldi's ASpIRE recipe datatset, originated from LDC's fisher corpus.
-Please modify `asr/dataset/aspire.py` according to the location of your corpus data.
+If you do training for the first time, you have to preprocess the dataset.
+Currently we utilize Kaldi's recipe directory containing preprocessed corpus data.
+You need to run the preparation script in Kaldi recipe before doing the followings.
+Now we support only the Kaldi's ASpIRE recipe datatset, originated from LDC's fisher corpus.
+Please modify `RECIPE_PATH` variable in `asr/dataset/aspire.py` first according to the location of your Kaldi setup.
 ```
 $ python prepare.py aspire
 ```

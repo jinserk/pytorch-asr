@@ -5,7 +5,6 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.parameter import Parameter
 from torch.autograd import Variable
 
 from ..utils import params as p
@@ -105,7 +104,7 @@ class Lookahead(nn.Module):
         # should we handle batch_first=True?
         super(Lookahead, self).__init__()
         self.n_features = n_features
-        self.weight = Parameter(torch.Tensor(n_features, context + 1))
+        self.weight = nn.Parameter(torch.Tensor(n_features, context + 1))
         assert context > 0
         self.context = context
         self.register_parameter('bias', None)

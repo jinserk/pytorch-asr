@@ -6,11 +6,11 @@ from pathlib import Path, PurePath
 import numpy as np
 import torch
 
+from ..utils.dataset import AudioEdDataset
+from ..utils.dataloader import AudioNonSplitDataLoader
 from ..utils.logger import logger, set_logfile, VisdomLog, TensorboardLog
-from ..utils.audio import AudioCTCDataLoader
-from ..utils import params as p
 from ..utils import misc
-from ..dataset.aspire import AspireEdDataset
+from ..utils import params as p
 
 from .model import ResNetEdModel
 
@@ -19,6 +19,8 @@ def parse_options(argv):
     parser = argparse.ArgumentParser(description="ResNet AM with fully supervised training with edit distance loss")
     # for training
     parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
+    parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
+    parser.add_argument('--max-len', default=15., type=float, help="max length of utterance to use in secs")
     parser.add_argument('--num-workers', default=4, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
     parser.add_argument('--batch-size', default=8, type=int, help="number of images (and labels) to be considered in a batch")
@@ -95,11 +97,12 @@ def train(argv):
     # prepare data loaders
     datasets, data_loaders = dict(), dict()
     for mode in ["train", "dev"]:
-        datasets[mode] = AspireCTCDataset(root=args.data_path, mode=mode, data_size=sizes[mode],
-                                          max_len=3, tempo=True, gain=True, noise=True)
-        data_loaders[mode] = AudioCTCDataLoader(datasets[mode], batch_size=args.batch_size,
-                                                num_workers=args.num_workers, shuffle=True,
-                                                use_cuda=args.use_cuda, pin_memory=True)
+        datasets[mode] = AudioEdDataset(root=args.data_path, mode=mode, data_size=sizes[mode],
+                                        min_len=args.min_len, max_len=args.max_len,
+                                        tempo=True, gain=True, noise=True)
+        data_loaders[mode] = AudioNonSplitDataLoader(datasets[mode], batch_size=args.batch_size,
+                                                     num_workers=args.num_workers, shuffle=True,
+                                                     pin_memory=args.use_cuda)
 
     # run inference for a certain number of epochs
     for i in range(model.epoch, args.num_epochs):

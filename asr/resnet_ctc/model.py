@@ -13,7 +13,6 @@ import torchnet as tnt
 from ..utils.misc import onehot2int, get_model_file_path
 from ..utils.logger import logger
 from ..utils import params as p
-from ..utils.audio import FrameSplitter
 
 from .network import *
 
@@ -113,8 +112,6 @@ class ResNetCTCModel:
                 #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
                 #print(onehot2int(ys_hat).squeeze(), ys)
                 loss = self.loss(ys_hat.transpose(0, 1).contiguous(), ys, frame_lens, label_lens)
-                #print(loss)
-                #loss = loss / xs.size(0)  # average the loss by minibatch - size_average=True in CTC_Loss()
                 loss_value = loss.item()
                 inf = float("inf")
                 if loss_value == inf or loss_value == -inf:
@@ -177,7 +174,6 @@ class ResNetCTCModel:
             frame_lens = torch.ceil(frame_lens.float() / 2.).int()
             #ys_int = onehot2int(ys)
             loss = self.loss(ys_hat, ys, frame_lens, label_lens)
-            #loss = loss / xs.size(0)  # average the loss by minibatch
             loss_value = loss.item()
             inf = float("inf")
             if loss_value == inf or loss_value == -inf:
