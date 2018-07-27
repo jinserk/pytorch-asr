@@ -8,7 +8,7 @@ import torch
 
 from ..utils.dataset import AudioEdDataset
 from ..utils.dataloader import AudioNonSplitDataLoader
-from ..utils.logger import logger, set_logfile, VisdomLog, TensorboardLog
+from ..utils.logger import logger, set_logfile, VisdomLogger, TensorboardLogger
 from ..utils import misc
 from ..utils import params as p
 
@@ -16,7 +16,7 @@ from .model import ResNetEdModel
 
 
 def parse_options(argv):
-    parser = argparse.ArgumentParser(description="ResNet AM with fully supervised training with edit distance loss")
+    parser = argparse.ArgumentParser(description="ResNet AM with fully supervised training with cross entropy loss")
     # for training
     parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
@@ -62,29 +62,27 @@ def parse_options(argv):
 def train(argv):
     args = parse_options(argv)
 
-    def get_model_file_path(desc):
-        return str(misc.get_model_file_path(args.log_dir, args.model_prefix, desc))
-
-    viz = None
+    vlog = None
     if args.visdom:
         try:
             logger.info("using visdom")
-            from visdom import Visdom
-            viz = VisdomLog(Visdom())
+            title = str(Path(args.log_dir).name)
+            vlog = VisdomLogger(env=title)
         except:
-            viz = None
+            logger.info("error to use visdom")
+            vlog = None
 
-    tbd = None
+    tlog = None
     if args.tensorboard:
-        #try:
+        try:
             logger.info("using tensorboard")
-            tbd = TensorboardLog(PurePath(args.log_dir, 'tensorboard'))
-        #except:
-        #    tbd = None
-
+            tlog = TensorboardLogger(PurePath(args.log_dir, 'tensorboard'))
+        except:
+            logger.info("error to use tensorboard")
+            tlog = None
 
     # batch_size: number of images (and labels) to be considered in a batch
-    model = ResNetEdModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_CTC_LABELS, viz=viz, tbd=tbd, **vars(args))
+    model = ResNetEdModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_CTC_LABELS, vlog=vlog, tlog=tlog, **vars(args))
 
     # initializing local variables to maintain the best validation accuracy
     # seen across epochs over the supervised training set

@@ -61,7 +61,7 @@ class ConvNetModel(nn.Module):
             self.encoder.cuda()
         # setup loss
         self.loss = nn.CrossEntropyLoss()
-        # setup the optimizer
+        # setup optimizer
         parameters = self.encoder.parameters()
         self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0005, l2_reg=False)
         self.lr_scheduler = None
@@ -167,8 +167,8 @@ class ConvNetModel(nn.Module):
 
         self.__setup_networks()
         self.load_state_dict(states["model"])
-        #self.optimizer.load_state_dict(states["optimizer"])
-        #self.lr_scheduler.load_state_dict(states["lr_scheduler"])
+        self.optimizer.load_state_dict(states["optimizer"])
+        self.lr_scheduler.load_state_dict(states["lr_scheduler"])
         if self.use_cuda:
             self.encoder.cuda()
 

@@ -1,6 +1,5 @@
 #!python
 import sys
-import pdb
 from pathlib import Path
 from tqdm import tqdm
 
@@ -27,7 +26,7 @@ class ResNetEdModel:
     :param continue_from: model file path to load the model states
     """
     def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_CTC_LABELS,
-                 batch_size=8, init_lr=1e-4, max_norm=400, use_cuda=False, viz=None, tbd=None,
+                 batch_size=8, init_lr=1e-4, max_norm=400, use_cuda=False, vlog=None, tlog=None,
                  log_dir='logs', model_prefix='resnet_aspire', checkpoint=False, num_ckpt=10000,
                  continue_from=None, *args, **kwargs):
         super().__init__()
@@ -49,11 +48,11 @@ class ResNetEdModel:
         self.epoch = 0
         self.opt = "sgd"
 
-        self.viz = viz
-        if self.viz is not None:
-            self.viz.add_plot(title='loss', xlabel='epoch')
+        self.vlog = vlog
+        if self.vlog is not None:
+            self.vlog.add_plot(title='loss', xlabel='epoch')
 
-        self.tbd = tbd
+        self.tlog = tlog
 
         if continue_from is None:
             self.__setup_networks()
@@ -122,20 +121,20 @@ class ResNetEdModel:
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
             if 0 < i < len(data_loader) and i % self.num_ckpt == 0:
-                if self.viz is not None:
-                    self.viz.add_point(
+                if self.vlog is not None:
+                    self.vlog.add_point(
                         title = 'loss',
                         x = self.epoch+i/len(data_loader),
                         y = meter_loss.value()[0]
                     )
-                if self.tbd is not None:
+                if self.tlog is not None:
                     x = self.epoch * len(data_loader) + i
-                    self.tbd.add_graph(self.encoder, xs)
+                    self.tlog.add_graph(self.encoder, xs)
                     xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
-                    self.tbd.add_image('xs', x, xs_img)
+                    self.tlog.add_image('xs', x, xs_img)
                     ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
-                    self.tbd.add_image('ys_hat', x, ys_hat_img)
-                    self.tbd.add_scalars('loss', x, { 'loss': meter_loss.value()[0], })
+                    self.tlog.add_image('ys_hat', x, ys_hat_img)
+                    self.tlog.add_scalars('loss', x, { 'loss': meter_loss.value()[0], })
                 if self.checkpoint:
                     logger.info(f"training loss at epoch_{self.epoch:03d}_ckpt_{i:07d}: "
                                 f"{meter_loss.value()[0]:5.3f}")

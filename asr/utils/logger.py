@@ -29,13 +29,15 @@ def set_logfile(filename):
     logger.addHandler(fhdr)
 
 
-class VisdomLog:
-    windows = dict()
-    data = dict()
-    opts = dict()
+class VisdomLogger:
 
-    def __init__(self, viz):
-        self.viz = viz
+    def __init__(self, env='main'):
+        from visdom import Visdom
+        self.viz = Visdom(env=env)
+
+        self.windows = dict()
+        self.data = dict()
+        self.opts = dict()
 
     def add_plot(self, title, xlabel, ylabel=''):
         self.opts[title] = dict(
@@ -73,7 +75,7 @@ class VisdomLog:
                 update = 'replace',
             )
 
-class TensorboardLog:
+class TensorboardLogger:
 
     def __init__(self, log_dir):
         log_path = Path(log_dir)
