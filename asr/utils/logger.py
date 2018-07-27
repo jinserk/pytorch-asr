@@ -36,44 +36,24 @@ class VisdomLogger:
         self.viz = Visdom(env=env)
 
         self.windows = dict()
-        self.data = dict()
-        self.opts = dict()
 
-    def add_plot(self, title, xlabel, ylabel=''):
-        self.opts[title] = dict(
-            title = title,
-            xlabel = xlabel,
-            ylabel = ylabel,
-        )
-        self.data[title] = dict(
-            x = torch.FloatTensor([]),
-            y = torch.FloatTensor([]),
-        )
+    def add_plot(self, title, **kwargs):
+        self.windows[title] = {
+            'win': None,
+            'opts': { 'title': title, },
+        }
+        self.windows[title]['opts'].update(kwargs)
 
     def add_point(self, title, x, y):
-        if not torch.is_tensor(x):
-            x = torch.FloatTensor((x,))
-        if not torch.is_tensor(y):
-            y = torch.FloatTensor((y,))
-        if x.dim() == 0:
-            x = x.unsqueeze(0)
-        if y.dim() == 0:
-            y = y.unsqueeze(0)
-        self.data[title]['x'] = torch.cat((self.data[title]['x'], x))
-        self.data[title]['y'] = torch.cat((self.data[title]['y'], y))
+        X, Y = torch.FloatTensor([x,]), torch.FloatTensor([y,])
         if title not in self.windows:
-            self.windows[title] = self.viz.line(
-                Y = self.data[title]['y'],
-                X = self.data[title]['x'],
-                opts = self.opts[title],
-            )
+            self.add_plot(title)
+        if self.windows[title]['win'] is None:
+            w = self.viz.line(Y=Y, X=X, opts=self.windows[title]['opts'])
+            self.windows[title]['win'] = w
         else:
-            self.viz.line(
-                Y = self.data[title]['y'],
-                X = self.data[title]['x'],
-                win = self.windows[title],
-                update = 'replace',
-            )
+            self.viz.line(Y=Y, X=X, update='append', win=self.windows[title]['win'])
+
 
 class TensorboardLogger:
 
