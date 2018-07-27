@@ -149,8 +149,8 @@ class FrameSplitter(object):
         bins = [(x - self.half, self.unit_frames) for x in
                 range(self.frame_margin, tensor.size(2) - self.frame_margin)]
         frames = [tensor.narrow(2, s, l).clone() for s, l in bins]
-        c, w, h = frames[0].shape
-        frames = [x.view(c * w * h) for x in frames]
+        #c, w, h = frames[0].shape
+        #frames = [x.view(c * w * h) for x in frames]
         return frames
 
 
@@ -163,8 +163,8 @@ class Int2OneHot(object):
     def __call__(self, targets):
         one_hots = list()
         for t in targets:
-            one_hot = torch.FloatTensor(self.num_labels).zero_()
-            one_hot[t] = 1.
+            one_hot = torch.LongTensor(self.num_labels).zero_()
+            one_hot[t] = 1
             one_hots.append(one_hot)
         return one_hots
 
@@ -194,11 +194,11 @@ class SplitDataset(Dataset):
             ])
         else:
             self.transform = transform
-
-        if target_transform is None:
-            self.target_transform = Int2OneHot(p.NUM_LABELS)
-        else:
-            self.target_transform = target_transform
+        self.target_transform = target_transform
+        #if target_transform is None:
+        #    self.target_transform = Int2OneHot(p.NUM_LABELS)
+        #else:
+        #    self.target_transform = target_transform
 
 
 class NonSplitDataset(Dataset):
@@ -264,8 +264,6 @@ def _load_manifest(data_root, mode, data_size, min_len=0., max_len=100.):
 
 
 class AudioSplitDataset(SplitDataset):
-    entries = list()
-    entry_frames = list()
 
     def __init__(self, root, mode, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
         self.root = Path(root).resolve()
@@ -275,33 +273,38 @@ class AudioSplitDataset(SplitDataset):
                          window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
                          *args, **kwargs)
         self.entries, self.entry_frames = _load_manifest(self.root, mode, data_size, min_len, max_len)
+        self.frame_map = list()
+        for i, (frames) in enumerate(self.entry_frames):
+            self.frame_map.extend([(i, f) for f in range(frames)])
 
     def __getitem__(self, index):
-        uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
+        ei, fi = self.frame_map[index]
+        uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[ei]
         # read and transform wav file
         if self.transform is not None:
             tensors = self.transform(wav_file)
+        tensor = tensors[fi]
         if self.mode == "train_unsup":
-            return tensors, None
-        # read phn file
-        targets = np.loadtxt(phn_file, dtype="int").tolist()
-        if self.target_transform is not None:
-            targets = self.target_transform(targets)
-        # manipulating when the length of data and targets are mismatched
-        l0, l1 = len(tensors), len(targets)
-        if l0 > l1:
-            tensors = tensors[:l1]
-        elif l0 < l1:
-            tensors.extend([torch.zeros_like(tensors[0]) for i in range(l1 - l0)])
-        return tensors, targets
+            return tensor, None
+        else:
+            # read phn file
+            targets = np.loadtxt(phn_file, dtype="int").tolist()
+            if self.target_transform is not None:
+                targets = self.target_transform(targets)
+            # manipulating when the length of data and targets are mismatched
+            #l0, l1 = len(tensors), len(targets)
+            #if l0 > l1:
+            #    tensors = tensors[:l1]
+            #elif l0 < l1:
+            #    tensors.extend([torch.zeros_like(tensors[0]) for i in range(l1 - l0)])
+            target = targets[fi]
+            return tensor, target
 
     def __len__(self):
-        return len(self.entries)
+        return len(self.frame_map)
 
 
 class AudioCTCDataset(NonSplitDataset):
-    entries = list()
-    entry_frames = list()
 
     def __init__(self, root, mode, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
         self.root = Path(root).resolve()
@@ -380,7 +383,6 @@ if __name__ == "__main__":
         transformer = Spectrogram(sample_rate=p.SAMPLE_RATE, window_stride=p.WINDOW_SHIFT,
                                   window_size=p.WINDOW_SIZE, nfft=p.NFFT)
         data, f, t = transformer(audio)
-        print(data.shape)
         mag = data[0]
         fig = plt.figure(1)
         plt.pcolormesh(t, f, np.log10(np.expm1(data[0])), cmap='plasma')

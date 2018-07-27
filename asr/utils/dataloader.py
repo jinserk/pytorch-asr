@@ -13,27 +13,6 @@ from .logger import logger
 from . import params as p
 
 
-class SplitCollateFn(object):
-    idx = -1
-    tensor = None
-    target = None
-
-    def __call__(self, dataset, indices):
-        tensors, targets = list(), list()
-        for idx, fidx in indices:
-            if self.idx != idx:
-                self.tensor, self.target = dataset[idx]
-                self.idx = idx
-            tensors.append(self.tensor[fidx])
-            if self.target is not None:
-                targets.append(self.target[fidx])
-        if targets:
-            batch = (torch.stack(tensors), torch.stack(targets))
-        else:
-            batch = torch.stack(tensors)
-        return batch
-
-
 class NonSplitCollateFn(object):
 
     def __init__(self, frame_shift=0):
@@ -71,49 +50,10 @@ class NonSplitCollateFn(object):
         return tensors, targets, tensor_lens, target_lens, filenames
 
 
-class SplitBatchSampler(BatchSampler):
+class AudioSplitDataLoader(DataLoader):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.frames = self.sampler.data_source.entry_frames
-
-    def __iter__(self):
-        batch = []
-        for idx in self.sampler:
-            frame = np.arange(self.frames[idx])
-            np.random.shuffle(frame)
-            for fidx in frame:
-                batch.append((idx, fidx))
-                if len(batch) == self.batch_size:
-                    yield batch
-                    batch = []
-        if len(batch) > 0 and not self.drop_last:
-            yield batch
-
-    def __len__(self):
-        total = sum(self.frames)
-        if self.drop_last:
-            return total // self.batch_size
-        else:
-            return (total + self.batch_size - 1) // self.batch_size
-
-
-class AudioSplitDataLoader(DataLoader):
-
-    def __init__(self, dataset, batch_size,
-                 shuffle=False, sampler=None, batch_sampler=None, num_workers=0,
-                 drop_last=True, pin_memory=False, *args, **kwargs):
-        collate_fn = SplitCollateFn()
-        if batch_sampler is None:
-            if sampler is None:
-                if shuffle:
-                    sampler = RandomSampler(dataset)
-                else:
-                    sampler = SequentialSampler(dataset)
-            batch_sampler = SplitBatchSampler(sampler, batch_size, drop_last)
-
-        super().__init__(dataset=dataset, batch_sampler=batch_sampler, num_workers=num_workers,
-                         collate_fn=collate_fn, pin_memory=pin_memory, timeout=0, *args, **kwargs)
 
     #def __iter__(self):
     #    return AudioDataLoaderIter(self)

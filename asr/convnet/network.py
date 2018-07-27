@@ -41,39 +41,52 @@ class MlpEncoderZ(nn.Module):
 
 class ConvEncoderY(nn.Module):
 
-    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, softmax=True, eps=p.EPS):
+    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_LABELS, eps=p.EPS):
         super().__init__()
         self.x_dim = x_dim
         self.y_dim = y_dim
         # network
-        layers = [
-            View(dim=(-1, p.CHANNEL, p.WIDTH, p.HEIGHT)),
+        self.conv1 = nn.Sequential(
             nn.Conv2d(p.CHANNEL, 16, kernel_size=(5, 5), stride=(2, 2), padding=(2, 2)),  # 2x129x21 -> 16x65x11
             nn.BatchNorm2d(16),
-            Swish(),
+            Swish(inplace=True),
+        )
+        self.conv2 = nn.Sequential(
             nn.Conv2d(16, 32, (5, 5), (2, 2), (2, 2)),  # 16x65x11 -> 32x33x6
             nn.BatchNorm2d(32),
-            Swish(),
+            Swish(inplace=True),
+        )
+        self.conv3 = nn.Sequential(
             nn.Conv2d(32, 64, (5, 5), (2, 2), (2, 2)),  # 32x33x6 -> 64x17x3
             nn.BatchNorm2d(64),
-            Swish(),
+            Swish(inplace=True),
+        )
+        self.conv4 = nn.Sequential(
             nn.Conv2d(64, 128, (5, 5), (2, 2), (2, 2)),  # 64x17x3 -> 128x9x2
             nn.BatchNorm2d(128),
-            Swish(),
+            Swish(inplace=True),
+        )
+        self.conv5 = nn.Sequential(
             nn.Conv2d(128, 256, (5, 5), (2, 2), (2, 2)),  # 128x9x2 -> 256x5x1
             nn.BatchNorm2d(256),
-            Swish(),
+            Swish(inplace=True),
+        )
+        self.fc = nn.Sequential(
             View(dim=(-1, 256 * 5 * 1)),
             nn.Linear(256 * 5 * 1, y_dim),
-            nn.BatchNorm2d(y_dim),
-        ]
-        if softmax:
-            layers.append(nn.Softmax(eps, dim=1))
-        self.hidden = nn.Sequential(*layers)
+        )
+        self.softmax = nn.Softmax(dim=1)
 
-    def forward(self, xs, *args, **kwargs):
-        ys = self.hidden.forward(xs, *args, **kwargs)
-        return ys
+    def forward(self, x, softmax=False):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.conv5(x)
+        x = self.fc(x)
+        if softmax:
+            x = self.softmax(x)
+        return x
 
     def test(self):
         xs = torch.randn(10, self.x_dim)

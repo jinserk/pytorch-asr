@@ -62,9 +62,6 @@ def parse_options(argv):
 def train(argv):
     args = parse_options(argv)
 
-    def get_model_file_path(desc):
-        return str(misc.get_model_file_path(args.log_dir, args.model_prefix, desc))
-
     viz = None
     if args.visdom:
         try:

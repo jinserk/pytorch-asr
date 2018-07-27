@@ -1,6 +1,5 @@
 #!python
 import sys
-import pdb
 from pathlib import Path
 from tqdm import tqdm
 

@@ -166,7 +166,7 @@ class ResNetEdModel:
             meter_loss.add(loss.item())
             #meter_accuracy.add(ys_hat.data, ys_int)
             #meter_confusion.add(ys_hat.data, ys_int)
-            del loss, ys_hat
+            del xs, ys, loss, ys_hat
         logger.info(f"epoch {self.epoch:03d}: "
                     f"validating loss {meter_loss.value()[0]:5.3f} ")
                     #f"validating accuracy {meter_accuracy.value()[0]:6.3f}")
@@ -222,10 +222,7 @@ class ResNetEdModel:
         self.epoch = states["epoch"]
 
         self.__setup_networks()
-        try:
-            self.encoder.load_state_dict(states["model"])
-        except:
-            self.encoder.load_state_dict(states["conv"])
+        self.encoder.load_state_dict(states["model"])
         #self.optimizer.load_state_dict(states["optimizer"])
         #self.lr_scheduler.load_state_dict(states["lr_scheduler"])
         if self.use_cuda:
