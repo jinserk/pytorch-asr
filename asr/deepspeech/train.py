@@ -18,7 +18,7 @@ from .model import DeepSpeechModel
 def parse_options(argv):
     parser = argparse.ArgumentParser(description="DeepSpeech AM with fully supervised training")
     # for training
-    parser.add_argument('--data-path', default='data/aspire2', type=str, help="dataset path to use in training")
+    parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
     parser.add_argument('--max-len', default=15., type=float, help="max length of utterance to use in secs")
     parser.add_argument('--num-workers', default=16, type=int, help="number of dataloader workers")
