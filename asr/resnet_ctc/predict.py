@@ -38,16 +38,15 @@ class Predict(object):
                 self.labels.append(line.strip().split()[0])
 
     def _load_label_counts(self):
-        file_path = Path(__file__).parents[2].joinpath("data", "aspire", "label_counts.txt")
+        file_path = Path(__file__).parents[2].joinpath("data", "aspire", "ctc_count.txt")
         priors = np.loadtxt(file_path, dtype="double", ndmin=1)
         total = np.sum(priors)
         priors = np.divide(priors, total)
-        priors[np.where(priors < 1e-10)] = 1. # to prevent divided zero error
-        #priors = np.append([0], priors)
+        priors = torch.log(torch.FloatTensor(priors))
+        self.priors[np.where(priors < 1e-15)] = 1e30 # to prevent divided zero error
         if self.use_cuda:
-            self.priors = torch.log(torch.cuda.FloatTensor(priors))
-        else:
-            self.priors = torch.log(torch.FloatTensor(priors))
+            self.priors = self.priors.cuda()
+        print(self.priors)
 
     def decode(self, wav_file, verbose=False):
         # predict phones using AM

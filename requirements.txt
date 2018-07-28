@@ -4,6 +4,7 @@ colorlover
 t_sne_bhcuda
 tqdm
 sox
+python-Levenshtein
 visdom
 tensorboardx
 tensorboard
