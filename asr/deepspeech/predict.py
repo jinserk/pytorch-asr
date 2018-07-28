@@ -42,11 +42,10 @@ class Predict(object):
         priors = np.loadtxt(file_path, dtype="double", ndmin=1)
         total = np.sum(priors)
         priors = np.divide(priors, total)
-        priors = torch.log(torch.FloatTensor(priors))
+        self.priors = torch.log(torch.FloatTensor(priors))
         self.priors[np.where(priors < 1e-15)] = 1e30 # to prevent divided zero error
         if self.use_cuda:
             self.priors = self.priors.cuda()
-        print(self.priors)
 
     def decode(self, wav_file, verbose=False):
         # predict phones using AM
