@@ -1,8 +1,6 @@
 #!python
 
 import sys
-import argparse
-from pathlib import Path
 
 
 argv = sys.argv[1:]
@@ -11,12 +9,12 @@ datasets = set([
     "tedlium",
 ])
 
-dataset = None
-for opt in argv:
-    if opt in datasets:
-        dataset = opt
-        argv.remove(opt)
-        break
+if argv[0] not in datasets:
+    print(f"Error: choose one of datasets in {datasets}")
+    sys.exit(1)
+
+dataset = argv[0]
+argv.remove(dataset)
 
 if dataset == "aspire":
     from asr.utils import aspire
@@ -24,6 +22,3 @@ if dataset == "aspire":
 if dataset == "tedlium":
     from asr.utils import tedlium
     tedlium.prepare(argv)
-else:
-    print(f"Error: choose one of datasets in {datasets}")
-    sys.exit(1)

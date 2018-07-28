@@ -1,8 +1,7 @@
 #!python
 
 import sys
-import argparse
-from pathlib import Path
+
 
 argv = sys.argv[1:]
 models = set([
@@ -17,12 +16,12 @@ models = set([
     "capsule2",
 ])
 
-model = None
-for opt in argv:
-    if opt in models:
-        model = opt
-        argv.remove(opt)
-        break
+if argv[0] not in models:
+    print(f"Error: choose one of models in {models}")
+    sys.exit(1)
+
+model = argv[0]
+argv.remove(model)
 
 if model == "convnet":
     from asr import convnet
@@ -51,6 +50,3 @@ elif model == "capsule1":
 elif model == "capsule2":
     from asr import capsule2
     capsule2.train(argv)
-else:
-    print(f"Error: choose one of models in {models}")
-    sys.exit(1)
