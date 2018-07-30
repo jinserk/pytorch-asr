@@ -52,7 +52,7 @@ class Predictor:
 
     def __setup_networks(self):
         # setup networks
-        self.encoder = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
+        self.encoder = resnet101(num_classes=p.NUM_CTC_LABELS)
         if self.use_cuda:
             self.encoder.cuda()
 
