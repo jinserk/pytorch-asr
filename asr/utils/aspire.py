@@ -159,19 +159,10 @@ def make_ctc_labels(target_dir):
             if p != x:
                 p = x
                 yield x
-    # load labels.txt
-    labels = dict()
-    with open('asr/kaldi/graph/labels.txt', 'r') as f:
-        for line in f:
-            splits = line.strip().split()
-            label = splits[0]
-            labels[label] = splits[1]
-    blank = labels['<blk>']
     # find *.phn files
     logger.info(f"finding *.phn files under {target_dir}")
     phn_files = [str(x) for x in Path(target_dir).rglob("*.phn")]
     # convert
-    ctcs_count = [0] * len(labels)
     for phn_file in tqdm(phn_files):
         phns = np.loadtxt(phn_file, dtype="int", ndmin=1)
         # make ctc labelings by removing duplications
@@ -181,14 +172,33 @@ def make_ctc_labels(target_dir):
         # so here the target labels have not to contain the blanks interleaved
         ctc_file = phn_file.replace("phn", "ctc")
         np.savetxt(str(ctc_file), ctcs, "%d")
-        # add blanks and count labels for priors
-        # assume no blank label in the original ctcs
-        for c in ctcs:
-            ctcs_count[int(c)] += 1
-        ctcs_count[int(blank)] += len(ctcs) + 1
-    # write ctc count file
-    ctcs_count_file = Path(target_dir).joinpath("ctc_count.txt")
-    np.savetxt(str(ctcs_count_file), ctcs_count, "%d")
+    count_priors(phn_files)
+
+
+def count_priors(target_dir, phn_files=None):
+    # load labels.txt
+    labels = dict()
+    with open('asr/kaldi/graph/labels.txt', 'r') as f:
+        for line in f:
+            splits = line.strip().split()
+            label = splits[0]
+            labels[label] = splits[1]
+    blank = labels['<blk>']
+    if phn_files is None:
+        # find *.phn files
+        logger.info(f"finding *.phn files under {target_dir}")
+        phn_files = [str(x) for x in Path(target_dir).rglob("*.phn")]
+    # count
+    counts = [0] * len(labels)
+    for phn_file in tqdm(phn_files):
+        phns = np.loadtxt(phn_file, dtype="int", ndmin=1)
+        # count labels for priors
+        for c in phns:
+            counts[int(c)] += 1
+        counts[int(blank)] += len(phns) + 1
+    # write count file
+    count_file = Path(target_dir).joinpath("priors_count.txt")
+    np.savetxt(str(count_file), counts, "%d")
 
 
 def process(target_dir=None):
@@ -252,6 +262,7 @@ def prepare(argv):
     parser = argparse.ArgumentParser(description="Prepare ASpIRE dataset")
     parser.add_argument('--manifest-only', default=False, action='store_true', help="if you want to reconstruct manifest only instead of the overall processing")
     parser.add_argument('--ctc-only', default=False, action='store_true', help="generate ctc symbols only instead of the overall processing")
+    parser.add_argument('--priors-only', default=False, action='store_true', help="generate phone symbol counts only instead of the overall processing")
     parser.add_argument('--path', default=None, type=str, help="path to store the processed data")
     args = parser.parse_args(argv)
 
@@ -261,6 +272,8 @@ def prepare(argv):
         reconstruct_manifest(args.path)
     elif args.ctc_only:
         make_ctc_labels(args.path)
+    elif args.priors_only:
+        count_priors(args.path)
     else:
         process(args.path)
 

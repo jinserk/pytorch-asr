@@ -13,21 +13,23 @@ from ..utils.misc import onehot2int
 from ..utils import params as p
 from ..kaldi.latgen import LatGenCTCDecoder
 
-from .model import ResNetEdModel
+from .network import *
 
 
-class Predict(object):
+class Predictor:
 
-    def __init__(self, args):
+    def __init__(self, use_cuda=False, continue_from=None, *args, **kwargs):
+        self.use_cuda = use_cuda
+
         self.dataset = NonSplitDataset()
         self.data_loader = PredictDataLoader(dataset=self.dataset)
-        self.model = ResNetEdModel(x_dim=p.NUM_PIXELS, y_dim=p.NUM_CTC_LABELS, **vars(args))
-        self.use_cuda = args.use_cuda
 
-        self._load_labels()
-        self._load_label_counts()
+        # load from args
+        assert continue_from is not None
+        self.load(continue_from)
 
         # prepare kaldi latgen decoder
+        self._load_labels()
         self.decoder = LatGenCTCDecoder()
 
     def _load_labels(self):
@@ -40,6 +42,7 @@ class Predict(object):
     def _load_label_counts(self):
         file_path = Path(__file__).parents[2].joinpath("data", "aspire", "ctc_count.txt")
         priors = np.loadtxt(file_path, dtype="double", ndmin=1)
+        priors[0] = 0   # eliminate <blank> count for ctc labels
         total = np.sum(priors)
         priors = np.divide(priors, total)
         self.priors = torch.log(torch.FloatTensor(priors))
@@ -47,12 +50,23 @@ class Predict(object):
         if self.use_cuda:
             self.priors = self.priors.cuda()
 
+    def __setup_networks(self):
+        # setup networks
+        self.encoder = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
+        if self.use_cuda:
+            self.encoder.cuda()
+
+    def predict(self, xs):
+        self.encoder.eval()
+        if self.use_cuda:
+            xs = xs.cuda()
+        ys_hat = self.encoder(xs)
+        return ys_hat
+
     def decode(self, wav_file, verbose=False):
         # predict phones using AM
         xs, ys, txt = self.data_loader.load(wav_file)
-        ys_hat = self.model.predict(xs)
-        #eps = torch.zeros(ys_hat.size(0), ys_hat.size(1), 1)
-        #ys_hat = torch.cat((eps, ys_hat), 2)
+        ys_hat = self.predict(xs)
         # devide by priors
         loglikes = torch.log(ys_hat) - self.priors
 
@@ -80,9 +94,27 @@ class Predict(object):
         else:
             logger.info("decoded text: <null output from decoder>")
 
+    def load(self, file_path):
+        if isinstance(file_path, str):
+            file_path = Path(file_path)
+        if not file_path.exists():
+            logger.error(f"no such file {file_path} exists")
+            sys.exit(1)
+        logger.info(f"loading the model from {file_path}")
+        if not self.use_cuda:
+            states = torch.load(file_path, map_location='cpu')
+        else:
+            states = torch.load(file_path)
+
+        self.__setup_networks()
+        self.encoder.load_state_dict(states["model"])
+        if self.use_cuda:
+            self.encoder.cuda()
+
 
 def predict(argv):
-    parser = argparse.ArgumentParser(description="ResNet prediction")
+    import argparse
+    parser = argparse.ArgumentParser(description="DeepSpeech CTC prediction")
     parser.add_argument('--verbose', default=False, action='store_true', help="set true if you need to check AM output")
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--log-dir', default='./logs', type=str, help="filename for logging the outputs")
@@ -107,8 +139,9 @@ def predict(argv):
         sys.exit(1)
 
     # run prediction
-    predict = Predict(args)
+    predict = Predictor(**vars(args))
     for i, wav_file in enumerate(args.wav_files):
+        wav_file = str(Path(wav_file).resolve())
         logger.info(f"[{i}] decoding wav file: {wav_file}")
         predict.decode(wav_file, verbose=args.verbose)
 

@@ -312,7 +312,7 @@ class AudioCTCDataset(NonSplitDataset):
         self.data_size = data_size
         super().__init__(frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT,
                          window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                         *args, **kwargs)
+                         tempo=True, gain=True, noise=True, *args, **kwargs)
         self.entries, self.entry_frames = _load_manifest(self.root, mode, data_size, min_len, max_len)
 
     def __getitem__(self, index):
@@ -332,12 +332,16 @@ class AudioCTCDataset(NonSplitDataset):
         return len(self.entries)
 
 
-class AudioEdDataset(AudioCTCDataset):
+class AudioCEDataset(NonSplitDataset):
 
-    def __init__(self, *args, **kwargs):
-        if 'tempo' in kwargs:
-            kwargs['tempo'] = False
-        super().__init__(*args, **kwargs)
+    def __init__(self, root, mode, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
+        self.root = Path(root).resolve()
+        self.mode = mode
+        self.data_size = data_size
+        super().__init__(frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT,
+                         window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
+                         tempo=False, gain=True, noise=True, *args, **kwargs)
+        self.entries, self.entry_frames = _load_manifest(self.root, mode, data_size, min_len, max_len)
 
     def __getitem__(self, index):
         uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
@@ -352,6 +356,9 @@ class AudioEdDataset(AudioCTCDataset):
         targets_len = len(targets)
         start = (tensors.size(2) - targets_len) // 2
         return tensors[:, :, start:start+targets_len], targets, phn_file
+
+    def __len__(self):
+        return len(self.entries)
 
 
 if __name__ == "__main__":

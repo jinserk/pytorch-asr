@@ -8,10 +8,10 @@ models = set([
     "convnet",
     "densenet",
     "densenet_ctc",
-    "deepspeech",
-    "deepspeech_ed",
+    "deepspeech_ctc",
+    "deepspeech_ce",
     "resnet_ctc",
-    "resnet_ed",
+    "resnet_ce",
     "capsule1",
     "capsule2",
 ])
@@ -32,18 +32,18 @@ elif model == "densenet":
 elif model == "densenet_ctc":
     from asr import densenet_ctc
     densenet_ctc.train(argv)
-elif model == "deepspeech":
-    from asr import deepspeech
-    deepspeech.train(argv)
-elif model == "deepspeech_ed":
-    from asr import deepspeech_ed
-    deepspeech_ed.train(argv)
+elif model == "deepspeech_ctc":
+    from asr import deepspeech_ctc
+    deepspeech_ctc.train(argv)
+elif model == "deepspeech_ce":
+    from asr import deepspeech_ce
+    deepspeech_ce.train(argv)
 elif model == "resnet_ctc":
     from asr import resnet_ctc
     resnet_ctc.train(argv)
-elif model == "resnet_ed":
-    from asr import resnet_ed
-    resnet_ed.train(argv)
+elif model == "resnet_ce":
+    from asr import resnet_ce
+    resnet_ce.train(argv)
 elif model == "capsule1":
     from asr import capsule1
     capsule1.train(argv)

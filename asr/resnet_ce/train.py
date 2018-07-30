@@ -1,40 +1,31 @@
 #!python
 import sys
-from pathlib import Path
+from pathlib import Path, PurePath
 from tqdm import tqdm
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.utils as tvu
 from warpctc_pytorch import CTCLoss
 import torchnet as tnt
+import Levenshtein as Lev
 
-from ..utils.misc import onehot2int, get_model_file_path
-from ..utils.logger import logger
+from ..utils.dataset import AudioCEDataset
+from ..utils.dataloader import AudioNonSplitDataLoader
+from ..utils.logger import logger, set_logfile, VisdomLogger, TensorboardLogger
+from ..utils.misc import onehot2int, int2onehot, get_model_file_path
 from ..utils import params as p
 
 from .network import *
 
 
-class DeepSpeechModel:
-    """
-    This class encapsulates the parameters (neural networks) and models & guides
-    needed to train a supervised ResNet on the Aspire audio dataset
+class Trainer:
 
-    :param use_cuda: use GPUs for faster training
-    :param batch_size: batch size of calculation
-    :param init_lr: initial learning rate to setup the optimizer
-    :param continue_from: model file path to load the model states
-    """
-    def __init__(self, x_dim=p.NUM_PIXELS, y_dim=p.NUM_CTC_LABELS,
-                 batch_size=8, init_lr=1e-4, max_norm=400, use_cuda=False, vlog=None, tlog=None,
-                 log_dir='logs', model_prefix='resnet_aspire', checkpoint=False, num_ckpt=10000,
-                 continue_from=None, *args, **kwargs):
+    def __init__(self, vlog=None, tlog=None, batch_size=8, init_lr=1e-4, max_norm=400,
+                 use_cuda=False, log_dir='logs_deepspeech_ctc', model_prefix='deepspeech_ctc_aspire',
+                 checkpoint=False, num_ckpt=10000, continue_from=False, *args, **kwargs):
         super().__init__()
-
-        # initialize the class with all arguments provided to the constructor
-        self.x_dim = x_dim
-        self.y_dim = y_dim
 
         self.batch_size = batch_size
         self.init_lr = init_lr
@@ -52,7 +43,6 @@ class DeepSpeechModel:
         self.vlog = vlog
         if self.vlog is not None:
             self.vlog.add_plot(title='loss', xlabel='epoch')
-
         self.tlog = tlog
 
         if continue_from is None:
@@ -62,11 +52,11 @@ class DeepSpeechModel:
 
     def __setup_networks(self):
         # setup networks
-        self.encoder = DeepSpeech(num_classes=self.y_dim)
+        self.encoder = resnet101(num_classes=p.NUM_CTC_LABELS)
         if self.use_cuda:
             self.encoder.cuda()
         # setup loss
-        self.loss = CTCLoss(blank=0, size_average=True)
+        self.loss = nn.CrossEntropyLoss()
         # setup optimizer
         parameters = self.encoder.parameters()
         if self.opt == "adam":
@@ -97,27 +87,17 @@ class DeepSpeechModel:
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training ")
         for i, (data) in t:
-            #if self.lr_scheduler is not None and i % self.num_ckpt == 0:
-            #    self.lr_scheduler.step()
-            #    #logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
             xs, ys, frame_lens, label_lens, filenames = data
             try:
                 if self.use_cuda:
-                    xs = xs.cuda()
+                    xs, ys = xs.cuda(), ys.cuda()
                 ys_hat = self.encoder(xs)
-                #print(onehot3int(ys_hat[0]).squeeze())
-                frame_lens = torch.ceil(frame_lens.float() / 2.).int()
+                ys_hat_cat = torch.cat([ys_hat[b, :frame_lens[b], :] for b in range(ys_hat.size(0))])
                 #torch.set_printoptions(threshold=5000000)
                 #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
                 #print(onehot2int(ys_hat).squeeze(), ys)
-                loss = self.loss(ys_hat.transpose(0, 1).contiguous(), ys, frame_lens, label_lens)
-                loss_value = loss.item()
-                inf = float("inf")
-                if loss_value == inf or loss_value == -inf:
-                    #torch.set_printoptions(threshold=5000000)
-                    #print(filenames, ys_hat, frame_lens, label_lens)
-                    logger.warning("received an inf loss, setting loss value to 0")
-                    loss_value = 0
+                loss = self.loss(ys_hat_cat, ys.long())
+                #print(loss)
                 self.optimizer.zero_grad()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.encoder.parameters(), self.max_norm)
@@ -126,7 +106,7 @@ class DeepSpeechModel:
                 print(e)
                 print(filenames, frame_lens, label_lens)
             #ys_int = onehot2int(ys_hat).squeeze()
-            meter_loss.add(loss_value)
+            meter_loss.add(loss.item())
             t.set_description(f"training (loss: {meter_loss.value()[0]:.3f})")
             t.refresh()
             #self.meter_accuracy.add(ys_int, ys)
@@ -167,34 +147,19 @@ class DeepSpeechModel:
         for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
             xs, ys, frame_lens, label_lens, filenames = data
             if self.use_cuda:
-                xs = xs.cuda()
+                xs, ys = xs.cuda(), ys.cuda()
             ys_hat = self.encoder(xs)
-            ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
-            frame_lens = torch.ceil(frame_lens.float() / 2.).int()
-            #ys_int = onehot2int(ys)
-            loss = self.loss(ys_hat, ys, frame_lens, label_lens)
-            loss_value = loss.item()
-            inf = float("inf")
-            if loss_value == inf or loss_value == -inf:
-                logger.warning("received an inf loss, setting loss value to 0")
-                loss_value = 0
-            meter_loss.add(loss_value)
+            ys_hat_cat = torch.cat([ys_hat[b, :frame_lens[b], :] for b in range(ys_hat.size(0))])
+            loss = self.loss(ys_hat_cat, ys.long())
+            meter_loss.add(loss.item())
             #meter_accuracy.add(ys_hat.data, ys_int)
             #meter_confusion.add(ys_hat.data, ys_int)
-            del loss, ys_hat
+            del xs, ys, loss, ys_hat
         logger.info(f"epoch {self.epoch:03d}: "
                     f"validating loss {meter_loss.value()[0]:5.3f} ")
                     #f"validating accuracy {meter_accuracy.value()[0]:6.3f}")
 
-    def predict(self, xs):
-        self.encoder.eval()
-        if self.use_cuda:
-            xs = xs.cuda()
-        ys_hat = self.encoder(xs)
-        return ys_hat
-
     def wer(self, s1, s2):
-        import Levenshtein as Lev
         # build mapping of words to integers
         b = set(s1.split() + s2.split())
         word2char = dict(zip(b, range(len(b))))
@@ -204,7 +169,6 @@ class DeepSpeechModel:
         return Lev.distance(''.join(w1), ''.join(w2))
 
     def cer(self, s1, s2, is_char=False):
-        import Levenshtein as Lev
         if is_char:
             s1, s2, = s1.replace(' ', ''), s2.replace(' ', '')
             return Lev.distance(s1, s2)
@@ -243,3 +207,105 @@ class DeepSpeechModel:
         if self.use_cuda:
             self.encoder.cuda()
 
+
+def train(argv):
+    import argparse
+    parser = argparse.ArgumentParser(description="ResNet AM with fully supervised training with cross entropy loss")
+    # for training
+    parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
+    parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
+    parser.add_argument('--max-len', default=15., type=float, help="max length of utterance to use in secs")
+    parser.add_argument('--num-workers', default=4, type=int, help="number of dataloader workers")
+    parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
+    parser.add_argument('--batch-size', default=8, type=int, help="number of images (and labels) to be considered in a batch")
+    parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")
+    parser.add_argument('--max-norm', default=400, type=int, help="norm cutoff to prevent explosion of gradients")
+    # optional
+    parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
+    parser.add_argument('--visdom', default=False, action='store_true', help="use visdom logging")
+    parser.add_argument('--tensorboard', default=False, action='store_true', help="use tensorboard logging")
+    parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
+    parser.add_argument('--log-dir', default='./logs_resnet_ce', type=str, help="filename for logging the outputs")
+    parser.add_argument('--model-prefix', default='resnet_ce', type=str, help="model file prefix to store")
+    parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
+    parser.add_argument('--num-ckpt', default=10000, type=int, help="number of batch-run to save checkpoints")
+    parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
+
+    args = parser.parse_args(argv)
+
+    print(f"begins logging to file: {str(Path(args.log_dir).resolve() / 'train.log')}")
+    set_logfile(Path(args.log_dir, "train.log"))
+
+    logger.info(f"PyTorch version: {torch.__version__}")
+    logger.info(f"Training started with command: {' '.join(sys.argv)}")
+    args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
+    logger.info(f"args: {' '.join(args_str)}")
+
+    if args.use_cuda:
+        logger.info("using cuda")
+
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+        if args.use_cuda:
+            torch.cuda.manual_seed(args.seed)
+
+    vlog = None
+    if args.visdom:
+        try:
+            logger.info("using visdom")
+            title = str(Path(args.log_dir).name)
+            vlog = VisdomLogger(env=title)
+        except:
+            logger.info("error to use visdom")
+            vlog = None
+
+    tlog = None
+    if args.tensorboard:
+        try:
+            logger.info("using tensorboard")
+            tlog = TensorboardLogger(PurePath(args.log_dir, 'tensorboard'))
+        except:
+            logger.info("error to use tensorboard")
+            tlog = None
+
+    model = Trainer(vlog=vlog, tlog=tlog, **vars(args))
+
+    # initializing local variables to maintain the best validation accuracy
+    # seen across epochs over the supervised training set
+    best_valid_acc = 0.0
+
+    # if you want to limit the datasets' entry size
+    sizes = { "train": 1600000, "dev": 1600 }
+    #sizes = { "train": 10000, "dev": 100 }
+
+    # prepare data loaders
+    datasets, data_loaders = dict(), dict()
+    for mode in ["train", "dev"]:
+        datasets[mode] = AudioCEDataset(root=args.data_path, mode=mode, data_size=sizes[mode],
+                                        min_len=args.min_len, max_len=args.max_len)
+        data_loaders[mode] = AudioNonSplitDataLoader(datasets[mode], batch_size=args.batch_size,
+                                                     num_workers=args.num_workers, shuffle=True,
+                                                     pin_memory=args.use_cuda)
+
+    # run inference for a certain number of epochs
+    for i in range(model.epoch, args.num_epochs):
+        # get the losses for an epoch
+        model.train_epoch(data_loaders["train"])
+        # validate
+        model.test(data_loaders["dev"], "validating")
+
+        # update the best validation accuracy and the corresponding
+        # testing accuracy and the state of the parent module (including the networks)
+        #if best_valid_acc < model.meter_accuracy.value()[0]:
+        #    best_valid_acc = model.meter_accuracy.value()[0]
+
+    # test
+    #model.test(data_loaders["test"], "testing   ")
+
+    #logger.info(f"best validation accuracy {best_valid_acc:6.3f} "
+    #            f"test accuracy {model.meter_accuracy.value()[0]:6.3f}")
+
+
+if __name__ == "__main__":
+    pass
