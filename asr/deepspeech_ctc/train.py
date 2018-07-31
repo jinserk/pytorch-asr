@@ -96,7 +96,7 @@ class Trainer:
                     xs = xs.cuda()
                 ys_hat = self.encoder(xs)
                 ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
-                frame_lens = torch.ceil(frame_lens.float() / 4.).int()
+                frame_lens = torch.ceil(frame_lens.float() / 2.).int()
                 #torch.set_printoptions(threshold=5000000)
                 #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
                 #print(onehot2int(ys_hat).squeeze(), ys)
@@ -160,7 +160,7 @@ class Trainer:
                 xs = xs.cuda()
             ys_hat = self.encoder(xs)
             ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
-            frame_lens = torch.ceil(frame_lens.float() / 4.).int()
+            frame_lens = torch.ceil(frame_lens.float() / 2.).int()
             loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             loss_value = loss.item()
             inf = float("inf")
@@ -302,7 +302,7 @@ def train(argv):
                                          min_len=args.min_len, max_len=args.max_len)
         data_loaders[mode] = AudioNonSplitDataLoader(datasets[mode], batch_size=args.batch_size,
                                                      num_workers=args.num_workers, shuffle=True,
-                                                     pin_memory=args.use_cuda, frame_shift=4)
+                                                     pin_memory=args.use_cuda, frame_shift=2)
 
     # run inference for a certain number of epochs
     for i in range(model.epoch, args.num_epochs):

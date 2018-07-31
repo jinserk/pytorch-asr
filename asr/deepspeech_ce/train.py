@@ -14,7 +14,7 @@ import Levenshtein as Lev
 from ..utils.dataset import AudioCEDataset
 from ..utils.dataloader import AudioNonSplitDataLoader
 from ..utils.logger import logger, set_logfile, VisdomLogger, TensorboardLogger
-from ..utils.misc import onehot2int, int2onehot, get_model_file_path
+from ..utils.misc import onehot2int, get_model_file_path
 from ..utils import params as p
 
 from .network import *

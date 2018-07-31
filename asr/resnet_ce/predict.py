@@ -1,14 +1,13 @@
 #!python
 import sys
-import argparse
 from pathlib import Path
 
-import torch
 import numpy as np
+import torch
 
-from ..utils.logger import logger, set_logfile
 from ..utils.dataset import NonSplitDataset
 from ..utils.dataloader import PredictDataLoader
+from ..utils.logger import logger, set_logfile
 from ..utils.misc import onehot2int
 from ..utils import params as p
 from ..kaldi.latgen import LatGenCTCDecoder
@@ -60,7 +59,7 @@ class Predictor:
         self.encoder.eval()
         if self.use_cuda:
             xs = xs.cuda()
-        ys_hat = self.encoder(xs)
+        ys_hat = self.encoder(xs, softmax=True)
         return ys_hat
 
     def decode(self, wav_file, verbose=False):
@@ -114,7 +113,7 @@ class Predictor:
 
 def predict(argv):
     import argparse
-    parser = argparse.ArgumentParser(description="ResNet CE prediction")
+    parser = argparse.ArgumentParser(description="ResNet prediction")
     parser.add_argument('--verbose', default=False, action='store_true', help="set true if you need to check AM output")
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--log-dir', default='./logs', type=str, help="filename for logging the outputs")

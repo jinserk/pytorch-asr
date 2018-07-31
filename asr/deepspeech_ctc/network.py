@@ -139,7 +139,7 @@ class Lookahead(nn.Module):
 class DeepSpeech(nn.Module):
 
     def __init__(self, rnn_type=nn.LSTM, num_classes=p.NUM_CTC_LABELS,
-                 rnn_hidden_size=512, nb_layers=4, bidirectional=True, context=20):
+                 rnn_hidden_size=512, nb_layers=5, bidirectional=True, context=20):
         super(DeepSpeech, self).__init__()
 
         # model metadata needed for serialization/deserialization

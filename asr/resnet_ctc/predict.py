@@ -48,7 +48,7 @@ class Predictor:
         self.encoder.eval()
         if self.use_cuda:
             xs = xs.cuda()
-        ys_hat = self.encoder(xs)
+        ys_hat = self.encoder(xs, softmax=True)
         return ys_hat
 
     def decode(self, wav_file, verbose=False):
