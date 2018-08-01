@@ -26,6 +26,8 @@ class Predictor:
         assert continue_from is not None
         self.model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
         self.load(continue_from)
+        if self.use_cuda:
+            self.model.cuda()
 
         # prepare kaldi latgen decoder
         self._load_labels()

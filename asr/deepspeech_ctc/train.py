@@ -101,7 +101,7 @@ class Trainer:
             self.lr_scheduler.step()
             logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
         # count the number of supervised batches seen in this epoch
-        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training ")
+        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training")
         for i, (data) in t:
             xs, ys, frame_lens, label_lens, filenames, _ = data
             try:
@@ -162,7 +162,8 @@ class Trainer:
     def test(self, data_loader):
         self.model.eval()
         D, N = 0, 0
-        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc="testing "):
+        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing")
+        for i, (data) in t:
             xs, ys, frame_lens, label_lens, filenames, texts = data
             if self.use_cuda:
                 xs = xs.cuda()
@@ -177,8 +178,10 @@ class Trainer:
             d, n = self.edit_distance(words, texts)
             D += d
             N += n
-        wer = D * 100. / N
-        logger.info(f"testing at epoch {self.epoch:03d}: WER {wer:5.2f} %")
+            wer = D * 100. / N
+            t.set_description(f"testing (WER: {wer:.2f})")
+            t.refresh()
+        logger.info(f"testing at epoch {self.epoch:03d}: WER {wer:.2f} %")
 
     def edit_distance(self, words, targets):
         d, n = 0, 0

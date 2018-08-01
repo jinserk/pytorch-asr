@@ -17,7 +17,7 @@ FRAME_MARGIN = 10
 # augmentation
 TEMPO_RANGE = (0.85, 1.15)
 GAIN_RANGE = (-6., 8.)
-NOISE_RANGE = (-30., -10.)
+NOISE_RANGE = (-100., -3.)
 
 # images
 CHANNEL = 2

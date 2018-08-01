@@ -2,7 +2,7 @@ import os
 import sys
 import random
 from pathlib import Path
-import tempfile as tmp
+import tempfile
 
 import numpy as np
 import scipy.io.wavfile
@@ -88,8 +88,8 @@ class Augment(object):
             tfm.gain(gain, normalize=True)
 
         if tar_file is None:
-            tmp_dir = tmp._get_default_tempdir()
-            tmp_name = next(tmp._get_candidate_names())
+            tmp_dir = tempfile._get_default_tempdir()
+            tmp_name = next(tempfile._get_candidate_names())
             tmp_file = Path(tmp_dir, tmp_name + ".wav")
             tfm.build(str(wav_file), str(tmp_file))
             sr, wav = scipy.io.wavfile.read(tmp_file)
@@ -99,22 +99,29 @@ class Augment(object):
             tfm.build(str(wav_file), str(tar_file))
             sr, wav = scipy.io.wavfile.read(tar_file)
 
+        # normalize audio power
+        wav = wav.astype(np.float32)
+        wav_energy = np.sqrt(np.sum(np.power(wav, 2)) / wav.size)
+        wav = wav / wav_energy
+
         if self.noise:
             snr = 10.0 ** (np.random.uniform(*self.noise_range) / 10.0)
-            noise = 1 / np.sqrt(2) * np.random.normal(0, 1, wav.shape)
-            wav = wav + snr * noise
+            noise = np.random.normal(0, 1, wav.shape)
+            noise_energy = np.sqrt(np.sum(np.power(noise, 2)) / noise.size)
+            wav = wav + snr * noise / noise_energy
+
+        #scipy.io.wavfile.write("test.wav", sr, wav)
         return wav
 
 
 # transformer: spectrogram
 class Spectrogram(object):
 
-    def __init__(self, sample_rate, window_shift, window_size, window, nfft, normalize=False):
+    def __init__(self, sample_rate, window_shift, window_size, window, nfft):
         self.nfft = nfft
         self.nperseg = int(sample_rate * window_size)
         self.noverlap = int(sample_rate * (window_size - window_shift))
         self.window = window(self.nperseg)
-        self.normalize = normalize
 
     def __call__(self, data):
         # STFT
@@ -123,12 +130,6 @@ class Spectrogram(object):
         mag, ang = np.abs(z), np.angle(z)
         spect = torch.FloatTensor(np.log1p(mag))
         phase = torch.FloatTensor(ang)
-        # TODO: is this normalization correct?
-        if self.normalize:
-            m, s = spect.mean(), spect.std()
-            spect.sub_(m)
-            spect.div_(s)
-            phase.div_(np.pi)
         # {mag, phase} x n_freq_bin x n_frame
         data = torch.cat([spect.unsqueeze_(0), phase.unsqueeze_(0)], 0)
         return data
@@ -178,7 +179,7 @@ class SplitDataset(Dataset):
                  gain=False, gain_range=p.GAIN_RANGE,
                  noise=False, noise_range=p.NOISE_RANGE,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                 window=p.WINDOW, nfft=p.NFFT, normalize=False,
+                 window=p.WINDOW, nfft=p.NFFT,
                  frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transform is None:
@@ -188,8 +189,7 @@ class SplitDataset(Dataset):
                         gain=gain, gain_range=gain_range,
                         noise=noise, noise_range=noise_range),
                 Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
-                            window_size=window_size, window=window, nfft=nfft,
-                            normalize=normalize),
+                            window_size=window_size, window=window, nfft=nfft),
                 FrameSplitter(frame_margin=frame_margin, unit_frames=unit_frames),
             ])
         else:
@@ -210,7 +210,7 @@ class NonSplitDataset(Dataset):
                  gain=False, gain_range=p.GAIN_RANGE,
                  noise=False, noise_range=p.NOISE_RANGE,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                 window=p.WINDOW, nfft=p.NFFT, normalize=False,
+                 window=p.WINDOW, nfft=p.NFFT,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transform is None:
@@ -220,8 +220,7 @@ class NonSplitDataset(Dataset):
                         gain=gain, gain_range=gain_range,
                         noise=noise, noise_range=noise_range),
                 Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
-                            window_size=window_size, window=window, nfft=nfft,
-                            normalize=normalize),
+                            window_size=window_size, window=window, nfft=nfft),
             ])
         else:
             self.transform = transform

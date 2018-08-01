@@ -15,9 +15,8 @@ The code was tested with Python 3.7 and PyTorch 0.5.
 We recommend [pyenv](https://github.com/pyenv/pyenv).
 Do not forget to set `pyenv local 3.7.0` in the local repo if you're using pyenv.
 
-Currently, AdamW and SGDR patch ([PR #4429](https://github.com/pytorch/pytorch/pull/4429) and [PR #7821](https://github.com/pytorch/pytorch/pull/7821)) has to be applied
-to Pytorch 0.5.0a0 ([git branch v0.4.1](https://github.com/pytorch/pytorch/tree/v0.4.1)) to use AdamW or SGDR optimizer.
-If you don't want to use this, please correct each optimizer setting in the function of `__setup_networks()` in `model.py` files to avoid corresponding errors.
+If you want to use AdamW or SGDR as your optimizer, you need to patch ([PR #4429](https://github.com/pytorch/pytorch/pull/4429) and [PR #7821](https://github.com/pytorch/pytorch/pull/7821))
+to the latest PyTorch source. This is optional; you can still use any other default optimizer without patch.
 
 To avoid the `-fPIC` related compile error, you have to configure Kaldi with `--shared` option when you install it.
 
