@@ -38,10 +38,12 @@ class LatGenDecoder(Function):
                               allow_partial, fst_in_filename, wd_in_filename)
         # load words table
         self.words = list()
+        self.wordi = dict()
         with open(wd_file, "r") as f:
             for line in f:
                 record = line.strip().split()
                 self.words.append(record[0])
+                self.wordi[record[0]] = int(record[1])
 
     def forward(self, loglikes):
         assert loglikes.dim() == 3 and loglikes.size(2) == self.num_labels
@@ -49,9 +51,11 @@ class LatGenDecoder(Function):
             # N: batch size, RxC: R frames for C classes
             words = torch.IntTensor().zero_()
             alignments = torch.IntTensor().zero_()
+            w_sizes = torch.IntTensor().zero_()
+            a_sizes = torch.IntTensor().zero_()
             # actual decoding
-            latgen_lib.decode(loglikes, words, alignments)
-        return words, alignments
+            latgen_lib.decode(loglikes, words, alignments, w_sizes, a_sizes)
+        return words, alignments, w_sizes, a_sizes
 
     def backward(self, grad_output):
         pass

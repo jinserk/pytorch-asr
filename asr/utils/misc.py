@@ -1,6 +1,7 @@
 #!python
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -30,6 +31,33 @@ def int2onehot(idx, num_classes):
         onehot = torch.zeros(idx.size(0), num_classes)
         onehot = onehot.scatter_(1, idx.long().unsqueeze(1), 1.0)
     return onehot
+
+
+def edit_distance(r, h):
+    '''
+    This function is to calculate the edit distance of reference sentence and the hypothesis sentence.
+    Main algorithm used is dynamic programming.
+    Attributes:
+        r -> the list of words produced by splitting reference sentence.
+        h -> the list of words produced by splitting hypothesis sentence.
+    '''
+    d = np.zeros((len(r)+1)*(len(h)+1), dtype=np.uint8).reshape((len(r)+1, len(h)+1))
+    for i in range(len(r)+1):
+        for j in range(len(h)+1):
+            if i == 0:
+                d[0][j] = j
+            elif j == 0:
+                d[i][0] = i
+    for i in range(1, len(r)+1):
+        for j in range(1, len(h)+1):
+            if r[i-1] == h[j-1]:
+                d[i][j] = d[i-1][j-1]
+            else:
+                substitute = d[i-1][j-1] + 1
+                insert = d[i][j-1] + 1
+                delete = d[i-1][j] + 1
+                d[i][j] = min(substitute, insert, delete)
+    return d
 
 
 class View(nn.Module):

@@ -4,7 +4,6 @@ from collections import OrderedDict
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.autograd import Variable
 
 from ..utils import params as p
@@ -19,7 +18,7 @@ class SequenceWise(nn.Module):
         Allows handling of variable sequence lengths and minibatch sizes.
         :param module: Module to apply input to.
         """
-        super(SequenceWise, self).__init__()
+        super().__init__()
         self.module = module
 
     def forward(self, x):
@@ -38,9 +37,13 @@ class SequenceWise(nn.Module):
 
 class InferenceBatchSoftmax(nn.Module):
 
+    def __init__(self):
+        super().__init__()
+        self.softmax = nn.Softmax(dim=-1)
+
     def forward(self, input_):
         if not self.training:
-            return F.softmax(input_, dim=-1)
+            return self.softmax(input_)
         else:
             return input_
 
@@ -48,7 +51,7 @@ class InferenceBatchSoftmax(nn.Module):
 class TemporalRowConvolution(nn.Module):
 
     def __init__(self, input_size, kernel_size, stride=1, padding=0, feat_first=False, bias=False):
-        super(TemporalRowConvolution, self).__init__()
+        super().__init__()
         self.input_size = input_size
         self.kernel_size = _single(kernel_size)
         self.stride = _single(stride)
@@ -74,7 +77,7 @@ class TemporalRowConvolution(nn.Module):
 class BatchRNN(nn.Module):
 
     def __init__(self, input_size, hidden_size, rnn_type=nn.LSTM, bidirectional=False, batch_norm=True):
-        super(BatchRNN, self).__init__()
+        super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.bidirectional = bidirectional
@@ -102,7 +105,7 @@ class Lookahead(nn.Module):
 
     def __init__(self, n_features, context):
         # should we handle batch_first=True?
-        super(Lookahead, self).__init__()
+        super().__init__()
         self.n_features = n_features
         self.weight = nn.Parameter(torch.Tensor(n_features, context + 1))
         assert context > 0
@@ -140,7 +143,7 @@ class DeepSpeech(nn.Module):
 
     def __init__(self, rnn_type=nn.LSTM, num_classes=p.NUM_CTC_LABELS,
                  rnn_hidden_size=512, nb_layers=5, bidirectional=True, context=20):
-        super(DeepSpeech, self).__init__()
+        super().__init__()
 
         # model metadata needed for serialization/deserialization
         self._hidden_size = rnn_hidden_size

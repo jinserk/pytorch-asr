@@ -31,6 +31,8 @@ Install required Python modules:
 $ cd pytorch-asr
 $ pip install -r requirements.txt
 ```
+If you have installation error of `torchaudio` on CentOS machine, just comment out the line from `requirements.txt` and install it from its source.
+You need to modify `#include <sox.h>` to `#include <sox/sox.h>` in `torchaudio/torch_sox.cpp` of the source to install and run.
 
 Modify the Kaldi path in `_path.py`:
 ```

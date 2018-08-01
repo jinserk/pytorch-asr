@@ -21,7 +21,7 @@ of its own scripts, especially the data/ and the exp/
 """
 
 KALDI_PATH = Path(KALDI_ROOT).resolve()
-RECIPE_PATH = Path(KALDI_PATH, "egs/aspire/ics").resolve()
+RECIPE_PATH = Path(KALDI_PATH, "egs", "aspire", "ics").resolve()
 DATA_PATH = Path(__file__).parents[2].joinpath("data", "aspire").resolve()
 
 assert KALDI_PATH.exists(), f"no such path \"{str(KALDI_PATH)}\" not found"

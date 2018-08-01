@@ -171,7 +171,8 @@ int initialize(float beam, int max_active, int min_active,
 	return 1;
 }
 
-int decode(THFloatTensor *loglikes, THIntTensor *words, THIntTensor *alignments)
+int decode(THFloatTensor *loglikes, THIntTensor *words, THIntTensor *alignments,
+           THIntTensor *w_sizes, THIntTensor *a_sizes)
 {
 	LatticeDecoder decoder(latgen_opts);
 
@@ -206,13 +207,18 @@ int decode(THFloatTensor *loglikes, THIntTensor *words, THIntTensor *alignments)
 	THIntTensor_resize2d(words, results.size(), max_words);
 	THIntTensor_resize2d(alignments, results.size(), max_alignments);
 
+	THIntTensor_resize1d(w_sizes, results.size());
+	THIntTensor_resize1d(a_sizes, results.size());
+
 	for (int i = 0; i < results.size(); i++) {
 		if (results[i].failed_) continue;
 		//strncpy(texts[i], results[i].text_.c_str(), results[i].text_.length());
 		int j = 0;
+		THIntTensor_set1d(w_sizes, i, results[i].words_.size());
 		for (auto w : results[i].words_)
 			THIntTensor_set2d(words, i, j++, w);
 		j = 0;
+		THIntTensor_set1d(a_sizes, i, results[i].alignments_.size());
 		for (auto a : results[i].alignments_)
 			THIntTensor_set2d(alignments, i, j++, a);
 	}

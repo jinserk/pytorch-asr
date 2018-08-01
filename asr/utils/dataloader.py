@@ -29,8 +29,9 @@ class NonSplitCollateFn(object):
         tensor_lens = []
         target_lens = []
         filenames = []
+        texts = []
         for i in range(batch_size):
-            tensor, target, filename = batch[i]
+            tensor, target, filename, text = batch[i]
             if self.frame_shift > 0:
                 offset = random.randint(0, self.frame_shift)
                 if offset == 0:
@@ -44,10 +45,11 @@ class NonSplitCollateFn(object):
             tensor_lens.append(tensor.size(2))
             target_lens.append(target.size(0))
             filenames.append(filename)
+            texts.append(text)
         targets = torch.cat(targets)
         tensor_lens = torch.IntTensor(tensor_lens)
         target_lens = torch.IntTensor(target_lens)
-        return tensors, targets, tensor_lens, target_lens, filenames
+        return tensors, targets, tensor_lens, target_lens, filenames, texts
 
 
 class AudioSplitDataLoader(DataLoader):
@@ -72,33 +74,28 @@ class AudioNonSplitDataLoader(DataLoader):
         super().__init__(collate_fn=collate_fn, *args, **kwargs)
 
 
-class PredictDataLoader:
+class PredictCollateFn(object):
 
-    def __init__(self, dataset, *args, **kwargs):
-        self.dataset = dataset
+    def __call__(self, batch):
+        batch_size = len(batch)
+        longest_tensor = max(batch, key=lambda x: x[0].size(2))[0]
+        tensors = torch.zeros(batch_size, *longest_tensor.shape)
+        tensor_lens = []
+        filenames = []
+        for i in range(batch_size):
+            tensor, filename = batch[i]
+            tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
+            tensor_lens.append(tensor.size(2))
+            filenames.append(filename)
+        tensor_lens = torch.IntTensor(tensor_lens)
+        return tensors, tensor_lens, filenames
 
-    def load(self, wav_file):
-        # read and transform wav file
-        if self.dataset.transform is not None:
-            tensor = self.dataset.transform(wav_file)
-        if isinstance(tensor, tuple):
-            tensor = torch.stack(tensor)
-        else:
-            tensor = tensor.unsqueeze(0)
 
-        ctc_file = wav_file.replace('wav', 'ctc')
-        ctc_target = None
-        if Path(ctc_file).exists():
-            ctc_target = np.loadtxt(ctc_file, dtype="int", ndmin=1)
-            ctc_target = torch.IntTensor(ctc_target)
+class PredictDataLoader(DataLoader):
 
-        txt_file = wav_file.replace('wav', 'txt')
-        txt_target = None
-        if Path(txt_file).exists():
-            with open(txt_file, 'r') as f:
-                txt_target = ' '.join(f.readlines()).strip().replace('\n', '')
-
-        return tensor, ctc_target, txt_target
+    def __init__(self, *args, **kwargs):
+        kwargs['shuffle'] = False
+        super().__init__(collate_fn=PredictCollateFn(), *args, **kwargs)
 
 
 def test_plot():

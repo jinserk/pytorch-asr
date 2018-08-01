@@ -211,7 +211,7 @@ class NonSplitDataset(Dataset):
                  noise=False, noise_range=p.NOISE_RANGE,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
                  window=p.WINDOW, nfft=p.NFFT, normalize=False,
-                 frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT, *args, **kwargs):
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transform is None:
             self.transform = torchaudio.transforms.Compose([
@@ -269,9 +269,7 @@ class AudioSplitDataset(SplitDataset):
         self.root = Path(root).resolve()
         self.mode = mode
         self.data_size = data_size
-        super().__init__(frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT,
-                         window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                         *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.entries, self.entry_frames = _load_manifest(self.root, mode, data_size, min_len, max_len)
         self.frame_map = list()
         for i, (frames) in enumerate(self.entry_frames):
@@ -310,9 +308,7 @@ class AudioCTCDataset(NonSplitDataset):
         self.root = Path(root).resolve()
         self.mode = mode
         self.data_size = data_size
-        super().__init__(frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT,
-                         window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                         tempo=True, gain=True, noise=True, *args, **kwargs)
+        super().__init__(tempo=True, gain=True, noise=True, *args, **kwargs)
         self.entries, self.entry_frames = _load_manifest(self.root, mode, data_size, min_len, max_len)
 
     def __getitem__(self, index):
@@ -326,7 +322,10 @@ class AudioCTCDataset(NonSplitDataset):
         ctc_file = phn_file.replace('phn', 'ctc')
         targets = np.loadtxt(ctc_file, dtype="int", ndmin=1)
         targets = torch.IntTensor(targets)
-        return tensors, targets, ctc_file
+        # read txt file
+        with open(txt_file, 'r') as f:
+            text = f.read()
+        return tensors, targets, ctc_file, text
 
     def __len__(self):
         return len(self.entries)
@@ -338,9 +337,7 @@ class AudioCEDataset(NonSplitDataset):
         self.root = Path(root).resolve()
         self.mode = mode
         self.data_size = data_size
-        super().__init__(frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT,
-                         window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                         tempo=False, gain=True, noise=True, *args, **kwargs)
+        super().__init__(tempo=False, gain=True, noise=True, *args, **kwargs)
         self.entries, self.entry_frames = _load_manifest(self.root, mode, data_size, min_len, max_len)
 
     def __getitem__(self, index):
@@ -355,7 +352,27 @@ class AudioCEDataset(NonSplitDataset):
         targets = torch.IntTensor(targets)
         targets_len = len(targets)
         start = (tensors.size(2) - targets_len) // 2
-        return tensors[:, :, start:start+targets_len], targets, phn_file
+        # read txt file
+        with open(txt_file, 'r') as f:
+            text = f.read()
+        return tensors[:, :, start:start+targets_len], targets, phn_file, text
+
+    def __len__(self):
+        return len(self.entries)
+
+
+class PredictDataset(NonSplitDataset):
+
+    def __init__(self, wav_files, *args, **kwargs):
+        super().__init__(noise=True, noise_range=(-20, -20), *args, **kwargs)
+        self.entries = wav_files
+
+    def __getitem__(self, index):
+        wav_file = self.entries[index]
+        # read and transform wav file
+        if self.transform is not None:
+            tensors = self.transform(wav_file)
+        return tensors, wav_file
 
     def __len__(self):
         return len(self.entries)
