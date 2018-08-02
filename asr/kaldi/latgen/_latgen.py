@@ -26,11 +26,8 @@ class LatGenDecoder(Function):
                  label_file=str(DEFAULT_LABEL),
                  fst_file=str(DEFAULT_GRAPH), wd_file=str(DEFAULT_WORDS)):
         # store number of labels
-        lines = list()
         with open(label_file, "r") as f:
-            for line in f:
-                lines.append(line.strip().split())
-        self.num_labels = len(lines)
+            self.num_labels = sum(1 for line in f if line.strip())
         # initialize
         fst_in_filename = fst_file.encode('ascii')
         wd_in_filename = wd_file.encode('ascii')
@@ -46,9 +43,9 @@ class LatGenDecoder(Function):
                 self.wordi[record[0]] = int(record[1])
 
     def forward(self, loglikes):
+        # loglikes should NxTxH (N: batch size, T: frames, H: classes)
         assert loglikes.dim() == 3 and loglikes.size(2) == self.num_labels
         with torch.no_grad():
-            # N: batch size, RxC: R frames for C classes
             words = torch.IntTensor().zero_()
             alignments = torch.IntTensor().zero_()
             w_sizes = torch.IntTensor().zero_()

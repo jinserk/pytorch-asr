@@ -14,7 +14,7 @@ import Levenshtein as Lev
 from ..utils.dataset import AudioCTCDataset
 from ..utils.dataloader import AudioNonSplitDataLoader
 from ..utils.logger import logger, set_logfile, VisdomLogger, TensorboardLogger
-from ..utils.misc import onehot2int, get_model_file_path
+from ..utils.misc import onehot2int, remove_duplicates, get_model_file_path
 from ..utils import params as p
 
 from ..kaldi.latgen import LatGenCTCDecoder
@@ -159,41 +159,68 @@ class Trainer:
         self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
         self.__remove_ckpt_files(self.epoch-1)
 
-    def test(self, data_loader):
+    def validate(self, data_loader):
+        "validate with label error rate by the edit distance between hyps and refs"
         self.model.eval()
-        D, N = 0, 0
-        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing")
-        for i, (data) in t:
-            xs, ys, frame_lens, label_lens, filenames, texts = data
-            if self.use_cuda:
-                xs = xs.cuda()
-            ys_hat = self.model(xs)
-            # latgen decoding
-            loglikes = torch.log(ys_hat)
-            if self.use_cuda:
-                loglikes = loglikes.cpu()
-            words, alignment, w_sizes, a_sizes = self.decoder(loglikes)
-            words = [w[:s] for w, s in zip(words, w_sizes)]
-            # wer calculation
-            d, n = self.edit_distance(words, texts)
-            D += d
-            N += n
-            wer = D * 100. / N
-            t.set_description(f"testing (WER: {wer:.2f})")
-            t.refresh()
-        logger.info(f"testing at epoch {self.epoch:03d}: WER {wer:.2f} %")
+        with torch.no_grad():
+            N, D = 0, 0
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating")
+            for i, (data) in t:
+                xs, ys, frame_lens, label_lens, filenames, texts = data
+                if self.use_cuda:
+                    xs = xs.cuda()
+                ys_hat = self.model(xs)
+                # convert likes to ctc labels
+                frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
+                hyps = [onehot2int(yh[:s]) for yh, s in zip(ys_hat, frame_lens)]
+                hyps = [remove_duplicates(h, blank=0) for h in hyps]
+                # slice the targets
+                pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(label_lens, dim=0)[:-1]))
+                refs = [ys[s:l] for s, l in zip(pos, label_lens)]
+                # calculate ler
+                N += self.edit_distance(refs, hyps)
+                D += sum(len(r) for r in refs)
+                ler = N * 100. / D
+                t.set_description(f"validating (LER: {ler:.2f} %)")
+                t.refresh()
+            logger.info(f"validating at epoch {self.epoch:03d}: LER {ler:.2f} %")
 
-    def edit_distance(self, words, targets):
-        d, n = 0, 0
-        for i, (data) in enumerate(zip(words, targets)):
-            hyp, ref = data
-            ref_int = [self.decoder.wordi[w] if w in self.decoder.wordi else self.decoder.wordi['<unk>'] \
-                       for w in ref.strip().split()]
-            r = [chr(c) for c in ref_int]
+    def test(self, data_loader):
+        "test with word error rate by the edit distance between hyps and refs"
+        self.model.eval()
+        with torch.no_grad():
+            N, D = 0, 0
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing")
+            for i, (data) in t:
+                xs, ys, frame_lens, label_lens, filenames, texts = data
+                if self.use_cuda:
+                    xs = xs.cuda()
+                ys_hat = self.model(xs)
+                # latgen decoding
+                loglikes = torch.log(ys_hat)
+                if self.use_cuda:
+                    loglikes = loglikes.cpu()
+                words, alignment, w_sizes, a_sizes = self.decoder(loglikes)
+                hyps = [w[:s] for w, s in zip(words, w_sizes)]
+                # convert target texts to word indices
+                w2i = lambda w: self.decoder.wordi[w] if w in self.decoder.wordi else self.decoder.wordi['<unk>']
+                refs = [[w2i(w) for w in t.strip().split()] for t in texts]
+                # calculate wer
+                N += self.edit_distance(refs, hyps)
+                D += sum(len(r) for r in refs)
+                wer = N * 100. / D
+                t.set_description(f"testing (WER: {wer:.2f} %)")
+                t.refresh()
+            logger.info(f"testing at epoch {self.epoch:03d}: WER {wer:.2f} %")
+
+    def edit_distance(self, refs, hyps):
+        assert len(refs) == len(hyps)
+        n = 0
+        for ref, hyp in zip(refs, hyps):
+            r = [chr(c) for c in ref]
             h = [chr(c) for c in hyp]
-            d += Lev.distance(''.join(r), ''.join(h))
-            n += len(r)
-        return d, n
+            n += Lev.distance(''.join(r), ''.join(h))
+        return n
 
     def save(self, file_path, **kwargs):
         Path(file_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -288,7 +315,8 @@ def train(argv):
 
     # prepare data loaders
     datasets, data_loaders = dict(), dict()
-    for mode, size in zip(["train", "dev"], [1600000, 1600]):
+    #for mode, size in zip(["train", "dev"], [1600000, 1600]):
+    for mode, size in zip(["train", "dev"], [10, 2]):
         datasets[mode] = AudioCTCDataset(root=args.data_path, mode=mode, data_size=size,
                                          min_len=args.min_len, max_len=args.max_len)
         data_loaders[mode] = AudioNonSplitDataLoader(datasets[mode], batch_size=args.batch_size,
@@ -298,7 +326,7 @@ def train(argv):
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
         trainer.train_epoch(data_loaders["train"])
-        trainer.test(data_loaders["dev"])
+        trainer.validate(data_loaders["dev"])
 
 
 if __name__ == "__main__":

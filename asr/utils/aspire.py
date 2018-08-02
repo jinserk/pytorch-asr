@@ -11,6 +11,7 @@ import torch
 
 from ..utils.kaldi_io import smart_open, read_string, read_vec_int
 from ..utils.logger import logger
+from ..utils.misc import remove_duplicates
 from ..utils import params as p
 from ..kaldi._path import KALDI_ROOT
 
@@ -153,12 +154,6 @@ def get_alignments(target_dir):
 
 
 def make_ctc_labels(target_dir):
-    def remove_duplicates(labels):
-        p = -1
-        for x in labels:
-            if p != x:
-                p = x
-                yield x
     # find *.phn files
     logger.info(f"finding *.phn files under {target_dir}")
     phn_files = [str(x) for x in Path(target_dir).rglob("*.phn")]

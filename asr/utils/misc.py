@@ -33,6 +33,14 @@ def int2onehot(idx, num_classes):
     return onehot
 
 
+def remove_duplicates(labels, blank=-1):
+    p = -1
+    for x in labels:
+        if x != blank and x != p:
+            p = x
+            yield x
+
+
 def edit_distance(r, h):
     '''
     This function is to calculate the edit distance of reference sentence and the hypothesis sentence.

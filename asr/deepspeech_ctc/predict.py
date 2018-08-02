@@ -8,7 +8,7 @@ import torch
 from ..utils.dataset import PredictDataset
 from ..utils.dataloader import PredictDataLoader
 from ..utils.logger import logger, set_logfile
-from ..utils.misc import onehot2int
+from ..utils.misc import onehot2int, remove_duplicates
 from ..utils import params as p
 
 from ..kaldi.latgen import LatGenCTCDecoder
@@ -48,10 +48,10 @@ class Predictor:
             if self.use_cuda:
                 xs = xs.cuda()
             ys_hat = self.model(xs)
+            # decode using Kaldi's latgen decoder
             # no need to normalize posteriors with state priors when we use CTC
             # https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/43908.pdf
             loglikes = torch.log(ys_hat)
-            # decode using Kaldi's latgen decoder
             if self.use_cuda:
                 loglikes = loglikes.cpu()
             words, alignment, w_sizes, a_sizes = self.decoder(loglikes)
@@ -66,13 +66,7 @@ class Predictor:
         if self.verbose:
             labels = onehot2int(loglikes).squeeze()
             logger.info(f"labels: {' '.join([str(x) for x in labels.tolist()])}")
-            def remove_duplicates(labels):
-                p = -1
-                for x in labels:
-                    if x != p:
-                        p = x
-                        yield x
-            symbols = [self.labels[x] for x in remove_duplicates(labels) if self.labels[x] != "<blk>"]
+            symbols = [self.labels[x] for x in remove_duplicates(labels, blank=0)]
             logger.info(f"symbols: {' '.join(symbols)}")
         words = words.squeeze()
         text = ' '.join([self.decoder.words[i] for i in words]) \
