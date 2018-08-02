@@ -35,7 +35,7 @@ class Trainer:
 
     def __init__(self, vlog=None, tlog=None, batch_size=8, init_lr=1e-4, max_norm=400,
                  use_cuda=False, log_dir='logs_deepspeech_ctc', model_prefix='deepspeech_ctc',
-                 checkpoint=False, num_ckpt=10000, continue_from=None, opt_type="sgdr", *args, **kwargs):
+                 checkpoint=False, num_ckpt=10000, continue_from=None, opt_type="sgd", *args, **kwargs):
         # training parameters
         self.batch_size = batch_size
         self.init_lr = init_lr
@@ -315,8 +315,8 @@ def train(argv):
 
     # prepare data loaders
     datasets, data_loaders = dict(), dict()
-    #for mode, size in zip(["train", "dev"], [1600000, 1600]):
-    for mode, size in zip(["train", "dev"], [10, 2]):
+    for mode, size in zip(["train", "dev"], [1600000, 1600]):
+    #for mode, size in zip(["train", "dev"], [10, 2]):
         datasets[mode] = AudioCTCDataset(root=args.data_path, mode=mode, data_size=size,
                                          min_len=args.min_len, max_len=args.max_len)
         data_loaders[mode] = AudioNonSplitDataLoader(datasets[mode], batch_size=args.batch_size,
@@ -327,6 +327,8 @@ def train(argv):
     for i in range(trainer.epoch, args.num_epochs):
         trainer.train_epoch(data_loaders["train"])
         trainer.validate(data_loaders["dev"])
+    # final test to know WER
+    trainer.test(data_loaders["dev"])
 
 
 if __name__ == "__main__":

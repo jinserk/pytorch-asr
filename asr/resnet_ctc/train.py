@@ -14,60 +14,76 @@ import Levenshtein as Lev
 from ..utils.dataset import AudioCTCDataset
 from ..utils.dataloader import AudioNonSplitDataLoader
 from ..utils.logger import logger, set_logfile, VisdomLogger, TensorboardLogger
-from ..utils.misc import onehot2int, get_model_file_path
+from ..utils.misc import onehot2int, remove_duplicates, get_model_file_path
 from ..utils import params as p
 
+from ..kaldi.latgen import LatGenCTCDecoder
+
 from .network import *
+
+
+FRAME_REDUCE_FACTOR = 2
+
+OPTIMIZER_TYPES = set([
+    "sgd",
+    "sgdr",
+    "adamw",
+])
 
 
 class Trainer:
 
     def __init__(self, vlog=None, tlog=None, batch_size=8, init_lr=1e-4, max_norm=400,
                  use_cuda=False, log_dir='logs_resnet_ctc', model_prefix='resnet_ctc',
-                 checkpoint=False, num_ckpt=10000, continue_from=False, *args, **kwargs):
-        super().__init__()
-
+                 checkpoint=False, num_ckpt=10000, continue_from=None, opt_type="sgd", *args, **kwargs):
+        # training parameters
         self.batch_size = batch_size
         self.init_lr = init_lr
         self.max_norm = max_norm
         self.use_cuda = use_cuda
-
         self.log_dir = log_dir
         self.model_prefix = model_prefix
         self.checkpoint = checkpoint
         self.num_ckpt = num_ckpt
-
         self.epoch = 0
-        self.opt = "sgd"
 
+        # visual logging
         self.vlog = vlog
         if self.vlog is not None:
             self.vlog.add_plot(title='loss', xlabel='epoch')
         self.tlog = tlog
 
-        if continue_from is None:
-            self.__setup_networks()
-        else:
-            self.load(continue_from)
+        # setup model
+        self.model = resnet101(num_classes=p.NUM_CTC_LABELS)
 
-    def __setup_networks(self):
-        # setup networks
-        self.encoder = resnet101(num_classes=p.NUM_CTC_LABELS)
-        if self.use_cuda:
-            self.encoder.cuda()
         # setup loss
         self.loss = CTCLoss(blank=0, size_average=True)
+
         # setup optimizer
-        parameters = self.encoder.parameters()
-        if self.opt == "adam":
-            logger.info("using AdamW")
-            self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0005, l2_reg=False)
-            self.lr_scheduler = None
-        else:
+        assert opt_type in OPTIMIZER_TYPES
+        parameters = self.model.parameters()
+        if opt_type == "sgd":
+            logger.info("using SGD")
+            self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9)
+            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=5)
+        elif opt_type == "sgdr":
             logger.info("using SGDR")
             self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9)
             #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
             self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
+        elif opt_type == "adam":
+            logger.info("using AdamW")
+            self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0005, l2_reg=False)
+            self.lr_scheduler = None
+
+        # setup decoder for test
+        self.decoder = LatGenCTCDecoder()
+
+        if continue_from is not None:
+            self.load(continue_from)
+
+        if self.use_cuda:
+            self.model.cuda()
 
     def __get_model_name(self, desc):
         return str(get_model_file_path(self.log_dir, self.model_prefix, desc))
@@ -77,7 +93,7 @@ class Trainer:
             ckpt.unlink()
 
     def train_epoch(self, data_loader):
-        self.encoder.train()
+        self.model.train()
         meter_loss = tnt.meter.MovingAverageValueMeter(self.num_ckpt // 10)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
@@ -85,18 +101,15 @@ class Trainer:
             self.lr_scheduler.step()
             logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
         # count the number of supervised batches seen in this epoch
-        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training ")
+        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training")
         for i, (data) in t:
-            #if self.lr_scheduler is not None and i % self.num_ckpt == 0:
-            #    self.lr_scheduler.step()
-            #    #logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
-            xs, ys, frame_lens, label_lens, filenames = data
+            xs, ys, frame_lens, label_lens, filenames, _ = data
             try:
                 if self.use_cuda:
                     xs = xs.cuda()
-                ys_hat = self.encoder(xs)
+                ys_hat = self.model(xs)
                 ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
-                frame_lens = torch.ceil(frame_lens.float() / 2.).int()
+                frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
                 #torch.set_printoptions(threshold=5000000)
                 #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
                 #print(onehot2int(ys_hat).squeeze(), ys)
@@ -104,18 +117,16 @@ class Trainer:
                 loss_value = loss.item()
                 inf = float("inf")
                 if loss_value == inf or loss_value == -inf:
-                    #torch.set_printoptions(threshold=5000000)
-                    #print(filenames, ys_hat, frame_lens, label_lens)
                     logger.warning("received an inf loss, setting loss value to 0")
                     loss_value = 0
                 self.optimizer.zero_grad()
                 loss.backward()
-                nn.utils.clip_grad_norm_(self.encoder.parameters(), self.max_norm)
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
                 self.optimizer.step()
+                del loss
             except Exception as e:
                 print(e)
                 print(filenames, frame_lens, label_lens)
-            #ys_int = onehot2int(ys_hat).squeeze()
             meter_loss.add(loss_value)
             t.set_description(f"training (loss: {meter_loss.value()[0]:.3f})")
             t.refresh()
@@ -130,7 +141,7 @@ class Trainer:
                     )
                 if self.tlog is not None:
                     x = self.epoch * len(data_loader) + i
-                    self.tlog.add_graph(self.encoder, xs)
+                    self.tlog.add_graph(self.model, xs)
                     xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
                     self.tlog.add_image('xs', x, xs_img)
                     ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
@@ -140,7 +151,6 @@ class Trainer:
                     logger.info(f"training loss at epoch_{self.epoch:03d}_ckpt_{i:07d}: "
                                 f"{meter_loss.value()[0]:5.3f}")
                     self.save(self.__get_model_name(f"epoch_{self.epoch:03d}_ckpt_{i:07d}"))
-            del xs, ys, ys_hat, loss
             #input("press key to continue")
         self.epoch += 1
         logger.info(f"epoch {self.epoch:03d}: "
@@ -149,56 +159,75 @@ class Trainer:
         self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
         self.__remove_ckpt_files(self.epoch-1)
 
-    def test(self, data_loader, desc=None):
-        self.encoder.eval()
-        meter_loss = tnt.meter.AverageValueMeter()
-        #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
-        #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
-        for i, (data) in tqdm(enumerate(data_loader), total=len(data_loader), desc=desc):
-            xs, ys, frame_lens, label_lens, filenames = data
-            if self.use_cuda:
-                xs = xs.cuda()
-            ys_hat = self.encoder(xs)
-            ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
-            frame_lens = torch.ceil(frame_lens.float() / 2.).int()
-            loss = self.loss(ys_hat, ys, frame_lens, label_lens)
-            loss_value = loss.item()
-            inf = float("inf")
-            if loss_value == inf or loss_value == -inf:
-                logger.warning("received an inf loss, setting loss value to 0")
-                loss_value = 0
-            meter_loss.add(loss_value)
-            #meter_accuracy.add(ys_hat.data, ys_int)
-            #meter_confusion.add(ys_hat.data, ys_int)
-            del xs, ys, loss, ys_hat
-        logger.info(f"epoch {self.epoch:03d}: "
-                    f"validating loss {meter_loss.value()[0]:5.3f} ")
-                    #f"validating accuracy {meter_accuracy.value()[0]:6.3f}")
+    def validate(self, data_loader):
+        "validate with label error rate by the edit distance between hyps and refs"
+        self.model.eval()
+        with torch.no_grad():
+            N, D = 0, 0
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating")
+            for i, (data) in t:
+                xs, ys, frame_lens, label_lens, filenames, texts = data
+                if self.use_cuda:
+                    xs = xs.cuda()
+                ys_hat = self.model(xs)
+                # convert likes to ctc labels
+                frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
+                hyps = [onehot2int(yh[:s]) for yh, s in zip(ys_hat, frame_lens)]
+                hyps = [remove_duplicates(h, blank=0) for h in hyps]
+                # slice the targets
+                pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(label_lens, dim=0)[:-1]))
+                refs = [ys[s:l] for s, l in zip(pos, label_lens)]
+                # calculate ler
+                N += self.edit_distance(refs, hyps)
+                D += sum(len(r) for r in refs)
+                ler = N * 100. / D
+                t.set_description(f"validating (LER: {ler:.2f} %)")
+                t.refresh()
+            logger.info(f"validating at epoch {self.epoch:03d}: LER {ler:.2f} %")
 
-    def wer(self, s1, s2):
-        # build mapping of words to integers
-        b = set(s1.split() + s2.split())
-        word2char = dict(zip(b, range(len(b))))
-        # map the words to a char array (Levenshtein packages only accepts strings)
-        w1 = [chr(word2char[w]) for w in s1.split()]
-        w2 = [chr(word2char[w]) for w in s2.split()]
-        return Lev.distance(''.join(w1), ''.join(w2))
+    def test(self, data_loader):
+        "test with word error rate by the edit distance between hyps and refs"
+        self.model.eval()
+        with torch.no_grad():
+            N, D = 0, 0
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing")
+            for i, (data) in t:
+                xs, ys, frame_lens, label_lens, filenames, texts = data
+                if self.use_cuda:
+                    xs = xs.cuda()
+                ys_hat = self.model(xs)
+                # latgen decoding
+                loglikes = torch.log(ys_hat)
+                if self.use_cuda:
+                    loglikes = loglikes.cpu()
+                words, alignment, w_sizes, a_sizes = self.decoder(loglikes)
+                hyps = [w[:s] for w, s in zip(words, w_sizes)]
+                # convert target texts to word indices
+                w2i = lambda w: self.decoder.wordi[w] if w in self.decoder.wordi else self.decoder.wordi['<unk>']
+                refs = [[w2i(w) for w in t.strip().split()] for t in texts]
+                # calculate wer
+                N += self.edit_distance(refs, hyps)
+                D += sum(len(r) for r in refs)
+                wer = N * 100. / D
+                t.set_description(f"testing (WER: {wer:.2f} %)")
+                t.refresh()
+            logger.info(f"testing at epoch {self.epoch:03d}: WER {wer:.2f} %")
 
-    def cer(self, s1, s2, is_char=False):
-        if is_char:
-            s1, s2, = s1.replace(' ', ''), s2.replace(' ', '')
-            return Lev.distance(s1, s2)
-        else:
-            c1 = [chr(c) for c in s1]
-            c2 = [chr(c) for c in s2]
-            return Lev.distance(''.join(c1), ''.join(c2))
+    def edit_distance(self, refs, hyps):
+        assert len(refs) == len(hyps)
+        n = 0
+        for ref, hyp in zip(refs, hyps):
+            r = [chr(c) for c in ref]
+            h = [chr(c) for c in hyp]
+            n += Lev.distance(''.join(r), ''.join(h))
+        return n
 
     def save(self, file_path, **kwargs):
         Path(file_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
         logger.info(f"saving the model to {file_path}")
         states = kwargs
         states["epoch"] = self.epoch
-        states["model"] = self.encoder.state_dict()
+        states["model"] = self.model.state_dict()
         states["optimizer"] = self.optimizer.state_dict()
         states["lr_scheduler"] = self.lr_scheduler.state_dict()
         torch.save(states, file_path)
@@ -215,13 +244,9 @@ class Trainer:
         else:
             states = torch.load(file_path)
         self.epoch = states["epoch"]
-
-        self.__setup_networks()
-        self.encoder.load_state_dict(states["model"])
+        self.model.load_state_dict(states["model"])
         self.optimizer.load_state_dict(states["optimizer"])
         self.lr_scheduler.load_state_dict(states["lr_scheduler"])
-        if self.use_cuda:
-            self.encoder.cuda()
 
 
 def train(argv):
@@ -246,6 +271,7 @@ def train(argv):
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--num-ckpt', default=10000, type=int, help="number of batch-run to save checkpoints")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
+    parser.add_argument('--opt-type', default="sgd", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
 
     args = parser.parse_args(argv)
 
@@ -253,7 +279,7 @@ def train(argv):
     set_logfile(Path(args.log_dir, "train.log"))
 
     logger.info(f"PyTorch version: {torch.__version__}")
-    logger.info(f"Training started with command: {' '.join(sys.argv)}")
+    logger.info(f"training command options: {' '.join(sys.argv)}")
     args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
     logger.info(f"args: {' '.join(args_str)}")
 
@@ -285,42 +311,24 @@ def train(argv):
             logger.info("error to use tensorboard")
             tlog = None
 
-    model = Trainer(vlog=vlog, tlog=tlog, **vars(args))
-
-    # initializing local variables to maintain the best validation accuracy
-    # seen across epochs over the supervised training set
-    best_valid_acc = 0.0
-
-    # if you want to limit the datasets' entry size
-    sizes = { "train": 1600000, "dev": 1600 }
-    #sizes = { "train": 10000, "dev": 100 }
+    trainer = Trainer(vlog=vlog, tlog=tlog, **vars(args))
 
     # prepare data loaders
     datasets, data_loaders = dict(), dict()
-    for mode in ["train", "dev"]:
-        datasets[mode] = AudioCTCDataset(root=args.data_path, mode=mode, data_size=sizes[mode],
+    for mode, size in zip(["train", "dev"], [1600000, 1600]):
+    #for mode, size in zip(["train", "dev"], [10, 2]):
+        datasets[mode] = AudioCTCDataset(root=args.data_path, mode=mode, data_size=size,
                                          min_len=args.min_len, max_len=args.max_len)
         data_loaders[mode] = AudioNonSplitDataLoader(datasets[mode], batch_size=args.batch_size,
                                                      num_workers=args.num_workers, shuffle=True,
-                                                     pin_memory=args.use_cuda, frame_shift=2)
+                                                     pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR)
 
     # run inference for a certain number of epochs
-    for i in range(model.epoch, args.num_epochs):
-        # get the losses for an epoch
-        model.train_epoch(data_loaders["train"])
-        # validate
-        model.test(data_loaders["dev"], "validating")
-
-        # update the best validation accuracy and the corresponding
-        # testing accuracy and the state of the parent module (including the networks)
-        #if best_valid_acc < model.meter_accuracy.value()[0]:
-        #    best_valid_acc = model.meter_accuracy.value()[0]
-
-    # test
-    #model.test(data_loaders["test"], "testing   ")
-
-    #logger.info(f"best validation accuracy {best_valid_acc:6.3f} "
-    #            f"test accuracy {model.meter_accuracy.value()[0]:6.3f}")
+    for i in range(trainer.epoch, args.num_epochs):
+        trainer.train_epoch(data_loaders["train"])
+        trainer.validate(data_loaders["dev"])
+    # final test to know WER
+    trainer.test(data_loaders["dev"])
 
 
 if __name__ == "__main__":
