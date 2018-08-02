@@ -65,7 +65,7 @@ class Trainer:
         if opt_type == "sgd":
             logger.info("using SGD")
             self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9)
-            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealing(self.optimizer, T_max=5)
+            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=5)
         elif opt_type == "sgdr":
             logger.info("using SGDR")
             self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9)
