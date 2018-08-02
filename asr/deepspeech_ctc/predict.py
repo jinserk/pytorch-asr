@@ -42,24 +42,25 @@ class Predictor:
 
     def decode(self, data_loader):
         self.model.eval()
-        for i, (data) in enumerate(data_loader):
-            # predict phones using AM
-            xs, frame_lens, filenames = data
-            if self.use_cuda:
-                xs = xs.cuda()
-            ys_hat = self.model(xs)
-            # decode using Kaldi's latgen decoder
-            # no need to normalize posteriors with state priors when we use CTC
-            # https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/43908.pdf
-            loglikes = torch.log(ys_hat)
-            if self.use_cuda:
-                loglikes = loglikes.cpu()
-            words, alignment, w_sizes, a_sizes = self.decoder(loglikes)
-            # print results
-            loglikes = [l[:s] for l, s in zip(loglikes, frame_lens)]
-            words = [w[:s] for w, s in zip(words, w_sizes)]
-            for results in zip(filenames, loglikes, words):
-                self.print_result(*results)
+        with torch.no_grad():
+            for i, (data) in enumerate(data_loader):
+                # predict phones using AM
+                xs, frame_lens, filenames = data
+                if self.use_cuda:
+                    xs = xs.cuda()
+                ys_hat = self.model(xs)
+                # decode using Kaldi's latgen decoder
+                # no need to normalize posteriors with state priors when we use CTC
+                # https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/43908.pdf
+                loglikes = torch.log(ys_hat)
+                if self.use_cuda:
+                    loglikes = loglikes.cpu()
+                words, alignment, w_sizes, a_sizes = self.decoder(loglikes)
+                # print results
+                loglikes = [l[:s] for l, s in zip(loglikes, frame_lens)]
+                words = [w[:s] for w, s in zip(words, w_sizes)]
+                for results in zip(filenames, loglikes, words):
+                    self.print_result(*results)
 
     def print_result(self, filename, loglikes, words):
         logger.info(f"decoding wav file: {str(Path(filename).resolve())}")

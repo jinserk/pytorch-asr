@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 from ..utils import params as p
-from ..utils.misc import Swish
+from ..utils.misc import Swish, InferenceBatchSoftmax
 
 
 class SequenceWise(nn.Module):
@@ -33,19 +33,6 @@ class SequenceWise(nn.Module):
         tmpstr += self.module.__repr__()
         tmpstr += ')'
         return tmpstr
-
-
-class InferenceBatchSoftmax(nn.Module):
-
-    def __init__(self):
-        super().__init__()
-        self.softmax = nn.Softmax(dim=-1)
-
-    def forward(self, input_):
-        if not self.training:
-            return self.softmax(input_)
-        else:
-            return input_
 
 
 class TemporalRowConvolution(nn.Module):

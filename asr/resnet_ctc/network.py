@@ -1,11 +1,9 @@
 #!python
-from collections import OrderedDict
-
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-from ..utils.misc import Swish
+from ..utils.misc import Swish, InferenceBatchSoftmax
 
 
 class BasicBlock(nn.Module):
@@ -119,6 +117,8 @@ class ResNet(nn.Module):
         self.do1 = nn.Dropout(p=0.5, inplace=True)
         self.fc2 = nn.Linear(1024, num_classes)
 
+        self.softmax = InferenceBatchSoftmax()
+
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -140,7 +140,7 @@ class ResNet(nn.Module):
             layers.append(block(self.inplanes, planes))
         return nn.Sequential(*layers)
 
-    def forward(self, x, softmax=False):
+    def forward(self, x):
         x = self.conv(x)
         #x = self.bn1(x)
         #x = self.relu(x)
@@ -155,10 +155,8 @@ class ResNet(nn.Module):
         x = self.fc1(x.view(x.size(0), x.size(1), -1))
         x = self.do1(x)
         x = self.fc2(x)
-        if softmax:
-            return nn.Softmax(dim=2)(x)
-        else:
-            return x
+        x = self.softmax(x)
+        return x
 
 
 def resnet34(**kwargs):

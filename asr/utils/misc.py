@@ -111,6 +111,19 @@ class Swish(nn.Module):
             return x * torch.sigmoid(x)
 
 
+class InferenceBatchSoftmax(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, x):
+        if not self.training:
+            return self.softmax(x)
+        else:
+            return x
+
+
 if __name__ == "__main__":
     i = 5
     o = int2onehot(i, 10)
