@@ -99,16 +99,21 @@ class Augment(object):
             tfm.build(str(wav_file), str(tar_file))
             sr, wav = scipy.io.wavfile.read(tar_file)
 
+        if wav.ndim > 1 and wav.shape[1] > 1:
+            logger.error("wav file has two or more channels")
+            sys.exit(1)
+
         # normalize audio power
+        gain = 0.1
         wav = wav.astype(np.float32)
         wav_energy = np.sqrt(np.sum(np.power(wav, 2)) / wav.size)
-        wav = wav / wav_energy
+        wav = gain * wav / wav_energy
 
         if self.noise:
             snr = 10.0 ** (np.random.uniform(*self.noise_range) / 10.0)
             noise = np.random.normal(0, 1, wav.shape)
             noise_energy = np.sqrt(np.sum(np.power(noise, 2)) / noise.size)
-            wav = wav + snr * noise / noise_energy
+            wav = wav + snr * gain * noise / noise_energy
 
         #scipy.io.wavfile.write("test.wav", sr, wav)
         return wav
