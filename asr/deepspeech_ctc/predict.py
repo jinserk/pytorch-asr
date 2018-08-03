@@ -25,9 +25,9 @@ class Predictor:
         # load from args
         assert continue_from is not None
         self.model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
-        self.load(continue_from)
         if self.use_cuda:
             self.model.cuda()
+        self.load(continue_from)
 
         # prepare kaldi latgen decoder
         self._load_labels()
@@ -84,7 +84,7 @@ class Predictor:
         if not self.use_cuda:
             states = torch.load(file_path, map_location='cpu')
         else:
-            states = torch.load(file_path)
+            states = torch.load(file_path, map_location='cuda:0')
         self.model.load_state_dict(states["model"])
 
 

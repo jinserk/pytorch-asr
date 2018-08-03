@@ -55,6 +55,8 @@ class Trainer:
 
         # setup model
         self.model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
+        if self.use_cuda:
+            self.model.cuda()
 
         # setup loss
         self.loss = CTCLoss(blank=0, size_average=True)
@@ -81,9 +83,6 @@ class Trainer:
 
         if continue_from is not None:
             self.load(continue_from)
-
-        if self.use_cuda:
-            self.model.cuda()
 
     def __get_model_name(self, desc):
         return str(get_model_file_path(self.log_dir, self.model_prefix, desc))
@@ -242,7 +241,7 @@ class Trainer:
         if not self.use_cuda:
             states = torch.load(file_path, map_location='cpu')
         else:
-            states = torch.load(file_path)
+            states = torch.load(file_path, map_location='cuda:0')
         self.epoch = states["epoch"]
         self.model.load_state_dict(states["model"])
         self.optimizer.load_state_dict(states["optimizer"])
