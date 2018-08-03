@@ -24,7 +24,7 @@ class Predictor:
 
         # load from args
         assert continue_from is not None
-        self.model = resnet101(num_classes=p.NUM_CTC_LABELS)
+        self.model = densenet_custom(num_classes=p.NUM_CTC_LABELS)
         self.load(continue_from)
         if self.use_cuda:
             self.model.cuda()

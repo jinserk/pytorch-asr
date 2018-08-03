@@ -6,6 +6,7 @@ argv = sys.argv[1:]
 models = set([
     "convnet",
     "densenet",
+    "densenet_ctc",
     "deepspeech_ctc",
     "deepspeech_ce",
     "resnet_ctc",
@@ -26,6 +27,9 @@ if model == "convnet":
 elif model == "densenet":
     from asr import densenet
     densenet.predict(argv)
+elif model == "densenet_ctc":
+    from asr import densenet_ctc
+    densenet_ctc.predict(argv)
 elif model == "deepspeech_ctc":
     from asr import deepspeech_ctc
     deepspeech_ctc.predict(argv)
