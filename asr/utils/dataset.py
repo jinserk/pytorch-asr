@@ -104,6 +104,7 @@ class Augment(object):
             sys.exit(1)
 
         # normalize audio power
+        # (TODO: how about tfm.gain above?)
         gain = 0.1
         wav = wav.astype(np.float32)
         wav_energy = np.sqrt(np.sum(np.power(wav, 2)) / wav.size)
@@ -116,28 +117,31 @@ class Augment(object):
             wav = wav + snr * gain * noise / noise_energy
 
         #scipy.io.wavfile.write("test.wav", sr, wav)
-        return wav
+        return torch.FloatTensor(wav)
 
 
 # transformer: spectrogram
 class Spectrogram(object):
 
-    def __init__(self, sample_rate, window_shift, window_size, window, nfft):
+    def __init__(self, sample_rate, window_shift, window_size, nfft, window=torch.hann_window):
         self.nfft = nfft
-        self.nperseg = int(sample_rate * window_size)
-        self.noverlap = int(sample_rate * (window_size - window_shift))
-        self.window = window(self.nperseg)
+        self.window_size = int(sample_rate * window_size)
+        self.window_shift = int(sample_rate * window_shift)
+        self.window = window(self.window_size)
 
-    def __call__(self, data):
-        # STFT
-        bins, frames, z = scipy.signal.stft(data, nfft=self.nfft, nperseg=self.nperseg, noverlap=self.noverlap,
-                                            window=self.window, boundary=None, padded=False)
-        mag, ang = np.abs(z), np.angle(z)
-        spect = torch.FloatTensor(np.log1p(mag))
-        phase = torch.FloatTensor(ang)
-        # {mag, phase} x n_freq_bin x n_frame
-        data = torch.cat([spect.unsqueeze_(0), phase.unsqueeze_(0)], 0)
-        return data
+    def __call__(self, wav):
+        with torch.no_grad():
+            # STFT
+            data = torch.stft(wav, n_fft=self.nfft, hop_length=self.window_shift,
+                              win_length=self.window_size, window=self.window)
+            #mag, ang = np.abs(z), np.angle(z)
+            #spect = torch.FloatTensor(np.log1p(mag))
+            #phase = torch.FloatTensor(ang)
+            # {mag, phase} x n_freq_bin x n_frame
+            #data = torch.cat([spect.unsqueeze_(0), phase.unsqueeze_(0)], 0)
+            # FxTx2 -> 2xFxT
+            data = data.transpose(1, 2).transpose(0, 1)
+            return data
 
 
 # transformer: frame splitter
@@ -152,12 +156,13 @@ class FrameSplitter(object):
         assert self.half <= frame_margin, "frame_margin is too small for the unit_frames"
 
     def __call__(self, tensor):
-        bins = [(x - self.half, self.unit_frames) for x in
-                range(self.frame_margin, tensor.size(2) - self.frame_margin)]
-        frames = [tensor.narrow(2, s, l).clone() for s, l in bins]
-        #c, w, h = frames[0].shape
-        #frames = [x.view(c * w * h) for x in frames]
-        return frames
+        with torch.no_grad():
+            bins = [(x - self.half, self.unit_frames) for x in
+                    range(self.frame_margin, tensor.size(2) - self.frame_margin)]
+            frames = [tensor.narrow(2, s, l).clone() for s, l in bins]
+            #c, w, h = frames[0].shape
+            #frames = [x.view(c * w * h) for x in frames]
+            return frames
 
 
 # transformer: convert int to one-hot vector
@@ -183,8 +188,7 @@ class SplitDataset(Dataset):
                  tempo=False, tempo_range=p.TEMPO_RANGE,
                  gain=False, gain_range=p.GAIN_RANGE,
                  noise=False, noise_range=p.NOISE_RANGE,
-                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                 window=p.WINDOW, nfft=p.NFFT,
+                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
                  frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transform is None:
@@ -194,7 +198,7 @@ class SplitDataset(Dataset):
                         gain=gain, gain_range=gain_range,
                         noise=noise, noise_range=noise_range),
                 Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
-                            window_size=window_size, window=window, nfft=nfft),
+                            window_size=window_size, nfft=nfft),
                 FrameSplitter(frame_margin=frame_margin, unit_frames=unit_frames),
             ])
         else:
@@ -214,8 +218,7 @@ class NonSplitDataset(Dataset):
                  tempo=False, tempo_range=p.TEMPO_RANGE,
                  gain=False, gain_range=p.GAIN_RANGE,
                  noise=False, noise_range=p.NOISE_RANGE,
-                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE,
-                 window=p.WINDOW, nfft=p.NFFT,
+                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transform is None:
@@ -225,7 +228,7 @@ class NonSplitDataset(Dataset):
                         gain=gain, gain_range=gain_range,
                         noise=noise, noise_range=noise_range),
                 Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
-                            window_size=window_size, window=window, nfft=nfft),
+                            window_size=window_size, nfft=nfft),
             ])
         else:
             self.transform = transform

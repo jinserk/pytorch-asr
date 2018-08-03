@@ -8,7 +8,6 @@ MODEL_SUFFIX = "pth.tar"
 SAMPLE_RATE = 8000
 WINDOW_SHIFT = 0.010  # sec
 WINDOW_SIZE = 0.025   # sec
-WINDOW = tukey
 
 # spectrogram
 NFFT = 256
@@ -17,7 +16,7 @@ FRAME_MARGIN = 10
 # augmentation
 TEMPO_RANGE = (0.85, 1.15)
 GAIN_RANGE = (-6., 8.)
-NOISE_RANGE = (-100., -3.)
+NOISE_RANGE = (-20., -3.)
 
 # images
 CHANNEL = 2
