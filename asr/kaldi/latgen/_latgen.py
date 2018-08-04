@@ -42,16 +42,16 @@ class LatGenDecoder(Function):
                 self.words.append(record[0])
                 self.wordi[record[0]] = int(record[1])
 
-    def forward(self, loglikes):
+    def forward(self, loglikes, frame_lens):
         # loglikes should NxTxH (N: batch size, T: frames, H: classes)
-        assert loglikes.dim() == 3 and loglikes.size(2) == self.num_labels
+        assert loglikes.dim() == 3 and loglikes.size(2) == self.num_labels and loglikes.size(0) == frame_lens(0)
         with torch.no_grad():
             words = torch.IntTensor().zero_()
             alignments = torch.IntTensor().zero_()
             w_sizes = torch.IntTensor().zero_()
             a_sizes = torch.IntTensor().zero_()
             # actual decoding
-            latgen_lib.decode(loglikes, words, alignments, w_sizes, a_sizes)
+            latgen_lib.decode(loglikes, frame_lens, words, alignments, w_sizes, a_sizes)
         return words, alignments, w_sizes, a_sizes
 
     def backward(self, grad_output):

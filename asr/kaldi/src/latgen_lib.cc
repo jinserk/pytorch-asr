@@ -171,7 +171,8 @@ int initialize(float beam, int max_active, int min_active,
 	return 1;
 }
 
-int decode(THFloatTensor *loglikes, THIntTensor *words, THIntTensor *alignments,
+int decode(THFloatTensor *loglikes, THIntTensor *frame_lens,
+           THIntTensor *words, THIntTensor *alignments,
            THIntTensor *w_sizes, THIntTensor *a_sizes)
 {
 	LatticeDecoder decoder(latgen_opts);
@@ -185,10 +186,11 @@ int decode(THFloatTensor *loglikes, THIntTensor *words, THIntTensor *alignments,
 	int num_class = THFloatTensor_size(loglikes, 2);
 
 	float *l_data = THFloatTensor_data(loglikes);
+	int *l_lens = THIntTensor_data(frame_lens);
 
 	for (int i = 0; i < num_batch; i++) {
 		int s = i * num_frame * num_class;
-		loglikes_list.emplace_back(SubMatrix<BaseFloat>(l_data + s, num_frame, num_class, num_class));
+		loglikes_list.emplace_back(SubMatrix<BaseFloat>(l_data + s, l_lens[i], num_class, num_class));
 	}
 
 	// decode

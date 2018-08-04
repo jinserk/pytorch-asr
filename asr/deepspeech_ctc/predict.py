@@ -13,6 +13,7 @@ from ..utils import params as p
 
 from ..kaldi.latgen import LatGenCTCDecoder
 
+from .train import FRAME_REDUCE_FACTOR
 from .network import *
 
 
@@ -49,13 +50,14 @@ class Predictor:
                 if self.use_cuda:
                     xs = xs.cuda()
                 ys_hat = self.model(xs)
+                frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
                 # decode using Kaldi's latgen decoder
                 # no need to normalize posteriors with state priors when we use CTC
                 # https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/43908.pdf
                 loglikes = torch.log(ys_hat)
                 if self.use_cuda:
                     loglikes = loglikes.cpu()
-                words, alignment, w_sizes, a_sizes = self.decoder(loglikes)
+                words, alignment, w_sizes, a_sizes = self.decoder(loglikes, frame_lens)
                 # print results
                 loglikes = [l[:s] for l, s in zip(loglikes, frame_lens)]
                 words = [w[:s] for w, s in zip(words, w_sizes)]
