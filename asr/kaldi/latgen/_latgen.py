@@ -44,7 +44,8 @@ class LatGenDecoder(Function):
 
     def forward(self, loglikes, frame_lens):
         # loglikes should NxTxH (N: batch size, T: frames, H: classes)
-        assert loglikes.dim() == 3 and loglikes.size(2) == self.num_labels and loglikes.size(0) == frame_lens(0)
+        assert loglikes.dim() == 3 and loglikes.size(2) == self.num_labels
+        assert frame_lens.dim() == 1 and loglikes.size(0) == frame_lens.size(0)
         with torch.no_grad():
             words = torch.IntTensor().zero_()
             alignments = torch.IntTensor().zero_()

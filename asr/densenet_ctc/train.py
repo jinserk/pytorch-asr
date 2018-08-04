@@ -195,11 +195,12 @@ class Trainer:
                 if self.use_cuda:
                     xs = xs.cuda()
                 ys_hat = self.model(xs)
+                frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
                 # latgen decoding
                 loglikes = torch.log(ys_hat)
                 if self.use_cuda:
                     loglikes = loglikes.cpu()
-                words, alignment, w_sizes, a_sizes = self.decoder(loglikes)
+                words, alignment, w_sizes, a_sizes = self.decoder(loglikes, frame_lens)
                 hyps = [w[:s] for w, s in zip(words, w_sizes)]
                 # convert target texts to word indices
                 w2i = lambda w: self.decoder.wordi[w] if w in self.decoder.wordi else self.decoder.wordi['<unk>']
