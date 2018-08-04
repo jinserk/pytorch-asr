@@ -35,7 +35,7 @@ class Trainer:
 
     def __init__(self, vlog=None, tlog=None, batch_size=8, init_lr=1e-4, max_norm=400,
                  use_cuda=False, log_dir='logs_resnet_ctc', model_prefix='resnet_ctc',
-                 checkpoint=False, num_ckpt=10000, continue_from=None, opt_type="sgd", *args, **kwargs):
+                 checkpoint=False, continue_from=None, opt_type="sgd", *args, **kwargs):
         # training parameters
         self.batch_size = batch_size
         self.init_lr = init_lr
@@ -44,7 +44,6 @@ class Trainer:
         self.log_dir = log_dir
         self.model_prefix = model_prefix
         self.checkpoint = checkpoint
-        self.num_ckpt = num_ckpt
         self.epoch = 0
 
         # visual logging
@@ -93,7 +92,8 @@ class Trainer:
 
     def train_epoch(self, data_loader):
         self.model.train()
-        meter_loss = tnt.meter.MovingAverageValueMeter(self.num_ckpt // 10)
+        num_ckpt = len(data_loader) // 10
+        meter_loss = tnt.meter.MovingAverageValueMeter(len(data_loader) // 100)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
         if self.lr_scheduler is not None:
@@ -131,7 +131,7 @@ class Trainer:
             t.refresh()
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
-            if 0 < i < len(data_loader) and i % self.num_ckpt == 0:
+            if 0 < i < len(data_loader) and i % num_ckpt == 0:
                 if self.vlog is not None:
                     self.vlog.add_point(
                         title = 'loss',
@@ -268,7 +268,6 @@ def train(argv):
     parser.add_argument('--log-dir', default='./logs_resnet_ctc', type=str, help="filename for logging the outputs")
     parser.add_argument('--model-prefix', default='resnet_ctc', type=str, help="model file prefix to store")
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
-    parser.add_argument('--num-ckpt', default=10000, type=int, help="number of batch-run to save checkpoints")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="sgd", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
 
@@ -314,7 +313,7 @@ def train(argv):
 
     # prepare data loaders
     datasets, data_loaders = dict(), dict()
-    for mode, size in zip(["train", "dev"], [1600000, 1600]):
+    for mode, size in zip(["train", "dev"], [16000000, 16000]):
     #for mode, size in zip(["train", "dev"], [10, 2]):
         datasets[mode] = AudioCTCDataset(root=args.data_path, mode=mode, data_size=size,
                                          min_len=args.min_len, max_len=args.max_len)
