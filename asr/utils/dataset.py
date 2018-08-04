@@ -6,6 +6,7 @@ import tempfile
 
 import numpy as np
 import scipy.io.wavfile
+from scipy.signal import tukey
 import sox
 
 import torch
@@ -123,11 +124,11 @@ class Augment(object):
 # transformer: spectrogram
 class Spectrogram(object):
 
-    def __init__(self, sample_rate, window_shift, window_size, nfft, window=torch.hann_window):
+    def __init__(self, sample_rate, window_shift, window_size, nfft, window=tukey):
         self.nfft = nfft
         self.window_size = int(sample_rate * window_size)
         self.window_shift = int(sample_rate * window_shift)
-        self.window = window(self.window_size)
+        self.window = torch.FloatTensor(window(self.window_size))
 
     def __call__(self, wav):
         with torch.no_grad():
