@@ -255,10 +255,10 @@ def train(argv):
     # for training
     parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
-    parser.add_argument('--max-len', default=15., type=float, help="max length of utterance to use in secs")
+    parser.add_argument('--max-len', default=10., type=float, help="max length of utterance to use in secs")
     parser.add_argument('--num-workers', default=8, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
-    parser.add_argument('--batch-size', default=16, type=int, help="number of images (and labels) to be considered in a batch")
+    parser.add_argument('--batch-size', default=8, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")
     parser.add_argument('--max-norm', default=400, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
@@ -268,7 +268,7 @@ def train(argv):
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
     parser.add_argument('--log-dir', default='./logs_resnet_ctc', type=str, help="filename for logging the outputs")
     parser.add_argument('--model-prefix', default='resnet_ctc', type=str, help="model file prefix to store")
-    parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
+    parser.add_argument('--checkpoint', default=True, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="sgd", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
 
