@@ -171,11 +171,11 @@ class Trainer:
                 ys_hat = self.model(xs)
                 # convert likes to ctc labels
                 frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
-                hyps = [onehot2int(yh[:s]) for yh, s in zip(ys_hat, frame_lens)]
+                hyps = [onehot2int(yh[:s]).squeeze() for yh, s in zip(ys_hat, frame_lens)]
                 hyps = [remove_duplicates(h, blank=0) for h in hyps]
                 # slice the targets
-                pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(label_lens, dim=0)[:-1]))
-                refs = [ys[s:l] for s, l in zip(pos, label_lens)]
+                pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(label_lens, dim=0)))
+                refs = [ys[s:l] for s, l in zip(pos[:-1], pos[1:])]
                 # calculate ler
                 N += self.edit_distance(refs, hyps)
                 D += sum(len(r) for r in refs)
