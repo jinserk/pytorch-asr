@@ -212,10 +212,12 @@ def process(target_dir=None):
     phn_manifest = get_alignments(target_path)
     make_ctc_labels(target_path)
 
+    min_len, max_len = 1e30, 0
+    histo = [0] * 30
     logger.info("generating manifest files ...")
     with open(Path(target_path, "train.csv"), "w") as f1:
         with open(Path(target_path, "dev.csv"), "w") as f2:
-            for k, v in train_wav_manifest.items():
+            for k, v in tqdm(train_wav_manifest.items()):
                 if not k in train_txt_manifest:
                     continue
                 if not k in phn_manifest:
@@ -227,17 +229,34 @@ def process(target_dir=None):
                     f2.write(f"{k},{wav_file},{samples},{phn_file},{num_frms},{txt_file}\n")
                 else:
                     f1.write(f"{k},{wav_file},{samples},{phn_file},{num_frms},{txt_file}\n")
+                sec = samples / p.SAMPLE_RATE
+                if sec < min_len:
+                    min_len = sec
+                if sec > max_len:
+                    max_len = sec
+                if sec < 29:
+                    histo[int(np.ceil(sec))] += 1
+    cum_histo = np.cumsum(histo) / len(wav_files) * 100.
+    logger.info(f"min: {min_len:.2f} sec  max: {max_len:.2f} sec")
+    logger.info(f"% of 5 secs: {cum_histo[5]} %  "
+                f"% of 10 secs: {cum_histo[10]} %  "
+                f"% of 15 secs: {cum_histo[15]} %  "
+                f"% of 20 secs: {cum_histo[20]} %")
     logger.info("data preparation finished.")
 
 
 def reconstruct_manifest(target_dir):
     import wave
 
+    min_len, max_len = 1e30, 0
+    histo = [0] * 30
     logger.info("reconstructing manifest files ...")
+    logger.info(f"finding *.wav files under {target_dir}")
     target_path = Path(target_dir).resolve()
+    wav_files = [x for x in target_path.rglob("*.wav")]
     with open(target_path.joinpath("train.csv"), "w") as f1:
         with open(target_path.joinpath("dev.csv"), "w") as f2:
-            for wav_file in target_path.rglob("*.wav"):
+            for wav_file in tqdm(wav_files):
                 uttid = wav_file.stem
                 txt_file = str(wav_file).replace("wav", "txt")
                 phn_file = str(wav_file).replace("wav", "phn")
@@ -250,6 +269,19 @@ def reconstruct_manifest(target_dir):
                     f2.write(f"{uttid},{wav_file},{samples},{phn_file},{num_frms},{txt_file}\n")
                 else:
                     f1.write(f"{uttid},{wav_file},{samples},{phn_file},{num_frms},{txt_file}\n")
+                sec = samples / p.SAMPLE_RATE
+                if sec < min_len:
+                    min_len = sec
+                if sec > max_len:
+                    max_len = sec
+                if sec < 29:
+                    histo[int(np.ceil(sec))] += 1
+    cum_histo = np.cumsum(histo) / len(wav_files) * 100.
+    logger.info(f"min: {min_len:.2f} sec  max: {max_len:.2f} sec")
+    logger.info(f"% of 5 secs: {cum_histo[5]} %  "
+                f"% of 10 secs: {cum_histo[10]} %  "
+                f"% of 15 secs: {cum_histo[15]} %  "
+                f"% of 20 secs: {cum_histo[20]} %")
     logger.info("data preparation finished.")
 
 
