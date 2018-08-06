@@ -271,6 +271,7 @@ def train(argv):
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="sgd", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
+    parser.add_argument('--test-only', default=False, action='store_true', help="do only test")
 
     args = parser.parse_args(argv)
 
@@ -323,9 +324,10 @@ def train(argv):
                                                      pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR)
 
     # run inference for a certain number of epochs
-    for i in range(trainer.epoch, args.num_epochs):
-        trainer.train_epoch(data_loaders["train"])
-        trainer.validate(data_loaders["dev"])
+    if not args.test_only:
+        for i in range(trainer.epoch, args.num_epochs):
+            trainer.train_epoch(data_loaders["train"])
+            trainer.validate(data_loaders["dev"])
     # final test to know WER
     trainer.test(data_loaders["dev"])
 
