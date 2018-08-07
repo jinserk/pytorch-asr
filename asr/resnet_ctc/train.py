@@ -265,6 +265,8 @@ def train(argv):
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--visdom', default=False, action='store_true', help="use visdom logging")
+    parser.add_argument('--visdom-host', default="127.0.0.1", type=str, help="visdom server ip address")
+    parser.add_argument('--visdom-port', default=8097, type=int, help="visdom server port")
     parser.add_argument('--tensorboard', default=False, action='store_true', help="use tensorboard logging")
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
     parser.add_argument('--log-dir', default='./logs_resnet_ctc', type=str, help="filename for logging the outputs")
@@ -296,9 +298,9 @@ def train(argv):
     vlog = None
     if args.visdom:
         try:
-            logger.info("using visdom")
             title = str(Path(args.log_dir).name)
-            vlog = VisdomLogger(env=title)
+            logger.info(f"using visdom on {args.visdom_host}:{args.visdom_port}/{title}")
+            vlog = VisdomLogger(host=args.visdom_host, port=args.visdom_port, env=title)
         except:
             logger.info("error to use visdom")
             vlog = None
