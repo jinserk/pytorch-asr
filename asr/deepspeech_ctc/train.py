@@ -246,7 +246,7 @@ class Trainer:
         self.epoch = states["epoch"]
         self.model.load_state_dict(states["model"])
         self.optimizer.load_state_dict(states["optimizer"])
-        self.lr_scheduler.load_state_dict(states["lr_scheduler"])
+        #self.lr_scheduler.load_state_dict(states["lr_scheduler"])
 
 
 def train(argv):

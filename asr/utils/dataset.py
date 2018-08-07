@@ -135,12 +135,12 @@ class Spectrogram(object):
             # STFT
             data = torch.stft(wav, n_fft=self.nfft, hop_length=self.window_shift,
                               win_length=self.window_size, window=self.window)
-            #mag, ang = np.abs(z), np.angle(z)
-            #spect = torch.FloatTensor(np.log1p(mag))
-            #phase = torch.FloatTensor(ang)
-            # {mag, phase} x n_freq_bin x n_frame
-            #data = torch.cat([spect.unsqueeze_(0), phase.unsqueeze_(0)], 0)
-            # FxTx2 -> 2xFxT
+            data /= self.window.pow(2).sum().sqrt_()
+            #mag = data.pow(2).sum(-1).log1p_()
+            #ang = torch.atan2(data[:, :, 1], data[:, :, 0])
+            ## {mag, phase} x n_freq_bin x n_frame
+            #data = torch.cat([mag.unsqueeze_(0), ang.unsqueeze_(0)], dim=0)
+            ## FxTx2 -> 2xFxT
             data = data.transpose(1, 2).transpose(0, 1)
             return data
 
