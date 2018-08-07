@@ -247,7 +247,7 @@ class Trainer:
         self.epoch = states["epoch"]
         self.model.load_state_dict(states["model"])
         self.optimizer.load_state_dict(states["optimizer"])
-        #self.lr_scheduler.load_state_dict(states["lr_scheduler"])
+        self.lr_scheduler.load_state_dict(states["lr_scheduler"])
 
 
 def train(argv):
@@ -273,8 +273,7 @@ def train(argv):
     parser.add_argument('--model-prefix', default='resnet_ctc', type=str, help="model file prefix to store")
     parser.add_argument('--checkpoint', default=True, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
-    parser.add_argument('--opt-type', default="sgd", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
-    parser.add_argument('--test-only', default=False, action='store_true', help="do only test")
+    parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
 
     args = parser.parse_args(argv)
 
@@ -295,6 +294,7 @@ def train(argv):
         if args.use_cuda:
             torch.cuda.manual_seed(args.seed)
 
+    # prepare visual logger
     vlog = None
     if args.visdom:
         try:
@@ -314,25 +314,80 @@ def train(argv):
             logger.info("error to use tensorboard")
             tlog = None
 
+    # prepare datasets and dataloaders for a variant of SortaGrad
+    dataset_opts = {
+        "train3":  { "mode": "train", "data_size": 16000000, "max_len": 3   },
+        "train5":  { "mode": "train", "data_size": 16000000, "max_len": 5   },
+        "train10": { "mode": "train", "data_size": 16000000, "max_len": 10  },
+        "dev":     { "mode": "dev",   "data_size": 16000,    "max_len": 100 },
+    }
+    dataloader_opts = {
+        "train3":  { "batch_size": 24, "num_workers": 8, "frame_shift": FRAME_REDUCE_FACTOR },
+        "train5":  { "batch_size": 16, "num_workers": 8, "frame_shift": FRAME_REDUCE_FACTOR },
+        "train10": { "batch_size": 8,  "num_workers": 4, "frame_shift": FRAME_REDUCE_FACTOR },
+        "dev":     { "batch_size": 8,  "num_workers": 4, "frame_shift": 0                   },
+    }
+    datasets, dataloaders = dict(), dict()
+    for key, dataset_opt in dataset_opts.items():
+        assert key in dataloader_opts
+        datasets[key] = AudioCTCDataset(root=args.data_path, **dataset_opt)
+        dataloaders[key] = AudioNonSplitDataLoader(datasets[key], **dataloader_opts[key],
+                                                   shuffle=True, pin_memory=args.use_cuda)
+
+    # prepare trainer object
     trainer = Trainer(vlog=vlog, tlog=tlog, **vars(args))
 
-    # prepare data loaders
-    datasets, data_loaders = dict(), dict()
-    for mode, size in zip(["train", "dev"], [16000000, 16000]):
-    #for mode, size in zip(["train", "dev"], [10, 2]):
-        datasets[mode] = AudioCTCDataset(root=args.data_path, mode=mode, data_size=size,
-                                         min_len=args.min_len, max_len=args.max_len)
-        data_loaders[mode] = AudioNonSplitDataLoader(datasets[mode], batch_size=args.batch_size,
-                                                     num_workers=args.num_workers, shuffle=True,
-                                                     pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR)
-
     # run inference for a certain number of epochs
-    if not args.test_only:
-        for i in range(trainer.epoch, args.num_epochs):
-            trainer.train_epoch(data_loaders["train"])
-            trainer.validate(data_loaders["dev"])
+    for i in range(trainer.epoch, args.num_epochs):
+        if i < 5:
+            trainer.train_epoch(dataloaders["train3"])
+            trainer.validate(dataloaders["dev"])
+        elif i < 15:
+            trainer.train_epoch(dataloaders["train5"])
+            trainer.validate(dataloaders["dev"])
+        else:
+            trainer.train_epoch(dataloaders["train10"])
+            trainer.validate(dataloaders["dev"])
+
     # final test to know WER
-    trainer.test(data_loaders["dev"])
+    trainer.test(dataloaders["dev"])
+
+
+def test(argv):
+    import argparse
+    parser = argparse.ArgumentParser(description="ResNet AM testing")
+    # for testing
+    parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
+    parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
+    parser.add_argument('--max-len', default=100., type=float, help="max length of utterance to use in secs")
+    parser.add_argument('--num-workers', default=0, type=int, help="number of dataloader workers")
+    parser.add_argument('--batch-size', default=4, type=int, help="number of images (and labels) to be considered in a batch")
+    # optional
+    parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
+    parser.add_argument('--log-dir', default='./logs_resnet_ctc', type=str, help="filename for logging the outputs")
+    parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
+
+    args = parser.parse_args(argv)
+
+    print(f"begins logging to file: {str(Path(args.log_dir).resolve() / 'test.log')}")
+    set_logfile(Path(args.log_dir, "test.log"))
+
+    logger.info(f"PyTorch version: {torch.__version__}")
+    logger.info(f"testing command options: {' '.join(sys.argv)}")
+    args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
+    logger.info(f"args: {' '.join(args_str)}")
+
+    assert args.continue_from is not None
+
+    if args.use_cuda:
+        logger.info("using cuda")
+
+    dataset = AudioCTCDataset(root=args.data_path, mode="dev", max_len=args.max_len, min_len=args.min_len)
+    dataloader = AudioNonSplitDataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,
+                                         shuffle=True, pin_memory=args.use_cuda, frame_shift=0)
+
+    trainer = Trainer(vlog=None, tlog=None, **vars(args))
+    trainer.test(dataloader)
 
 
 if __name__ == "__main__":
