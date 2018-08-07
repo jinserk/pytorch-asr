@@ -2,7 +2,7 @@
 
 This repository maintains an experimental code for speech recognition using [PyTorch](https://github.com/pytorch/pytorch) and [Kaldi](https://github.com/kaldi-asr/kaldi).
 The Kaldi latgen decoder is integrated with PyTorch binding for CTC based acoustic model training.
-The code was tested with Python 3.7 and PyTorch 0.5.
+The code was tested with Python 3.7 and PyTorch 0.4.1.
 
 ## Installation
 
@@ -15,8 +15,8 @@ The code was tested with Python 3.7 and PyTorch 0.5.
 We recommend [pyenv](https://github.com/pyenv/pyenv).
 Do not forget to set `pyenv local 3.7.0` in the local repo if you're using pyenv.
 
-If you want to use AdamW or SGDR as your optimizer, you need to patch ([PR #4429](https://github.com/pytorch/pytorch/pull/4429) and [PR #7821](https://github.com/pytorch/pytorch/pull/7821))
-to the latest PyTorch source. This is optional; you can still use any other default optimizer without patch.
+If you want to use AdamW as your optimizer, you need to patch ([PR #4429](https://github.com/pytorch/pytorch/pull/4429) to PyTorch source by yourself.
+CosineAnnealingWithRestartLR for SGDR from [PR #7821](https://github.com/pytorch/pytorch/pull/7821)) is included in `asr/utils/lr_scheduler.py` as a part of project.
 
 To avoid the `-fPIC` related compile error, you have to configure Kaldi with `--shared` option when you install it.
 
@@ -30,7 +30,7 @@ Install required Python modules:
 $ cd pytorch-asr
 $ pip install -r requirements.txt
 ```
-If you have installation error of `torchaudio` on CentOS machine, just comment out the line from `requirements.txt` and install it from its source.
+If you have installation error of `torchaudio` on CentOS machine, just comment out the line from `requirements.txt` and install it from its [source](https://github.com/pytorch/audio.git).
 You need to modify `#include <sox.h>` to `#include <sox/sox.h>` in `torchaudio/torch_sox.cpp` of the source to install and run.
 
 Modify the Kaldi path in `_path.py`:
@@ -46,13 +46,13 @@ Build up PyTorch-binding of Kaldi decoder:
 $ python build.py
 ```
 This takes a while to download the Kaldi's official ASpIRE chain model and its post-processing.
-If you want to use your own language model or graphs, modify `asr/kaldi/scripts/mkgraph.sh` as your settings.
+If you want to use your own language model or graphs, modify `asr/kaldi/scripts/mkgraph.sh` according to your settings.
 
 
 ## Training
 
 Pytorch-asr is targeted to develop a framework supporting multiple acoustic models. You have to specify one of model to train or predict.
-Currently, `resnet_ctc`, `resnet_ed`, and `deepspeech` models work for training and prediction. Try these models first.
+Currently, `resnet_{ctc,ed}`, `densenet_{ctc,ed}`, and `deepspeech_{ctc,ed}` models work for training and prediction. Try these models first.
 
 If you do training for the first time, you have to preprocess the dataset.
 Currently we utilize Kaldi's recipe directory containing preprocessed corpus data.
@@ -75,7 +75,6 @@ Start a new training with:
 ```
 $ python train.py <model-name> --use-cuda
 ```
-where `<model_name>` can be either of `resnet_ctc` or `resnet_ed`.
 check `--help` option to see which parameters are available for the model.
 
 If you want to resume training from a saved model file:
@@ -83,7 +82,7 @@ If you want to resume training from a saved model file:
 $ python train.py <model-name> --use-cuda --continue-from <model-file>
 ```
 
-You can use `--tensorboard` option to see the loss propagation. You have to install Tensorboard and TensorboardX from pip to use it.
+You can use `--visdom` or `--tensorboard` option to see the loss propagation.
 
 
 ## Prediction
