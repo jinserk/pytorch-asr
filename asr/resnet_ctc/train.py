@@ -15,6 +15,7 @@ from ..utils.dataset import AudioCTCDataset
 from ..utils.dataloader import AudioNonSplitDataLoader
 from ..utils.logger import logger, set_logfile, VisdomLogger, TensorboardLogger
 from ..utils.misc import onehot2int, remove_duplicates, get_model_file_path
+from ..utils.lr_scheduler import CosineAnnealingWithRestartsLR
 from ..utils import params as p
 
 from ..kaldi.latgen import LatGenCTCDecoder
@@ -71,7 +72,7 @@ class Trainer:
             logger.info("using SGDR")
             self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9)
             #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
-            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
+            self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
         elif opt_type == "adam":
             logger.info("using AdamW")
             self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0005, l2_reg=False)
