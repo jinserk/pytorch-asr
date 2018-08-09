@@ -14,12 +14,14 @@ def get_model_file_path(log_dir, prefix, desc):
 
 
 def get_num_lines(filename):
-    import mmap
-    with open(filename, "r+") as f:
-        buf = mmap.mmap(f.fileno(), 0)
-        lines = 0
-        while buf.readline():
-            lines += 1
+    #import mmap
+    #with open(filename, "r+") as f:
+    #    buf = mmap.mmap(f.fileno(), 0)
+    #    lines = 0
+    #    while buf.readline():
+    #        lines += 1
+    with open(filename, "r") as f:
+        lines = sum(1 for line in f if line.strip())
     return lines
 
 

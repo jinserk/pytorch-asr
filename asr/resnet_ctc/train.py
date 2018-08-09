@@ -204,8 +204,8 @@ class Trainer:
                 words, alignment, w_sizes, a_sizes = self.decoder(loglikes, frame_lens)
                 hyps = [w[:s] for w, s in zip(words, w_sizes)]
                 # convert target texts to word indices
-                w2i = lambda w: self.decoder.wordi[w] if w in self.decoder.wordi else self.decoder.wordi['<unk>']
-                refs = [[w2i(w) for w in t.strip().split()] for t in texts]
+                w2i = self.decoder.labeler.word2idx
+                refs = [[w2i(w.strip()) for w in t.strip().split()] for t in texts]
                 # calculate wer
                 N += self.edit_distance(refs, hyps)
                 D += sum(len(r) for r in refs)
@@ -250,16 +250,11 @@ class Trainer:
         self.lr_scheduler.load_state_dict(states["lr_scheduler"])
 
 
-def train(argv):
+def batch_train(argv):
     import argparse
-    parser = argparse.ArgumentParser(description="ResNet AM with fully supervised training")
+    parser = argparse.ArgumentParser(description="ResNet AM with batch training")
     # for training
-    parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
-    parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
-    parser.add_argument('--max-len', default=10., type=float, help="max length of utterance to use in secs")
-    parser.add_argument('--num-workers', default=8, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
-    parser.add_argument('--batch-size', default=8, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")
     parser.add_argument('--max-norm', default=400, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
@@ -315,6 +310,9 @@ def train(argv):
             logger.info("error to use tensorboard")
             tlog = None
 
+    # prepare trainer object
+    trainer = Trainer(vlog=vlog, tlog=tlog, **vars(args))
+
     # prepare datasets and dataloaders for a variant of SortaGrad
     dataset_opts = {
         "train3":  { "mode": "train", "data_size": 16000000, "max_len": 3   },
@@ -331,12 +329,10 @@ def train(argv):
     datasets, dataloaders = dict(), dict()
     for key, dataset_opt in dataset_opts.items():
         assert key in dataloader_opts
-        datasets[key] = AudioCTCDataset(root=args.data_path, **dataset_opt)
+        datasets[key] = AudioCTCDataset(labeler=trainer.decoder.labeler,
+                                        root="data/aspire", **dataset_opt)
         dataloaders[key] = AudioNonSplitDataLoader(datasets[key], **dataloader_opts[key],
                                                    shuffle=True, pin_memory=args.use_cuda)
-
-    # prepare trainer object
-    trainer = Trainer(vlog=vlog, tlog=tlog, **vars(args))
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
@@ -352,6 +348,91 @@ def train(argv):
 
     # final test to know WER
     trainer.test(dataloaders["dev"])
+
+
+def train(argv):
+    import argparse
+    parser = argparse.ArgumentParser(description="ResNet AM with fully supervised training")
+    # for training
+    parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
+    parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
+    parser.add_argument('--max-len', default=10., type=float, help="max length of utterance to use in secs")
+    parser.add_argument('--batch-size', default=8, type=int, help="number of images (and labels) to be considered in a batch")
+    parser.add_argument('--num-workers', default=8, type=int, help="number of dataloader workers")
+    parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
+    parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")
+    parser.add_argument('--max-norm', default=400, type=int, help="norm cutoff to prevent explosion of gradients")
+    # optional
+    parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
+    parser.add_argument('--visdom', default=False, action='store_true', help="use visdom logging")
+    parser.add_argument('--visdom-host', default="127.0.0.1", type=str, help="visdom server ip address")
+    parser.add_argument('--visdom-port', default=8097, type=int, help="visdom server port")
+    parser.add_argument('--tensorboard', default=False, action='store_true', help="use tensorboard logging")
+    parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
+    parser.add_argument('--log-dir', default='./logs_resnet_ctc', type=str, help="filename for logging the outputs")
+    parser.add_argument('--model-prefix', default='resnet_ctc', type=str, help="model file prefix to store")
+    parser.add_argument('--checkpoint', default=True, action='store_true', help="save checkpoint")
+    parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
+    parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
+
+    args = parser.parse_args(argv)
+
+    log_file = Path(args.log_dir, "train.log").resolve()
+    print(f"begins logging to file: {str(log_file)}")
+    set_logfile(log_file)
+
+    logger.info(f"PyTorch version: {torch.__version__}")
+    logger.info(f"training command options: {' '.join(sys.argv)}")
+    args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
+    logger.info(f"args: {' '.join(args_str)}")
+
+    if args.use_cuda:
+        logger.info("using cuda")
+
+    if args.seed is not None:
+        torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+        if args.use_cuda:
+            torch.cuda.manual_seed(args.seed)
+
+    # prepare visual logger
+    vlog = None
+    if args.visdom:
+        try:
+            title = str(Path(args.log_dir).name)
+            logger.info(f"using visdom on {args.visdom_host}:{args.visdom_port}/{title}")
+            vlog = VisdomLogger(host=args.visdom_host, port=args.visdom_port, env=title)
+        except:
+            logger.info("error to use visdom")
+            vlog = None
+
+    tlog = None
+    if args.tensorboard:
+        try:
+            logger.info("using tensorboard")
+            tlog = TensorboardLogger(PurePath(args.log_dir, 'tensorboard'))
+        except:
+            logger.info("error to use tensorboard")
+            tlog = None
+
+    # prepare trainer object
+    trainer = Trainer(vlog=vlog, tlog=tlog, **vars(args))
+
+    datasets, dataloaders = dict(), dict()
+    for mode, size, frame_shift in zip(["train", "eval2000"], [0, 0], [FRAME_REDUCE_FACTOR, 0]):
+        datasets[mode] = AudioCTCDataset(labeler=trainer.decoder.labeler, root=args.data_path,
+                                         mode=mode, data_size=size, min_len=args.min_len, max_len=args.max_len)
+        dataloaders[mode] = AudioNonSplitDataLoader(datasets[mode], batch_size=args.batch_size,
+                                                    num_workers=args.num_workers, shuffle=True,
+                                                    pin_memory=args.use_cuda, frame_shift=frame_shift)
+
+    # run inference for a certain number of epochs
+    for i in range(trainer.epoch, args.num_epochs):
+        trainer.train_epoch(dataloaders["train"])
+        trainer.validate(dataloaders["eval2000"])
+
+    # final test to know WER
+    trainer.test(dataloaders["eval2000"])
 
 
 def test(argv):
@@ -384,11 +465,13 @@ def test(argv):
     if args.use_cuda:
         logger.info("using cuda")
 
-    dataset = AudioCTCDataset(root=args.data_path, mode="dev", max_len=args.max_len, min_len=args.min_len)
+    trainer = Trainer(vlog=None, tlog=None, **vars(args))
+
+    dataset = AudioCTCDataset(labeler=trainer.decoder.labeler, root=args.data_path,
+                              mode="dev", max_len=args.max_len, min_len=args.min_len)
     dataloader = AudioNonSplitDataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,
                                          shuffle=True, pin_memory=args.use_cuda, frame_shift=0)
 
-    trainer = Trainer(vlog=None, tlog=None, **vars(args))
     trainer.test(dataloader)
 
 

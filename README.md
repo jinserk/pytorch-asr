@@ -92,3 +92,11 @@ You can predict a sample with trained model file:
 $ python predict.py <model-name> --continue-from <model-file> <target-wav-file1> <target-wav-file2> ...
 ```
 
+## Acknowledgement
+
+Some models are imported from the following projects. We appreciate all their work and all right of the codes belongs to them.
+
+* DeepSpeech : Sean Naren (https://github.com/SeanNaren/deepspeech.pytorch.git)
+* ResNet : PyTorch Vision Team (https://github.com/pytorch/vision.git)
+* DenseNet : PyTorch Vision Team (https://github.com/pytorch/vision.git)
+

@@ -18,38 +18,6 @@ from .logger import logger
 from . import params as p
 
 
-AUDIO_EXTENSIONS = [
-    '.wav', '.mp3', '.flac', '.sph', '.ogg', '.opus',
-    '.WAV', '.MP3', '.FLAC', '.SPH', '.OGG', '.OPUS',
-]
-
-MODES = [
-    "train_sup",
-    "train_unsup",
-    "train",
-    "dev",
-    "test"
-]
-
-WIN_SAMP_SIZE = p.SAMPLE_RATE * p.WINDOW_SIZE
-WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
-SAMPLE_MARGIN = WIN_SAMP_SHIFT * p.FRAME_MARGIN  # samples
-
-
-def is_audio_file(filename):
-    return any(filename.endswith(extension) for extension in AUDIO_EXTENSIONS)
-
-
-def make_manifest(path):
-    audios = []
-    path = Path(path).resolve()
-    walk = [x for x in path.glob("**/*") if x.is_file()]
-    for f in walk:
-        if is_audio_file(f):
-            audios.append(f)
-    return audios
-
-
 # transformer: resampling and augmentation
 class Augment(object):
 
@@ -238,19 +206,21 @@ class NonSplitDataset(Dataset):
 
 
 def _load_manifest(data_root, mode, data_size, min_len=0., max_len=100.):
-    assert mode in MODES, f"invalid mode options: either one of {MODES}"
-    manifest_file = data_root / f"{mode}.csv"
+    manifest_file = data_root.joinpath(f"{mode}.csv")
     if not data_root.exists() or not manifest_file.exists():
         logger.error(f"no such path {data_root} or manifest file {manifest_file} found. "
-                     f"need to run 'python prepare.py aspire' first")
+                     f"need to prepare data first.")
         sys.exit(1)
 
-    logger.info(f"loading dataset manifest {manifest_file} ...")
+    logger.info(f"loading dataset manifest {str(manifest_file)} ...")
     with open(manifest_file, "r") as f:
         manifest = f.readlines()
     entries = [tuple(x.strip().split(',')) for x in manifest]
 
     def _smp2frm(samples):
+        WIN_SAMP_SIZE = p.SAMPLE_RATE * p.WINDOW_SIZE
+        WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
+        SAMPLE_MARGIN = WIN_SAMP_SHIFT * p.FRAME_MARGIN  # samples
         num_samples = samples - 2 * SAMPLE_MARGIN
         return int((num_samples - WIN_SAMP_SIZE) // WIN_SAMP_SHIFT + 1)
 
@@ -259,16 +229,34 @@ def _load_manifest(data_root, mode, data_size, min_len=0., max_len=100.):
     MAX_FRAME = max_len / p.WINDOW_SHIFT
     entries = [e for e in entries if MIN_FRAME < _smp2frm(int(e[2])) < MAX_FRAME ]
     # randomly choose a number of data_size
-    size = min(data_size, len(entries))
+    size = min(data_size, len(entries)) if data_size > 0 else len(entries)
     selected_entries = random.sample(entries, size)
     # count each entry's number of frames
-    if mode == "train_unsup":
-        entry_frames = [_smp2frm(int(e[2])) for e in selected_entries]
-    else:
-        entry_frames = [int(e[4]) for e in selected_entries]
-
+    entry_frames = [_smp2frm(int(e[2])) for e in selected_entries]
     logger.info(f"{len(selected_entries)} entries, {sum(entry_frames)} frames are loaded.")
     return selected_entries, entry_frames
+
+
+def _text_to_labels(labeler, text, sil_prop=(0.2, 0.8)):
+    """ choosing a uniformly random lexicon definition, after inserting sil phones
+        with sil_prop[0] between words and with sil_prop[1] at the beginning and the end
+        of the sentences
+    """
+    sil = labeler.phone2idx('sil')
+    words = [w.strip() for w in text.strip().split()]
+    labels = list()
+    if random.random() < sil_prop[1]:
+        labels.append(sil)
+    for word in words[:-1]:
+        lex = labeler.word2lex(word)
+        labels.extend(lex[int(len(lex)*random.random())] if len(lex) > 1 else lex[0])
+        if random.random() < sil_prop[0]:
+            labels.append(sil)
+    lex = labeler.word2lex(words[-1])
+    labels.extend(lex[int(len(lex)*random.random())] if len(lex) > 1 else lex[0])
+    if random.random() < sil_prop[1]:
+        labels.append(sil)
+    return labels
 
 
 class AudioSplitDataset(SplitDataset):
@@ -285,7 +273,7 @@ class AudioSplitDataset(SplitDataset):
 
     def __getitem__(self, index):
         ei, fi = self.frame_map[index]
-        uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[ei]
+        uttid, wav_file, samples, txt_file = self.entries[ei]
         # read and transform wav file
         if self.transform is not None:
             tensors = self.transform(wav_file)
@@ -312,7 +300,8 @@ class AudioSplitDataset(SplitDataset):
 
 class AudioCTCDataset(NonSplitDataset):
 
-    def __init__(self, root, mode, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
+    def __init__(self, labeler, root, mode, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
+        self.labeler = labeler
         self.root = Path(root).resolve()
         self.mode = mode
         self.data_size = data_size
@@ -320,20 +309,22 @@ class AudioCTCDataset(NonSplitDataset):
         self.entries, self.entry_frames = _load_manifest(self.root, mode, data_size, min_len, max_len)
 
     def __getitem__(self, index):
-        uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
+        uttid, wav_file, samples, txt_file = self.entries[index]
         # read and transform wav file
         if self.transform is not None:
             tensors = self.transform(wav_file)
         if self.mode == "train_unsup":
             return tensors, None
         # read ctc file
-        ctc_file = phn_file.replace('phn', 'ctc')
-        targets = np.loadtxt(ctc_file, dtype="int", ndmin=1)
-        targets = torch.IntTensor(targets)
+        #ctc_file = phn_file.replace('phn', 'ctc')
+        #targets = np.loadtxt(ctc_file, dtype="int", ndmin=1)
+        #targets = torch.IntTensor(targets)
         # read txt file
         with open(txt_file, 'r') as f:
             text = f.read()
-        return tensors, targets, ctc_file, text
+        targets = _text_to_labels(self.labeler, text)
+        targets = torch.IntTensor(targets)
+        return tensors, targets, wav_file, text
 
     def __len__(self):
         return len(self.entries)
@@ -363,7 +354,7 @@ class AudioCEDataset(NonSplitDataset):
         # read txt file
         with open(txt_file, 'r') as f:
             text = f.read()
-        return tensors[:, :, start:start+targets_len], targets, phn_file, text
+        return tensors[:, :, start:start+targets_len], targets, wav_file, text
 
     def __len__(self):
         return len(self.entries)
