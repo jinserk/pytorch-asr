@@ -277,8 +277,9 @@ def train(argv):
 
     args = parser.parse_args(argv)
 
-    print(f"begins logging to file: {str(Path(args.log_dir).resolve() / 'train.log')}")
-    set_logfile(Path(args.log_dir, "train.log"))
+    log_file = Path(args.log_dir, "train.log").resolve()
+    print(f"begins logging to file: {str(log_file)}")
+    set_logfile(log_file)
 
     logger.info(f"PyTorch version: {torch.__version__}")
     logger.info(f"training command options: {' '.join(sys.argv)}")

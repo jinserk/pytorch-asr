@@ -17,13 +17,13 @@ from ..kaldi._path import KALDI_ROOT
 
 
 """
-This recipe requires Kaldi's egs/aspire/s5 recipe directory containing the result
-of its own scripts, especially the data/ and the exp/
+This recipe requires Kaldi's egs/swbd/s5c recipe directory containing the result
+of its own scripts, especially the data/
 """
 
 KALDI_PATH = Path(KALDI_ROOT).resolve()
-RECIPE_PATH = Path(KALDI_PATH, "egs", "aspire", "ics").resolve()
-DATA_PATH = Path(__file__).parents[2].joinpath("data", "aspire").resolve()
+RECIPE_PATH = Path(KALDI_PATH, "egs", "swbd", "ics").resolve()
+DATA_PATH = Path(__file__).parents[2].joinpath("data", "swbd").resolve()
 
 assert KALDI_PATH.exists(), f"no such path \"{str(KALDI_PATH)}\" not found"
 assert RECIPE_PATH.exists(), f"no such path \"{str(RECIPE_PATH)}\" not found"
@@ -36,9 +36,46 @@ SAMPLE_MARGIN = 0
 
 CHAR_MASK = "abcdefghijklmnopqrstuvwxyz'-._<>[] "
 
+REPLACE_TABLE = {
+    "\[vocalized-noise\]":  "<unk>",
+    "\(\%hesitation\)":     "",
+    "p h d":                "p._h._d.",
+    "u c l a":              "u._c._l._a.",
+    "h p":                  "h._p.",
+    "l l":                  "l._l.",
+    "p b":                  "p._b.",
+    "t w a":                "t._w._a.",
+    "a d j":                "a._d._j.",
+    "p a e":                "p._a._e.",
+    "c r e":                "c._r._e.",
+    "y w c a":              "y._w._c._a.",
+    "r p m":                "r._p._m.",
+    "s m u":                "s._m._u.",
+    "m t v":                "m._t._v.",
+    "t v":                  "t._v.",
+    "u s":                  "u._s.",
+    "s l":                  "s._l.",
+    "e x":                  "e._x.",
+    "x. ray":               "x-ray",
+}
+
 
 def strip_text(text):
+    import re
     text = text.lower()
+    for k, v in REPLACE_TABLE.items():
+        text = re.sub(fr"^{k}", v, text)
+        text = re.sub(fr"{k}$", v, text)
+        text = re.sub(fr"(\s){k}(\s)", fr"\1{v}\2", text)
+        text = re.sub(fr"(\s){k}(\s)", fr"\1{v}\2", text)
+    # match abbreviated words
+    p = re.compile(r'([a-z]\.\s)+[a-z]\.')
+    matches = p.findall(text)
+    if matches:
+        for m in matches:
+            s = m.group().replace(' ', '_')
+            text = text.replace(m.group(), s)
+    text = ' '.join(text.strip().split())
     text = ''.join([x for x in text if x in CHAR_MASK])
     return text
 
@@ -125,88 +162,7 @@ def get_transcripts(mode, target_dir):
     return manifest
 
 
-def get_alignments(target_dir):
-    import io
-    import pipes
-    import gzip
-
-    exp_dir = Path(RECIPE_PATH, "exp", "tri5a").resolve()
-    models = exp_dir.glob("*.mdl")
-    model = sorted(models, key=lambda x: x.stat().st_mtime)[-1]
-
-    logger.info("processing alignment files ...")
-    logger.info(f"using the trained kaldi model: {model}")
-    manifest = dict()
-    alis = [x for x in exp_dir.glob("ali.*.gz")]
-    for ali in tqdm(alis):
-        cmd = [ str(Path(KALDI_PATH, "src", "bin", "ali-to-phones")),
-                "--per-frame", f"{model}", f"ark:-", f"ark,f:-" ]
-        with gzip.GzipFile(ali, "rb") as a:
-            p = sp.run(cmd, stdout=sp.PIPE, stderr=sp.PIPE, input=a.read())
-            with io.BytesIO(p.stdout) as f:
-                while True:
-                    # mkdir
-                    try:
-                        uttid = read_string(f)
-                    except ValueError:
-                        break
-                    tar_dir = Path(target_dir).joinpath(uttid[6:9])
-                    tar_dir.mkdir(mode=0o755, parents=True, exist_ok=True)
-                    # store phn file
-                    phn_file = tar_dir.joinpath(uttid + ".phn")
-                    phones = read_vec_int(f)
-                    np.savetxt(str(phn_file), phones, "%d")
-                    # prepare manifest elements
-                    num_frms = len(phones)
-                    manifest[uttid] = (str(phn_file), num_frms)
-    return manifest
-
-
-def make_ctc_labels(target_dir):
-    # find *.phn files
-    logger.info(f"finding *.phn files under {target_dir}")
-    phn_files = [str(x) for x in Path(target_dir).rglob("*.phn")]
-    # convert
-    for phn_file in tqdm(phn_files):
-        phns = np.loadtxt(phn_file, dtype="int", ndmin=1)
-        # make ctc labelings by removing duplications
-        ctcs = np.array([x for x in remove_duplicates(phns)])
-        # write ctc file
-        # blank labels will be inserted in warp-ctc loss module,
-        # so here the target labels have not to contain the blanks interleaved
-        ctc_file = phn_file.replace("phn", "ctc")
-        np.savetxt(str(ctc_file), ctcs, "%d")
-    count_priors(phn_files)
-
-
-def count_priors(target_dir, phn_files=None):
-    # load labels.txt
-    labels = dict()
-    with open('asr/kaldi/graph/labels.txt', 'r') as f:
-        for line in f:
-            splits = line.strip().split()
-            label = splits[0]
-            labels[label] = splits[1]
-    blank = labels['<blk>']
-    if phn_files is None:
-        # find *.phn files
-        logger.info(f"finding *.phn files under {target_dir}")
-        phn_files = [str(x) for x in Path(target_dir).rglob("*.phn")]
-    # count
-    counts = [0] * len(labels)
-    for phn_file in tqdm(phn_files):
-        phns = np.loadtxt(phn_file, dtype="int", ndmin=1)
-        # count labels for priors
-        for c in phns:
-            counts[int(c)] += 1
-        counts[int(blank)] += len(phns) + 1
-    # write count file
-    count_file = Path(target_dir).joinpath("priors_count.txt")
-    np.savetxt(str(count_file), counts, "%d")
-
-
 def make_manifest(mode, target_path, rebuild=False):
-    logger.info(f"processing \"{mode}\" ...")
     if rebuild:
         import wave
         wav_manifest, txt_manifest = dict(), dict()
@@ -244,12 +200,12 @@ def make_manifest(mode, target_path, rebuild=False):
     logger.info(f"total {total} entries listed in the manifest file.")
     cum_histo = np.cumsum(histo) / total * 100.
     logger.info(f"min: {min_len:.2f} sec  max: {max_len:.2f} sec")
-    logger.info(f"<5 secs: {cum_histo[5]:.2f} %  "
-                f"<10 secs: {cum_histo[10]:.2f} %  "
-                f"<15 secs: {cum_histo[15]:.2f} %  "
-                f"<20 secs: {cum_histo[20]:.2f} %  "
-                f"<25 secs: {cum_histo[25]:.2f} %  "
-                f"<30 secs: {cum_histo[30]:.2f} %")
+    logger.info(f"% of 5 secs: {cum_histo[5]:.2f} %  "
+                f"% of 10 secs: {cum_histo[10]:.2f} %  "
+                f"% of 15 secs: {cum_histo[15]:.2f} %  "
+                f"% of 20 secs: {cum_histo[20]:.2f} %  "
+                f"% of 25 secs: {cum_histo[25]:.2f} %  "
+                f"% of 30 secs: {cum_histo[30]:.2f} %")
 
 
 def process(target_dir=None, rebuild=False):
@@ -260,8 +216,8 @@ def process(target_dir=None, rebuild=False):
     logger.info(f"target data path : {target_path}")
 
     make_manifest("train", target_path, rebuild)
-    make_manifest("dev", target_path, rebuild)
-    make_manifest("test", target_path, rebuild)
+    make_manifest("eval2000", target_path, rebuild)
+    make_manifest("rt03", target_path, rebuild)
 
     logger.info("data preparation finished.")
 

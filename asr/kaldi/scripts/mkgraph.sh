@@ -102,7 +102,7 @@ if false; then
 fi
 
 tlg_fst=$out_dir/TLG.fst
-
+tlg_tmp=$tlg_fst.$$
 trap "rm -f $tlg_tmp" EXIT HUP INT PIPE TERM
 if [[ ! -s $tlg_fst || $tlg_fst -ot $t_fst || $tlg_fst -ot $lg_fst ]]; then
   fsttablecompose $t_fst $lg_fst > $tlg_tmp || exit 1;

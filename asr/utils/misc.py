@@ -13,6 +13,16 @@ def get_model_file_path(log_dir, prefix, desc):
     return path / f"{prefix}_{desc}.{p.MODEL_SUFFIX}"
 
 
+def get_num_lines(filename):
+    import mmap
+    with open(filename, "r+") as f:
+        buf = mmap.mmap(f.fileno(), 0)
+        lines = 0
+        while buf.readline():
+            lines += 1
+    return lines
+
+
 def onehot2int(onehot, dim=1):
     _, idx = torch.topk(onehot, dim)
     #idx = idx.squeeze()
