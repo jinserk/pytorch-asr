@@ -31,15 +31,7 @@ class Predictor:
         self.load(continue_from)
 
         # prepare kaldi latgen decoder
-        self._load_labels()
         self.decoder = LatGenCTCDecoder()
-
-    def _load_labels(self):
-        file_path = Path(__file__).parents[1].joinpath("kaldi", "graph", "labels.txt")
-        self.labels = list()
-        with open(file_path, "r") as f:
-            for line in f:
-                self.labels.append(line.strip().split()[0])
 
     def decode(self, data_loader):
         self.model.eval()
@@ -69,10 +61,10 @@ class Predictor:
         if self.verbose:
             labels = onehot2int(loglikes).squeeze()
             logger.info(f"labels: {' '.join([str(x) for x in labels.tolist()])}")
-            symbols = [self.labels[x] for x in remove_duplicates(labels, blank=0)]
+            symbols = [self.decoder.labeler.idx2phone(x) for x in remove_duplicates(labels, blank=0)]
             logger.info(f"symbols: {' '.join(symbols)}")
         words = words.squeeze()
-        text = ' '.join([self.decoder.words[i] for i in words]) \
+        text = ' '.join([self.decoder.labeler.idx2word(i) for i in words]) \
                if words.dim() else '<null output from decoder>'
         logger.info(f"decoded text: {text}")
 

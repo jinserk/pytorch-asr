@@ -204,8 +204,8 @@ class Trainer:
                 words, alignment, w_sizes, a_sizes = self.decoder(loglikes, frame_lens)
                 hyps = [w[:s] for w, s in zip(words, w_sizes)]
                 # convert target texts to word indices
-                w2i = lambda w: self.decoder.wordi[w] if w in self.decoder.wordi else self.decoder.wordi['<unk>']
-                refs = [[w2i(w) for w in t.strip().split()] for t in texts]
+                w2i = self.decoder.labeler.word2idx
+                refs = [[w2i(w.strip()) for w in t.strip().split()] for t in texts]
                 # calculate wer
                 N += self.edit_distance(refs, hyps)
                 D += sum(len(r) for r in refs)
