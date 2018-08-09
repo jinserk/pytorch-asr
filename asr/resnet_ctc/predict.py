@@ -93,8 +93,9 @@ def predict(argv):
     parser.add_argument('wav_files', type=str, nargs='+', help="list of wav_files for prediction")
     args = parser.parse_args(argv)
 
-    print(f"begins logging to file: {str(Path(args.log_dir).resolve() / 'predict.log')}")
-    set_logfile(Path(args.log_dir, "predict.log"))
+    log_file = Path(args.log_dir, "predict.log").resolve()
+    print(f"begins logging to file: {str(log_file)}")
+    set_logfile(log_file)
 
     logger.info(f"PyTorch version: {torch.__version__}")
     logger.info(f"prediction command options: {' '.join(sys.argv)}")

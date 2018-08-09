@@ -205,10 +205,9 @@ class NonSplitDataset(Dataset):
 
 
 
-def _load_manifest(data_root, mode, data_size, min_len=0., max_len=100.):
-    manifest_file = data_root.joinpath(f"{mode}.csv")
-    if not data_root.exists() or not manifest_file.exists():
-        logger.error(f"no such path {data_root} or manifest file {manifest_file} found. "
+def _load_manifest(manifest_file, data_size, min_len=0., max_len=100.):
+    if not not manifest_file.exists():
+        logger.error(f"no such manifest file {manifest_file} found. "
                      f"need to prepare data first.")
         sys.exit(1)
 
@@ -261,12 +260,11 @@ def _text_to_labels(labeler, text, sil_prop=(0.2, 0.8)):
 
 class AudioSplitDataset(SplitDataset):
 
-    def __init__(self, root, mode, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
-        self.root = Path(root).resolve()
-        self.mode = mode
+    def __init__(self, manifest_file, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
+        self.manifest_file = Path(manifest_file).resolve()
         self.data_size = data_size
         super().__init__(*args, **kwargs)
-        self.entries, self.entry_frames = _load_manifest(self.root, mode, data_size, min_len, max_len)
+        self.entries, self.entry_frames = _load_manifest(self.manifest_file, data_size, min_len, max_len)
         self.frame_map = list()
         for i, (frames) in enumerate(self.entry_frames):
             self.frame_map.extend([(i, f) for f in range(frames)])
@@ -300,13 +298,12 @@ class AudioSplitDataset(SplitDataset):
 
 class AudioCTCDataset(NonSplitDataset):
 
-    def __init__(self, labeler, root, mode, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
+    def __init__(self, labeler, manifest_file, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
         self.labeler = labeler
-        self.root = Path(root).resolve()
-        self.mode = mode
+        self.manifest_file = Path(manifest_file).resolve()
         self.data_size = data_size
         super().__init__(tempo=True, gain=True, noise=True, *args, **kwargs)
-        self.entries, self.entry_frames = _load_manifest(self.root, mode, data_size, min_len, max_len)
+        self.entries, self.entry_frames = _load_manifest(self.manifest_file, data_size, min_len, max_len)
 
     def __getitem__(self, index):
         uttid, wav_file, samples, txt_file = self.entries[index]
@@ -332,12 +329,11 @@ class AudioCTCDataset(NonSplitDataset):
 
 class AudioCEDataset(NonSplitDataset):
 
-    def __init__(self, root, mode, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
-        self.root = Path(root).resolve()
-        self.mode = mode
+    def __init__(self, labeler, manifest_file, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
+        self.manifest_file = Path(manifest_file).resolve()
         self.data_size = data_size
         super().__init__(tempo=False, gain=True, noise=True, *args, **kwargs)
-        self.entries, self.entry_frames = _load_manifest(self.root, mode, data_size, min_len, max_len)
+        self.entries, self.entry_frames = _load_manifest(self.manifest_file, data_size, min_len, max_len)
 
     def __getitem__(self, index):
         uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]

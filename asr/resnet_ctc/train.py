@@ -315,22 +315,23 @@ def batch_train(argv):
 
     # prepare datasets and dataloaders for a variant of SortaGrad
     dataset_opts = {
-        "train3":  { "mode": "train", "data_size": 16000000, "max_len": 3   },
-        "train5":  { "mode": "train", "data_size": 16000000, "max_len": 5   },
-        "train10": { "mode": "train", "data_size": 16000000, "max_len": 10  },
-        "dev":     { "mode": "dev",   "data_size": 16000,    "max_len": 100 },
+        "train3":  { "manifest_file": "data/aspire/train.csv", "data_size": 0, "max_len": 3   },
+        "train5":  { "manifest_file": "data/aspire/train.csv", "data_size": 0, "max_len": 5   },
+        "train10": { "manifest_file": "data/aspire/train.csv", "data_size": 0, "max_len": 10  },
+        "dev":     { "manifest_file": "data/aspire/dev.csv",   "data_size": 0, "max_len": 100 },
+        "test":    { "manifest_file": "data/aspire/test.csv",  "data_size": 0, "max_len": 100 },
     }
     dataloader_opts = {
         "train3":  { "batch_size": 24, "num_workers": 8, "frame_shift": FRAME_REDUCE_FACTOR },
         "train5":  { "batch_size": 16, "num_workers": 8, "frame_shift": FRAME_REDUCE_FACTOR },
         "train10": { "batch_size": 8,  "num_workers": 4, "frame_shift": FRAME_REDUCE_FACTOR },
         "dev":     { "batch_size": 8,  "num_workers": 4, "frame_shift": 0                   },
+        "test":    { "batch_size": 8,  "num_workers": 4, "frame_shift": 0                   },
     }
     datasets, dataloaders = dict(), dict()
     for key, dataset_opt in dataset_opts.items():
         assert key in dataloader_opts
-        datasets[key] = AudioCTCDataset(labeler=trainer.decoder.labeler,
-                                        root="data/aspire", **dataset_opt)
+        datasets[key] = AudioCTCDataset(labeler=trainer.decoder.labeler, **dataset_opt)
         dataloaders[key] = AudioNonSplitDataLoader(datasets[key], **dataloader_opts[key],
                                                    shuffle=True, pin_memory=args.use_cuda)
 
@@ -347,7 +348,7 @@ def batch_train(argv):
             trainer.validate(dataloaders["dev"])
 
     # final test to know WER
-    trainer.test(dataloaders["dev"])
+    trainer.test(dataloaders["test"])
 
 
 def train(argv):
@@ -419,9 +420,9 @@ def train(argv):
     trainer = Trainer(vlog=vlog, tlog=tlog, **vars(args))
 
     datasets, dataloaders = dict(), dict()
-    for mode, size, frame_shift in zip(["train", "eval2000"], [0, 0], [FRAME_REDUCE_FACTOR, 0]):
-        datasets[mode] = AudioCTCDataset(labeler=trainer.decoder.labeler, root=args.data_path,
-                                         mode=mode, data_size=size, min_len=args.min_len, max_len=args.max_len)
+    for manifest, size, frame_shift in zip(manifests, [0, 0], [FRAME_REDUCE_FACTOR, 0]):
+        datasets[mode] = AudioCTCDataset(labeler=trainer.decoder.labeler, manifest_file=manifest,
+                                         data_size=size, min_len=args.min_len, max_len=args.max_len)
         dataloaders[mode] = AudioNonSplitDataLoader(datasets[mode], batch_size=args.batch_size,
                                                     num_workers=args.num_workers, shuffle=True,
                                                     pin_memory=args.use_cuda, frame_shift=frame_shift)
@@ -429,10 +430,10 @@ def train(argv):
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
         trainer.train_epoch(dataloaders["train"])
-        trainer.validate(dataloaders["eval2000"])
+        trainer.validate(dataloaders["dev"])
 
     # final test to know WER
-    trainer.test(dataloaders["eval2000"])
+    trainer.test(dataloaders["dev"])
 
 
 def test(argv):
@@ -467,8 +468,9 @@ def test(argv):
 
     trainer = Trainer(vlog=None, tlog=None, **vars(args))
 
-    dataset = AudioCTCDataset(labeler=trainer.decoder.labeler, root=args.data_path,
-                              mode="dev", max_len=args.max_len, min_len=args.min_len)
+    manifest = f"{args.data_path}/test.csv"
+    dataset = AudioCTCDataset(labeler=trainer.decoder.labeler, manifest_file=manifest,
+                              max_len=args.max_len, min_len=args.min_len)
     dataloader = AudioNonSplitDataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,
                                          shuffle=True, pin_memory=args.use_cuda, frame_shift=0)
 
