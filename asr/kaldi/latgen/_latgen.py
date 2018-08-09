@@ -57,7 +57,7 @@ class Labeler:
         with open(self.lex_file, "r") as f:
             for line in f:
                 token = line.strip().split()
-                wi, l = int(token[0].strip()), (int(i.strip()) for i in token[2:])
+                wi, l = int(token[0].strip()), [int(i.strip()) for i in token[2:]]
                 if wi in self.wi2l:
                     self.wi2l[wi].append(l)
                 else:
@@ -68,6 +68,9 @@ class Labeler:
 
     def get_num_words(self):
         return len(self.w2i)
+
+    def phone2idx(self, phone):
+        return self.p2i[phone]
 
     def idx2phone(self, idx):
         if torch.is_tensor(idx):
