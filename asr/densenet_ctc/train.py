@@ -15,6 +15,7 @@ from ..utils.dataset import AudioCTCDataset
 from ..utils.dataloader import AudioNonSplitDataLoader
 from ..utils.logger import logger, set_logfile, VisdomLogger, TensorboardLogger
 from ..utils.misc import onehot2int, remove_duplicates, get_model_file_path
+from ..utils.lr_scheduler import CosineAnnealingWithRestartsLR
 from ..utils import params as p
 
 from ..kaldi.latgen import LatGenCTCDecoder
@@ -71,7 +72,7 @@ class Trainer:
             logger.info("using SGDR")
             self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9)
             #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
-            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
+            self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
         elif opt_type == "adam":
             logger.info("using AdamW")
             self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0005, l2_reg=False)
@@ -264,6 +265,8 @@ def train(argv):
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--visdom', default=False, action='store_true', help="use visdom logging")
+    parser.add_argument('--visdom-host', default="127.0.0.1", type=str, help="visdom server ip address")
+    parser.add_argument('--visdom-port', default=8097, type=int, help="visdom server port")
     parser.add_argument('--tensorboard', default=False, action='store_true', help="use tensorboard logging")
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
     parser.add_argument('--log-dir', default='./logs_densenet_ctc', type=str, help="filename for logging the outputs")
@@ -274,8 +277,9 @@ def train(argv):
 
     args = parser.parse_args(argv)
 
-    print(f"begins logging to file: {str(Path(args.log_dir).resolve() / 'train.log')}")
-    set_logfile(Path(args.log_dir, "train.log"))
+    log_file = Path(args.log_dir, "train.log").resolve()
+    print(f"begins logging to file: {str(log_file)}")
+    set_logfile(log_file)
 
     logger.info(f"PyTorch version: {torch.__version__}")
     logger.info(f"training command options: {' '.join(sys.argv)}")
@@ -294,9 +298,9 @@ def train(argv):
     vlog = None
     if args.visdom:
         try:
-            logger.info("using visdom")
             title = str(Path(args.log_dir).name)
-            vlog = VisdomLogger(env=title)
+            logger.info(f"using visdom on {args.visdom_host}:{args.visdom_port}/{title}")
+            vlog = VisdomLogger(host=args.visdom_host, port=args.visdom_port, env=title)
         except:
             logger.info("error to use visdom")
             vlog = None
@@ -323,9 +327,10 @@ def train(argv):
                                                      pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR)
 
     # run inference for a certain number of epochs
-    for i in range(trainer.epoch, args.num_epochs):
-        trainer.train_epoch(data_loaders["train"])
-        trainer.validate(data_loaders["dev"])
+    if not args.test_only:
+        for i in range(trainer.epoch, args.num_epochs):
+            trainer.train_epoch(data_loaders["train"])
+            trainer.validate(data_loaders["dev"])
     # final test to know WER
     trainer.test(data_loaders["dev"])
 

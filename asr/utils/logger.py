@@ -31,9 +31,9 @@ def set_logfile(filename):
 
 class VisdomLogger:
 
-    def __init__(self, env='main'):
+    def __init__(self, host='127.0.0.1', port=8097, env='main'):
         from visdom import Visdom
-        self.viz = Visdom(env=env)
+        self.viz = Visdom(server=f"http://{host}", port=port, env=env)
 
         self.windows = dict()
 
