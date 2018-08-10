@@ -330,15 +330,15 @@ def batch_train(argv):
         "test"   : AudioCTCDataset(labeler=labeler, manifest_file="data/swbd/rt03.csv"),
     }
     dataloaders = {
-        "train3" : AudioNonSplitDataLoader(datasets["train3"], batch_size=64, num_workers=8, shuffle=True,
+        "train3" : AudioNonSplitDataLoader(datasets["train3"], batch_size=32, num_workers=32, shuffle=True,
                                            pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
-        "train5" : AudioNonSplitDataLoader(datasets["train5"], batch_size=64, num_workers=8, shuffle=True,
+        "train5" : AudioNonSplitDataLoader(datasets["train5"], batch_size=32, num_workers=32, shuffle=True,
                                            pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
-        "train10": AudioNonSplitDataLoader(datasets["train10"], batch_size=32, num_workers=8, shuffle=True,
+        "train10": AudioNonSplitDataLoader(datasets["train10"], batch_size=32, num_workers=32, shuffle=True,
                                            pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
-        "dev"    : AudioNonSplitDataLoader(datasets["dev"], batch_size=16, num_workers=8, shuffle=True,
+        "dev"    : AudioNonSplitDataLoader(datasets["dev"], batch_size=16, num_workers=16, shuffle=True,
                                            pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
-        "test"   : AudioNonSplitDataLoader(datasets["test"], batch_size=16, num_workers=8, shuffle=True,
+        "test"   : AudioNonSplitDataLoader(datasets["test"], batch_size=16, num_workers=16, shuffle=True,
                                            pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
     }
 
