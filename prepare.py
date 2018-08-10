@@ -7,6 +7,7 @@ argv = sys.argv[1:]
 datasets = set([
     "aspire",
     "swbd",
+    "tedlium",
 ])
 
 if argv[0] not in datasets:
@@ -17,8 +18,11 @@ dataset = argv[0]
 argv.remove(dataset)
 
 if dataset == "aspire":
-    from asr.utils import aspire
+    from asr.dataset import aspire
     aspire.prepare(argv)
-if dataset == "swbd":
-    from asr.utils import swbd
+elif dataset == "swbd":
+    from asr.dataset import swbd
     swbd.prepare(argv)
+elif dataset == "tedlium":
+    from asr.dataset import tedlium
+    tedlium.prepare(argv)

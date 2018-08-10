@@ -251,43 +251,6 @@ def _text_to_labels(labeler, text, sil_prop=(0.2, 0.8)):
     return labels
 
 
-class AudioSplitDataset(SplitDataset):
-
-    def __init__(self, manifest_file, *args, **kwargs):
-        self.manifest_file = Path(manifest_file).resolve()
-        super().__init__(*args, **kwargs)
-        self.entries, self.entry_frames = _load_manifest(self.manifest_file)
-        self.frame_map = list()
-        for i, (frames) in enumerate(self.entry_frames):
-            self.frame_map.extend([(i, f) for f in range(frames)])
-
-    def __getitem__(self, index):
-        ei, fi = self.frame_map[index]
-        uttid, wav_file, samples, txt_file = self.entries[ei]
-        # read and transform wav file
-        if self.transform is not None:
-            tensors = self.transform(wav_file)
-        tensor = tensors[fi]
-        if self.mode == "train_unsup":
-            return tensor, None
-        else:
-            # read phn file
-            targets = np.loadtxt(phn_file, dtype="int").tolist()
-            if self.target_transform is not None:
-                targets = self.target_transform(targets)
-            # manipulating when the length of data and targets are mismatched
-            #l0, l1 = len(tensors), len(targets)
-            #if l0 > l1:
-            #    tensors = tensors[:l1]
-            #elif l0 < l1:
-            #    tensors.extend([torch.zeros_like(tensors[0]) for i in range(l1 - l0)])
-            target = targets[fi]
-            return tensor, target
-
-    def __len__(self):
-        return len(self.frame_map)
-
-
 class AudioCTCDataset(NonSplitDataset):
 
     def __init__(self, labeler, manifest_file, *args, **kwargs):
@@ -332,34 +295,6 @@ class AudioSubset(Subset):
         size = min(data_size, len(indices)) if data_size > 0 else len(indices)
         selected = random.sample(indices, size)
         return selected
-
-
-class AudioCEDataset(NonSplitDataset):
-
-    def __init__(self, labeler, manifest_file, *args, **kwargs):
-        self.manifest_file = Path(manifest_file).resolve()
-        super().__init__(tempo=False, gain=True, noise=True, *args, **kwargs)
-        self.entries, self.entry_frames = _load_manifest(self.manifest_file)
-
-    def __getitem__(self, index):
-        uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]
-        # read and transform wav file
-        if self.transform is not None:
-            tensors = self.transform(wav_file)
-        if self.mode == "train_unsup":
-            return tensors, None
-        # read phn file
-        targets = np.loadtxt(phn_file, dtype="int", ndmin=1)
-        targets = torch.IntTensor(targets)
-        targets_len = len(targets)
-        start = (tensors.size(2) - targets_len) // 2
-        # read txt file
-        with open(txt_file, 'r') as f:
-            text = f.read()
-        return tensors[:, :, start:start+targets_len], targets, wav_file, text
-
-    def __len__(self):
-        return len(self.entries)
 
 
 class PredictDataset(NonSplitDataset):
