@@ -39,7 +39,7 @@ CORRECT_TABLE = {
     "100"       : "a hundred",
     "140"       : "one forty",
     "200"       : "two hundreds",
-    "360"       : "three sixty"
+    "360"       : "three sixty",
     "400"       : "four hundreds",
     "5 000"     : "five thousand"
     "9 000"     : "nine thousand"
@@ -167,32 +167,32 @@ CORRECT_TABLE = {
     "v s"       : "v._s.",
     "x ray"     : "x-ray",
     "[ o k ]"   : "o._k.",
-    "at & t"    : "a t and t"
-    "at & t's"  : "a t and t's"
-    "$ zero point zero one <unk>": "one"
-    "r d engineers": "r and d engineers"
+    "at & t"    : "a t and t",
+    "at & t's"  : "a t and t's",
+    "$ zero point zero one <unk>": "one",
+    "r d engineers": "r and d engineers",
     "a c t scanner": "a c._t. scanner",
-    "i 35w bridge": "i thirty five bridge"
-    "html5"     : "h._t._m._l. five"
-    "two ^ five": "two to the power of five"
-    "e = mc"    : "e equals m c squared"
-    "$ ten"     : "ten dollar"
-    "$ forty"   : "forty dollars"
-    "$ fifty"   : "fifty dollars"
-    "$ one hundred": "one hundred dollar"
-    "$ one hundred and forty": "one hundred and forty dollars"
-    "$ one thousand": "one thousand dollars"
-    "$ two thousand": "two thousand dollars"
-    "$ three thousand": "three thousand dollars"
-    "$ six thousand": "six thousand dollars"
-    "$ eight thousand": "eight thousand dollars"
-    "$ ten thousand": "ten thousand dollar"
-    "$ twelve thousand": "twelve thousand dollar"
-    "$ two hundred thousand": "two hundred thousand dollars"
-    "$ one point six billion": "one point six billion dollars"
-    "$ four trilion": "four tillion dollars"
-    "$ five trilion": "five tillion dollar"
-    "# gamergate": "<unk> gamergate"
+    "i 35w bridge": "i thirty five bridge",
+    "html5"     : "h._t._m._l. five",
+    "two ^ five": "two to the power of five",
+    "e = mc"    : "e equals m c squared",
+    "$ ten"     : "ten dollar",
+    "$ forty"   : "forty dollars",
+    "$ fifty"   : "fifty dollars",
+    "$ one hundred": "one hundred dollar",
+    "$ one hundred and forty": "one hundred and forty dollars",
+    "$ one thousand": "one thousand dollars",
+    "$ two thousand": "two thousand dollars",
+    "$ three thousand": "three thousand dollars",
+    "$ six thousand": "six thousand dollars",
+    "$ eight thousand": "eight thousand dollars",
+    "$ ten thousand": "ten thousand dollar",
+    "$ twelve thousand": "twelve thousand dollar",
+    "$ two hundred thousand": "two hundred thousand dollars",
+    "$ one point six billion": "one point six billion dollars",
+    "$ four trilion": "four tillion dollars",
+    "$ five trilion": "five tillion dollar",
+    "# gamergate": "<unk> gamergate",
 }
 
 
