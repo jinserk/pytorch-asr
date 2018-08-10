@@ -6,12 +6,13 @@ from tqdm import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.utils.data.dataset import ConcatDataset
 import torchvision.utils as tvu
 from warpctc_pytorch import CTCLoss
 import torchnet as tnt
 import Levenshtein as Lev
 
-from ..utils.dataset import AudioCTCDataset
+from ..utils.dataset import AudioCTCDataset, AudioSubset
 from ..utils.dataloader import AudioNonSplitDataLoader
 from ..utils.logger import logger, set_logfile, VisdomLogger, TensorboardLogger
 from ..utils.misc import onehot2int, remove_duplicates, get_model_file_path
@@ -264,8 +265,8 @@ def batch_train(argv):
     parser.add_argument('--visdom-port', default=8097, type=int, help="visdom server port")
     parser.add_argument('--tensorboard', default=False, action='store_true', help="use tensorboard logging")
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
-    parser.add_argument('--log-dir', default='./logs_resnet_ctc', type=str, help="filename for logging the outputs")
-    parser.add_argument('--model-prefix', default='resnet_ctc', type=str, help="model file prefix to store")
+    parser.add_argument('--log-dir', default='./logs_deepspeech_ctc', type=str, help="filename for logging the outputs")
+    parser.add_argument('--model-prefix', default='deepspeech_ctc', type=str, help="model file prefix to store")
     parser.add_argument('--checkpoint', default=True, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
@@ -312,28 +313,34 @@ def batch_train(argv):
 
     # prepare trainer object
     trainer = Trainer(vlog=vlog, tlog=tlog, **vars(args))
+    labeler = trainer.decoder.labeler
 
-    # prepare datasets and dataloaders for a variant of SortaGrad
-    dataset_opts = {
-        "train3":  { "manifest_file": "data/aspire/train.csv", "data_size": 0, "max_len": 3   },
-        "train5":  { "manifest_file": "data/aspire/train.csv", "data_size": 0, "max_len": 5   },
-        "train10": { "manifest_file": "data/aspire/train.csv", "data_size": 0, "max_len": 10  },
-        "dev":     { "manifest_file": "data/aspire/dev.csv",   "data_size": 0, "max_len": 100 },
-        "test":    { "manifest_file": "data/aspire/test.csv",  "data_size": 0, "max_len": 100 },
+    train_datasets = [
+        AudioCTCDataset(labeler=labeler, manifest_file="data/aspire/train.csv"),
+        AudioCTCDataset(labeler=labeler, manifest_file="data/aspire/dev.csv"),
+        AudioCTCDataset(labeler=labeler, manifest_file="data/aspire/test.csv"),
+        AudioCTCDataset(labeler=labeler, manifest_file="data/swbd/train.csv"),
+    ]
+
+    datasets = {
+        "train3" : ConcatDataset([AudioSubset(d, max_len=3) for d in train_datasets]),
+        "train5" : ConcatDataset([AudioSubset(d, max_len=5) for d in train_datasets]),
+        "train10": ConcatDataset([AudioSubset(d, max_len=10) for d in train_datasets]),
+        "dev"    : AudioCTCDataset(labeler=labeler, manifest_file="data/swbd/eval2000.csv"),
+        "test"   : AudioCTCDataset(labeler=labeler, manifest_file="data/swbd/rt03.csv"),
     }
-    dataloader_opts = {
-        "train3":  { "batch_size": 24, "num_workers": 8, "frame_shift": FRAME_REDUCE_FACTOR },
-        "train5":  { "batch_size": 16, "num_workers": 8, "frame_shift": FRAME_REDUCE_FACTOR },
-        "train10": { "batch_size": 8,  "num_workers": 4, "frame_shift": FRAME_REDUCE_FACTOR },
-        "dev":     { "batch_size": 8,  "num_workers": 4, "frame_shift": 0                   },
-        "test":    { "batch_size": 8,  "num_workers": 4, "frame_shift": 0                   },
+    dataloaders = {
+        "train3" : AudioNonSplitDataLoader(datasets["train3"], batch_size=64, num_workers=8, shuffle=True,
+                                           pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
+        "train5" : AudioNonSplitDataLoader(datasets["train5"], batch_size=64, num_workers=8, shuffle=True,
+                                           pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
+        "train10": AudioNonSplitDataLoader(datasets["train10"], batch_size=32, num_workers=8, shuffle=True,
+                                           pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
+        "dev"    : AudioNonSplitDataLoader(datasets["dev"], batch_size=16, num_workers=8, shuffle=True,
+                                           pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
+        "test"   : AudioNonSplitDataLoader(datasets["test"], batch_size=16, num_workers=8, shuffle=True,
+                                           pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
     }
-    datasets, dataloaders = dict(), dict()
-    for key, dataset_opt in dataset_opts.items():
-        assert key in dataloader_opts
-        datasets[key] = AudioCTCDataset(labeler=trainer.decoder.labeler, **dataset_opt)
-        dataloaders[key] = AudioNonSplitDataLoader(datasets[key], **dataloader_opts[key],
-                                                   shuffle=True, pin_memory=args.use_cuda)
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):

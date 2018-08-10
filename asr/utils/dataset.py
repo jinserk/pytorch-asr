@@ -11,7 +11,7 @@ import sox
 
 import torch
 from torch._C import _set_worker_signal_handlers
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Subset
 import torchaudio
 
 from .logger import logger
@@ -158,7 +158,7 @@ class SplitDataset(Dataset):
                  gain=False, gain_range=p.GAIN_RANGE,
                  noise=False, noise_range=p.NOISE_RANGE,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
-                 frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT, *args, **kwargs):
+                 frame_margin=0, unit_frames=p.HEIGHT, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transform is None:
             self.transform = torchaudio.transforms.Compose([
@@ -204,36 +204,29 @@ class NonSplitDataset(Dataset):
         self.target_transform = target_transform
 
 
+WIN_SAMP_SIZE = p.SAMPLE_RATE * p.WINDOW_SIZE
+WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
+#SAMPLE_MARGIN = WIN_SAMP_SHIFT * p.FRAME_MARGIN  # samples
+SAMPLE_MARGIN = 0
 
-def _load_manifest(manifest_file, data_size, min_len=0., max_len=100.):
-    if not not manifest_file.exists():
+
+def _smp2frm(samples):
+    num_samples = samples - 2 * SAMPLE_MARGIN
+    return int((num_samples - WIN_SAMP_SIZE) // WIN_SAMP_SHIFT + 1)
+
+
+def _load_manifest(manifest_file):
+    if not manifest_file.exists():
         logger.error(f"no such manifest file {manifest_file} found. "
                      f"need to prepare data first.")
         sys.exit(1)
-
     logger.info(f"loading dataset manifest {str(manifest_file)} ...")
     with open(manifest_file, "r") as f:
         manifest = f.readlines()
     entries = [tuple(x.strip().split(',')) for x in manifest]
-
-    def _smp2frm(samples):
-        WIN_SAMP_SIZE = p.SAMPLE_RATE * p.WINDOW_SIZE
-        WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
-        SAMPLE_MARGIN = WIN_SAMP_SHIFT * p.FRAME_MARGIN  # samples
-        num_samples = samples - 2 * SAMPLE_MARGIN
-        return int((num_samples - WIN_SAMP_SIZE) // WIN_SAMP_SHIFT + 1)
-
-    # pick up entries of 1 to 15 secs
-    MIN_FRAME = min_len / p.WINDOW_SHIFT
-    MAX_FRAME = max_len / p.WINDOW_SHIFT
-    entries = [e for e in entries if MIN_FRAME < _smp2frm(int(e[2])) < MAX_FRAME ]
-    # randomly choose a number of data_size
-    size = min(data_size, len(entries)) if data_size > 0 else len(entries)
-    selected_entries = random.sample(entries, size)
-    # count each entry's number of frames
-    entry_frames = [_smp2frm(int(e[2])) for e in selected_entries]
-    logger.info(f"{len(selected_entries)} entries, {sum(entry_frames)} frames are loaded.")
-    return selected_entries, entry_frames
+    entry_frames = [_smp2frm(int(e[2])) for e in entries]
+    logger.info(f"{len(entries)} entries, {sum(entry_frames)} frames are loaded.")
+    return entries, entry_frames
 
 
 def _text_to_labels(labeler, text, sil_prop=(0.2, 0.8)):
@@ -260,11 +253,10 @@ def _text_to_labels(labeler, text, sil_prop=(0.2, 0.8)):
 
 class AudioSplitDataset(SplitDataset):
 
-    def __init__(self, manifest_file, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
+    def __init__(self, manifest_file, *args, **kwargs):
         self.manifest_file = Path(manifest_file).resolve()
-        self.data_size = data_size
         super().__init__(*args, **kwargs)
-        self.entries, self.entry_frames = _load_manifest(self.manifest_file, data_size, min_len, max_len)
+        self.entries, self.entry_frames = _load_manifest(self.manifest_file)
         self.frame_map = list()
         for i, (frames) in enumerate(self.entry_frames):
             self.frame_map.extend([(i, f) for f in range(frames)])
@@ -298,20 +290,17 @@ class AudioSplitDataset(SplitDataset):
 
 class AudioCTCDataset(NonSplitDataset):
 
-    def __init__(self, labeler, manifest_file, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
+    def __init__(self, labeler, manifest_file, *args, **kwargs):
         self.labeler = labeler
         self.manifest_file = Path(manifest_file).resolve()
-        self.data_size = data_size
         super().__init__(tempo=True, gain=True, noise=True, *args, **kwargs)
-        self.entries, self.entry_frames = _load_manifest(self.manifest_file, data_size, min_len, max_len)
+        self.entries, self.entry_frames = _load_manifest(self.manifest_file)
 
     def __getitem__(self, index):
         uttid, wav_file, samples, txt_file = self.entries[index]
         # read and transform wav file
         if self.transform is not None:
             tensors = self.transform(wav_file)
-        if self.mode == "train_unsup":
-            return tensors, None
         # read ctc file
         #ctc_file = phn_file.replace('phn', 'ctc')
         #targets = np.loadtxt(ctc_file, dtype="int", ndmin=1)
@@ -327,13 +316,30 @@ class AudioCTCDataset(NonSplitDataset):
         return len(self.entries)
 
 
+class AudioSubset(Subset):
+
+    def __init__(self, dataset, data_size=0, min_len=1., max_len=10.):
+        indices = self._pick_indices(dataset.entries, data_size, min_len, max_len)
+        super().__init__(dataset, indices)
+
+    def _pick_indices(self, entries, data_size, min_len, max_len):
+        full_indices = range(len(entries))
+        # pick up entries of time length from min_len to max_len secs
+        MIN_FRAME = min_len / p.WINDOW_SHIFT
+        MAX_FRAME = max_len / p.WINDOW_SHIFT
+        indices = [i for i in full_indices if MIN_FRAME < _smp2frm(int(entries[i][2])) < MAX_FRAME ]
+        # randomly choose a number of data_size
+        size = min(data_size, len(indices)) if data_size > 0 else len(indices)
+        selected = random.sample(indices, size)
+        return selected
+
+
 class AudioCEDataset(NonSplitDataset):
 
-    def __init__(self, labeler, manifest_file, data_size=1e30, min_len=1., max_len=15., *args, **kwargs):
+    def __init__(self, labeler, manifest_file, *args, **kwargs):
         self.manifest_file = Path(manifest_file).resolve()
-        self.data_size = data_size
         super().__init__(tempo=False, gain=True, noise=True, *args, **kwargs)
-        self.entries, self.entry_frames = _load_manifest(self.manifest_file, data_size, min_len, max_len)
+        self.entries, self.entry_frames = _load_manifest(self.manifest_file)
 
     def __getitem__(self, index):
         uttid, wav_file, samples, phn_file, num_phns, txt_file = self.entries[index]

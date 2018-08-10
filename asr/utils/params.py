@@ -11,7 +11,6 @@ WINDOW_SIZE = 0.025   # sec
 
 # spectrogram
 NFFT = 256
-FRAME_MARGIN = 10
 
 # augmentation
 TEMPO_RANGE = (0.85, 1.15)
