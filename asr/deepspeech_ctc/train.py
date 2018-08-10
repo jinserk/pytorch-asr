@@ -425,12 +425,13 @@ def train(argv):
 
     # prepare trainer object
     trainer = Trainer(vlog=vlog, tlog=tlog, **vars(args))
+    labeler = trainer.decoder.labeler
 
     manifests = [f"{args.data_path}/train.csv", f"{args.data_path}/dev.csv"]
     datasets, dataloaders = dict(), dict()
     for manifest, size, frame_shift in zip(manifests, [0, 0], [FRAME_REDUCE_FACTOR, 0]):
-        datasets[mode] = AudioCTCDataset(labeler=trainer.decoder.labeler, manifest_file=manifest,
-                                         data_size=size, min_len=args.min_len, max_len=args.max_len)
+        datasets[mode] = AudioSubset(AudioCTCDataset(labeler=labeler, manifest_file=manifest),
+                                     data_size=size, min_len=args.min_len, max_len=args.max_len)
         dataloaders[mode] = AudioNonSplitDataLoader(datasets[mode], batch_size=args.batch_size,
                                                     num_workers=args.num_workers, shuffle=True,
                                                     pin_memory=args.use_cuda, frame_shift=frame_shift)
@@ -450,7 +451,7 @@ def test(argv):
     # for testing
     parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
-    parser.add_argument('--max-len', default=100., type=float, help="max length of utterance to use in secs")
+    parser.add_argument('--max-len', default=20., type=float, help="max length of utterance to use in secs")
     parser.add_argument('--num-workers', default=0, type=int, help="number of dataloader workers")
     parser.add_argument('--batch-size', default=4, type=int, help="number of images (and labels) to be considered in a batch")
     # optional
@@ -475,10 +476,11 @@ def test(argv):
         logger.info("using cuda")
 
     trainer = Trainer(vlog=None, tlog=None, **vars(args))
+    labeler = trainer.decoder.labeler
 
     manifest = f"{args.data_path}/test.csv"
-    dataset = AudioCTCDataset(labeler=trainer.decoder.labeler, manifest_file=manifest,
-                              max_len=args.max_len, min_len=args.min_len)
+    dataset = AudioSubset(AudioCTCDataset(labeler=labeler, manifest_file=manifest),
+                          max_len=args.max_len, min_len=args.min_len)
     dataloader = AudioNonSplitDataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,
                                          shuffle=True, pin_memory=args.use_cuda, frame_shift=0)
 
