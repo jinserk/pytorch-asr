@@ -449,14 +449,14 @@ def test(argv):
     import argparse
     parser = argparse.ArgumentParser(description="DeepSpeech AM testing")
     # for testing
-    parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
+    parser.add_argument('--data-path', default='data/swbd', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
     parser.add_argument('--max-len', default=20., type=float, help="max length of utterance to use in secs")
     parser.add_argument('--num-workers', default=0, type=int, help="number of dataloader workers")
     parser.add_argument('--batch-size', default=4, type=int, help="number of images (and labels) to be considered in a batch")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
-    parser.add_argument('--log-dir', default='./logs_resnet_ctc', type=str, help="filename for logging the outputs")
+    parser.add_argument('--log-dir', default='./logs_deepspeech_ctc', type=str, help="filename for logging the outputs")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
 
     args = parser.parse_args(argv)
@@ -478,7 +478,7 @@ def test(argv):
     trainer = Trainer(vlog=None, tlog=None, **vars(args))
     labeler = trainer.decoder.labeler
 
-    manifest = f"{args.data_path}/test.csv"
+    manifest = f"{args.data_path}/eval2000.csv"
     dataset = AudioSubset(AudioCTCDataset(labeler=labeler, manifest_file=manifest),
                           max_len=args.max_len, min_len=args.min_len)
     dataloader = AudioNonSplitDataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,

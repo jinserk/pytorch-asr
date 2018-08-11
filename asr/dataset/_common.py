@@ -222,6 +222,18 @@ class KaldiDataImporter:
                 txt_manifest[uttid] = (str(txt_file), '-')
         self.make_manifest(mode, wav_manifest, txt_manifest)
 
+    def process_text_only(self, mode):
+        import wave
+        logger.info(f"processing text only from \"{mode}\" ...")
+        wav_manifest = dict()
+        for wav_file in self.target_path.joinpath(mode).rglob("*.wav"):
+            uttid = wav_file.stem
+            with wave.openfp(str(wav_file), "rb") as wav:
+                samples = wav.getnframes()
+            wav_manifest[uttid] = (str(wav_file), samples)
+        txt_manifest = self.get_transcripts(mode)
+        self.make_manifest(mode, wav_manifest, txt_manifest)
+
     def process(self, mode):
         logger.info(f"processing \"{mode}\" ...")
         wav_manifest = self.split_wav(mode)

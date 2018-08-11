@@ -13,19 +13,29 @@ Importing the data from Kaldi's egs/tedlium/s5c recipe directory
 CHAR_MASK = "abcdefghijklmnopqrstuvwxyz'-._<>[] "
 
 CORRECT_TABLE = {
+    "@"         : "at",
     "&"         : "and",
-    "="         : "equals",
-    "+"         : "plus",
+    "\="        : "equals",
+    "\+"        : "plus",
     "1"         : "one",
     "2"         : "two",
     "3"         : "three",
     "4"         : "four",
+    "5"         : "five",
+    "6"         : "six",
+    "7"         : "seven",
+    "8"         : "eight",
     "9"         : "nine",
     "10"        : "ten",
+    "11"        : "eleven",
+    "12"        : "twelve",
     "13"        : "thirteen",
+    "14"        : "fourteen",
     "15"        : "fifteen",
+    "16"        : "sixteen",
     "17"        : "seventeen",
     "18"        : "eighteen",
+    "19"        : "nineteen",
     "20"        : "twenty",
     "24"        : "twenty four",
     "25"        : "twenty five",
@@ -34,15 +44,17 @@ CORRECT_TABLE = {
     "40"        : "fourty",
     "45"        : "fourty five",
     "50"        : "fifty",
+    "60"        : "sixty",
     "70"        : "seventy",
+    "80"        : "eighty",
     "90"        : "ninety",
     "100"       : "a hundred",
     "140"       : "one forty",
     "200"       : "two hundreds",
     "360"       : "three sixty",
     "400"       : "four hundreds",
-    "5 000"     : "five thousand"
-    "9 000"     : "nine thousand"
+    "5 000"     : "five thousand",
+    "9 000"     : "nine thousand",
     "20s"       : "twenties",
     "30s"       : "thirties",
     "50s"       : "fifties",
@@ -78,18 +90,23 @@ CORRECT_TABLE = {
     "61st"      : "sixty first",
     "2d"        : "two d",
     "3d"        : "three d",
+    "3m"        : "three m",
     "3s"        : "three s",
-    "mr"        : "mister",
+    "5am"       : "five a._m.",
     "a4"        : "a four",
     "g2g"       : "g two g",
     "g8"        : "g eight",
     "g20"       : "g twenty",
     "h30"       : "h thirty",
     "m13"       : "m thirteen",
-    "5am"       : "five a._m.",
+    "mr"        : "mister",
     "co2"       : "c._o. two",
+    "p2p"       : "p two p",
     "sio2"      : "s i o two",
-    "disc1"     : "disc one"
+    "disc1"     : "disc one",
+    "and'"      : "and",
+    "the'"      : "the",
+    "early'"    : "early",
     "a c"       : "a._c.",
     "a d"       : "a._d.",
     "a i"       : "a._i.",
@@ -100,13 +117,14 @@ CORRECT_TABLE = {
     "b c"       : "b._c.",
     "b s"       : "b._s.",
     "b t"       : "b._t.",
+    "c d"       : "c._d.",
+    "c d s"     : "c._d.s",
     "c g"       : "c._g.",
     "c t"       : "c._t.",
     "c v"       : "c._v.",
     "d a"       : "d._a.",
     "d c"       : "d._c.",
     "d j"       : "d._j.",
-    "d s"       : "d._s.",
     "e p"       : "e._p.",
     "e q"       : "e._q.",
     "e r"       : "e._r.",
@@ -166,33 +184,33 @@ CORRECT_TABLE = {
     "v r"       : "v._r.",
     "v s"       : "v._s.",
     "x ray"     : "x-ray",
-    "[ o k ]"   : "o._k.",
+    "\[ o k \]" : "o._k.",
     "at & t"    : "a t and t",
     "at & t's"  : "a t and t's",
-    "$ zero point zero one <unk>": "one",
+    "\$ zero point zero one <unk>": "one",
     "r d engineers": "r and d engineers",
     "a c t scanner": "a c._t. scanner",
     "i 35w bridge": "i thirty five bridge",
     "html5"     : "h._t._m._l. five",
-    "two ^ five": "two to the power of five",
-    "e = mc"    : "e equals m c squared",
-    "$ ten"     : "ten dollar",
-    "$ forty"   : "forty dollars",
-    "$ fifty"   : "fifty dollars",
-    "$ one hundred": "one hundred dollar",
-    "$ one hundred and forty": "one hundred and forty dollars",
-    "$ one thousand": "one thousand dollars",
-    "$ two thousand": "two thousand dollars",
-    "$ three thousand": "three thousand dollars",
-    "$ six thousand": "six thousand dollars",
-    "$ eight thousand": "eight thousand dollars",
-    "$ ten thousand": "ten thousand dollar",
-    "$ twelve thousand": "twelve thousand dollar",
-    "$ two hundred thousand": "two hundred thousand dollars",
-    "$ one point six billion": "one point six billion dollars",
-    "$ four trilion": "four tillion dollars",
-    "$ five trilion": "five tillion dollar",
-    "# gamergate": "<unk> gamergate",
+    "two \^ five": "two to the power of five",
+    "e \= mc"    : "e equals m c squared",
+    "\$ ten"     : "ten dollar",
+    "\$ forty"   : "forty dollars",
+    "\$ fifty"   : "fifty dollars",
+    "\$ one hundred": "one hundred dollar",
+    "\$ one hundred and forty": "one hundred and forty dollars",
+    "\$ one thousand": "one thousand dollars",
+    "\$ two thousand": "two thousand dollars",
+    "\$ three thousand": "three thousand dollars",
+    "\$ six thousand": "six thousand dollars",
+    "\$ eight thousand": "eight thousand dollars",
+    "\$ ten thousand": "ten thousand dollar",
+    "\$ twelve thousand": "twelve thousand dollar",
+    "\$ two hundred thousand": "two hundred thousand dollars",
+    "\$ one point six billion": "one point six billion dollars",
+    "\$ four trilion": "four tillion dollars",
+    "\$ five trilion": "five tillion dollar",
+    "\# gamergate": "<unk> gamergate",
 }
 
 
@@ -206,7 +224,8 @@ class KaldiTedliumImporter(KaldiDataImporter):
     def strip_text(self, text):
         import re
         text = text.lower()
-        for k, v in sorted(CORRECT_TABLE, key=len, reverse=True).items():
+        for k in sorted(CORRECT_TABLE, key=len, reverse=True):
+            v = CORRECT_TABLE[k]
             while True:
                 out = re.sub(fr"(^|\s){k}($|\s)", fr"\1{v}\2", text)
                 if out == text:
@@ -219,18 +238,20 @@ class KaldiTedliumImporter(KaldiDataImporter):
         #    for m in matches:
         #        s = m.group().replace(' ', '_')
         #        text = text.replace(m.group(), s)
-        text = ' '.join([w for w.strip() in text.strip().split()])
+        text = ' '.join([w.strip() for w in text.strip().split()])
         text = ''.join([c for c in text if c in CHAR_MASK])
         return text
 
 
 def prepare(argv):
     parser = argparse.ArgumentParser(description="Prepare dataset by importing from Kaldi recipe")
+    parser.add_argument('--text-only', default=False, action='store_true', help="if you want to process text only when wavs are already stored")
     parser.add_argument('--rebuild', default=False, action='store_true', help="if you want to rebuild manifest only instead of the overall processing")
     parser.add_argument('target_dir', type=str, help="path to store the processed data")
     args = parser.parse_args(argv)
 
     assert args.target_dir is not None
+    assert not (args.text_only and args.rebuild), "options --text-only and --rebuild cannot together. choose either of them."
 
     log_file = Path(args.target_dir, 'prepare.log').resolve()
     print(f"begins logging to file: {str(log_file)}")
@@ -241,14 +262,18 @@ def prepare(argv):
 
     importer = KaldiTedliumImporter(target_path)
 
-    if not args.rebuild:
-        importer.process("train")
-        importer.process("dev")
-        importer.process("test")
-    else:
+    if args.rebuild:
         importer.rebuild("train")
         importer.rebuild("dev")
         importer.rebuild("test")
+    elif args.text_only:
+        importer.process_text_only("train")
+        importer.process_text_only("dev")
+        importer.process_text_only("test")
+    else:
+        importer.process("train")
+        importer.process("dev")
+        importer.process("test")
 
     logger.info("data preparation finished.")
 
