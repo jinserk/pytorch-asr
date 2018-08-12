@@ -24,29 +24,29 @@ model = argv[0]
 argv.remove(model)
 
 if model == "convnet":
-    from asr import convnet
+    from asr.models import convnet
     convnet.train(argv)
 elif model == "densenet":
-    from asr import densenet
+    from asr.models import densenet
     densenet.train(argv)
 elif model == "densenet_ctc":
-    from asr import densenet_ctc
+    from asr.models import densenet_ctc
     densenet_ctc.train(argv)
 elif model == "deepspeech_ctc":
-    from asr import deepspeech_ctc
+    from asr.models import deepspeech_ctc
     deepspeech_ctc.train(argv)
 elif model == "deepspeech_ce":
-    from asr import deepspeech_ce
+    from asr.models import deepspeech_ce
     deepspeech_ce.train(argv)
 elif model == "resnet_ctc":
-    from asr import resnet_ctc
+    from asr.models import resnet_ctc
     resnet_ctc.train(argv)
 elif model == "resnet_ce":
-    from asr import resnet_ce
+    from asr.models import resnet_ce
     resnet_ce.train(argv)
 elif model == "capsule1":
-    from asr import capsule1
+    from asr.models import capsule1
     capsule1.train(argv)
 elif model == "capsule2":
-    from asr import capsule2
+    from asr.models import capsule2
     capsule2.train(argv)

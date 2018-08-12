@@ -18,12 +18,12 @@ model = argv[0]
 argv.remove(model)
 
 if model == "densenet_ctc":
-    from asr import densenet_ctc
+    from asr.models import densenet_ctc
     densenet_ctc.batch_train(argv)
 elif model == "deepspeech_ctc":
-    from asr import deepspeech_ctc
+    from asr.models import deepspeech_ctc
     deepspeech_ctc.batch_train(argv)
 elif model == "resnet_ctc":
-    from asr import resnet_ctc
+    from asr.models import resnet_ctc
     resnet_ctc.batch_train(argv)
 

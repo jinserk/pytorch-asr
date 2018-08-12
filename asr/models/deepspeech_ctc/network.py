@@ -6,8 +6,8 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-from ..utils import params as p
-from ..utils.misc import Swish, InferenceBatchSoftmax
+from asr.utils import params as p
+from asr.utils.misc import Swish, InferenceBatchSoftmax
 
 
 class SequenceWise(nn.Module):

@@ -18,11 +18,11 @@ dataset = argv[0]
 argv.remove(dataset)
 
 if dataset == "aspire":
-    from asr.dataset import aspire
+    from asr.datasets import aspire
     aspire.prepare(argv)
 elif dataset == "swbd":
-    from asr.dataset import swbd
+    from asr.datasets import swbd
     swbd.prepare(argv)
 elif dataset == "tedlium":
-    from asr.dataset import tedlium
+    from asr.datasets import tedlium
     tedlium.prepare(argv)
