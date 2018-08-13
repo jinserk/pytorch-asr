@@ -1,5 +1,6 @@
 #!python
 import sys
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -13,7 +14,7 @@ from asr.utils import params as p
 
 from asr.kaldi.latgen import LatGenCTCDecoder
 
-from .train import FRAME_REDUCE_FACTOR
+from ..trainer import FRAME_REDUCE_FACTOR
 from .network import *
 
 
@@ -83,7 +84,6 @@ class Predictor:
 
 
 def predict(argv):
-    import argparse
     parser = argparse.ArgumentParser(description="DeepSpeech prediction")
     parser.add_argument('--verbose', default=False, action='store_true', help="set true if you need to check AM output")
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
@@ -93,17 +93,8 @@ def predict(argv):
     parser.add_argument('wav_files', type=str, nargs='+', help="list of wav_files for prediction")
     args = parser.parse_args(argv)
 
-    log_file = Path(args.log_dir, "predict.log").resolve()
-    print(f"begins logging to file: {str(log_file)}")
-    set_logfile(log_file)
-
-    logger.info(f"PyTorch version: {torch.__version__}")
-    logger.info(f"prediction command options: {' '.join(sys.argv)}")
-    args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
-    logger.info(f"args: {' '.join(args_str)}")
-
-    if args.use_cuda:
-        logger.info("using cuda")
+    set_logfile(Path(args.log_dir, "predict.log"))
+    version_log(args)
 
     if args.continue_from is None:
         logger.error("model name is missing: add '--continue-from <model-name>' in options")

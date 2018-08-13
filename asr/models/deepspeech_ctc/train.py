@@ -9,11 +9,11 @@ from warpctc_pytorch import CTCLoss
 
 from asr.utils.dataset import AudioCTCDataset, AudioSubset
 from asr.utils.dataloader import AudioNonSplitDataLoader
-from asr.utils.logger import logger, set_logfile
+from asr.utils.logger import logger, set_logfile, version_log
 from asr.utils import params as p
 from asr.kaldi.latgen import LatGenCTCDecoder
 
-from ..trainer import FRAME_REDUCE_FACTOR, OPTIMIZER_TYPES, Trainer
+from ..trainer import FRAME_REDUCE_FACTOR, OPTIMIZER_TYPES, set_seed, Trainer
 from .network import DeepSpeech
 
 
@@ -38,23 +38,9 @@ def batch_train(argv):
 
     args = parser.parse_args(argv)
 
-    log_file = Path(args.log_dir, "train.log").resolve()
-    print(f"begins logging to file: {str(log_file)}")
-    set_logfile(log_file)
-
-    logger.info(f"PyTorch version: {torch.__version__}")
-    logger.info(f"training command options: {' '.join(sys.argv)}")
-    args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
-    logger.info(f"args: {' '.join(args_str)}")
-
-    if args.use_cuda:
-        logger.info("using cuda")
-
-    if args.seed is not None:
-        torch.manual_seed(args.seed)
-        np.random.seed(args.seed)
-        if args.use_cuda:
-            torch.cuda.manual_seed(args.seed)
+    set_logfile(Path(args.log_dir, "train.log"))
+    version_log(args)
+    set_seed(args.seed)
 
     # prepare trainer object
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
@@ -105,7 +91,6 @@ def batch_train(argv):
 
 
 def train(argv):
-    import argparse
     parser = argparse.ArgumentParser(description="DeepSpeech AM with fully supervised training")
     # for training
     parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
@@ -131,23 +116,9 @@ def train(argv):
 
     args = parser.parse_args(argv)
 
-    log_file = Path(args.log_dir, "train.log").resolve()
-    print(f"begins logging to file: {str(log_file)}")
-    set_logfile(log_file)
-
-    logger.info(f"PyTorch version: {torch.__version__}")
-    logger.info(f"training command options: {' '.join(sys.argv)}")
-    args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
-    logger.info(f"args: {' '.join(args_str)}")
-
-    if args.use_cuda:
-        logger.info("using cuda")
-
-    if args.seed is not None:
-        torch.manual_seed(args.seed)
-        np.random.seed(args.seed)
-        if args.use_cuda:
-            torch.cuda.manual_seed(args.seed)
+    set_logfile(Path(args.log_dir, "train.log"))
+    version_log(args)
+    set_seed(args.seed)
 
     # prepare trainer object
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
@@ -178,7 +149,6 @@ def train(argv):
 
 
 def test(argv):
-    import argparse
     parser = argparse.ArgumentParser(description="DeepSpeech AM testing")
     # for testing
     parser.add_argument('--data-path', default='data/swbd', type=str, help="dataset path to use in training")
@@ -193,19 +163,10 @@ def test(argv):
 
     args = parser.parse_args(argv)
 
-    log_file = Path(args.log_dir, "test.log").resolve()
-    print(f"begins logging to file: {str(log_file)}")
-    set_logfile(log_file)
-
-    logger.info(f"PyTorch version: {torch.__version__}")
-    logger.info(f"testing command options: {' '.join(sys.argv)}")
-    args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
-    logger.info(f"args: {' '.join(args_str)}")
+    set_logfile(Path(args.log_dir, "test.log"))
+    version_log(args)
 
     assert args.continue_from is not None
-
-    if args.use_cuda:
-        logger.info("using cuda")
 
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
     trainer = Trainer(model, **vars(args))

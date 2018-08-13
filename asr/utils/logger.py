@@ -1,5 +1,5 @@
 #!python
-
+import sys
 from pathlib import Path
 import logging
 import torch
@@ -17,7 +17,7 @@ logger.addHandler(chdr)
 
 
 def set_logfile(filename):
-    filepath = Path(filename)
+    filepath = Path(filename).resolve()
     try:
         Path.mkdir(filepath.parent, parents=True, exist_ok=True)
     except OSError:
@@ -27,6 +27,14 @@ def set_logfile(filename):
     fhdr.setLevel(logging.DEBUG)
     fhdr.setFormatter(formatter)
     logger.addHandler(fhdr)
+    print(f"begins logging to file: {str(filepath)}")
+
+
+def version_log(args):
+    logger.info(f"PyTorch version: {torch.__version__}")
+    logger.info(f"command-line options: {' '.join(sys.argv)}")
+    args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
+    logger.info(f"args: {' '.join(args_str)}")
 
 
 class VisdomLogger:

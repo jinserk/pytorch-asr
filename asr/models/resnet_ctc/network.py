@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-from ..utils.misc import Swish, InferenceBatchSoftmax
+from asr.utils.misc import Swish, InferenceBatchSoftmax
 
 
 class BasicBlock(nn.Module):

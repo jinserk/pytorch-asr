@@ -31,6 +31,15 @@ OPTIMIZER_TYPES = set([
 ])
 
 
+def set_seed(seed=None):
+    if seed is not None:
+        logger.info(f"set random seed to {seed}")
+        torch.manual_seed(seed)
+        np.random.seed(seed)
+        if args.use_cuda:
+            torch.cuda.manual_seed(seed)
+
+
 class Trainer:
 
     def __init__(self, model, init_lr=1e-4, max_norm=400, use_cuda=False,
@@ -73,6 +82,7 @@ class Trainer:
         # setup model
         self.model = model
         if self.use_cuda:
+            logger.info("using cuda")
             self.model.cuda()
 
         # setup loss

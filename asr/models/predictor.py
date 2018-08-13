@@ -27,6 +27,7 @@ class Predictor:
         assert continue_from is not None
         self.model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
         if self.use_cuda:
+            logger.info("using cuda")
             self.model.cuda()
         self.load(continue_from)
 
