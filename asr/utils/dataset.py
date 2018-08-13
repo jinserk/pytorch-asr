@@ -10,6 +10,7 @@ from scipy.signal import tukey
 import sox
 
 import torch
+import torch.nn as nn
 from torch._C import _set_worker_signal_handlers
 from torch.utils.data import Dataset, Subset
 import torchaudio
@@ -115,22 +116,21 @@ class Spectrogram(object):
 
 # transformer: frame splitter
 class FrameSplitter(object):
+    """ split C x H x W frames to M x C x H x U where U is unit frames in time
+        padding and stride are only applied to W, the time axis
+    """
 
-    def __init__(self, frame_margin, unit_frames):
-        self.frame_margin = frame_margin
-        self.unit_frames = unit_frames
-        self.half = (self.unit_frames - 1) // 2
+    def __init__(self, unit_frames, padding = 0, stride = 1):
         assert unit_frames % 2 == 1, "unit_frames should be odd integer"
-        assert frame_margin >= 0, "frame_margin should be >= 0"
-        assert self.half <= frame_margin, "frame_margin is too small for the unit_frames"
+        self.unit_frames = unit_frames
+        self.pad = nn.ZeroPad2d((padding, padding, 0, 0))
+        self.stride = stride
 
     def __call__(self, tensor):
         with torch.no_grad():
-            bins = [(x - self.half, self.unit_frames) for x in
-                    range(self.frame_margin, tensor.size(2) - self.frame_margin)]
-            frames = [tensor.narrow(2, s, l).clone() for s, l in bins]
-            #c, w, h = frames[0].shape
-            #frames = [x.view(c * w * h) for x in frames]
+            tensor = self.pad(tensor.unsqueeze(dim=0))
+            bins = [(x, self.unit_frames) for x in range(0, tensor.size(3)-self.unit_frames, self.stride)]
+            frames = torch.cat([tensor.narrow(3, s, l).clone() for s, l in bins])
             return frames
 
 
