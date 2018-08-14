@@ -19,11 +19,17 @@ from .logger import logger
 from . import params as p
 
 
+WIN_SAMP_SIZE = p.SAMPLE_RATE * p.WINDOW_SIZE
+WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
+#SAMPLE_MARGIN = WIN_SAMP_SHIFT * p.FRAME_MARGIN  # samples
+SAMPLE_MARGIN = 0
+
+
 # transformer: resampling and augmentation
 class Augment(object):
 
-    def __init__(self, resample, sample_rate, tempo, tempo_range,
-                 gain, gain_range, noise, noise_range):
+    def __init__(self, resample, sample_rate, tempo, tempo_range, gain, gain_range,
+                 noise, noise_range, offset, offset_range, padding, num_padding):
         self.resample = resample
         self.sample_rate = sample_rate
         self.tempo = tempo
@@ -33,6 +39,10 @@ class Augment(object):
         self.gain_range = gain_range
         self.noise = noise
         self.noise_range = noise_range
+        self.offset = offset
+        self.offset_range=offset_range
+        self.padding = padding
+        self.num_padding=num_padding
 
     def __call__(self, wav_file, tar_file=None):
         if not Path(wav_file).exists():
@@ -43,7 +53,7 @@ class Augment(object):
         tfm.set_globals(verbosity=0)
 
         if self.resample:
-            tfm.rate(self.sample_rate)
+            tfm.rate(self.sample_rate, quality='h')
 
         if self.tempo:
             tempo = np.random.uniform(*self.tempo_range)
@@ -79,6 +89,15 @@ class Augment(object):
         wav = wav.astype(np.float32)
         wav_energy = np.sqrt(np.sum(np.power(wav, 2)) / wav.size)
         wav = gain * wav / wav_energy
+
+        # sample-domain padding
+        if self.padding:
+            wav = np.pad(wav, self.num_padding, mode='constant')
+
+        # sample-domain offset
+        if self.offset:
+            offset = np.random.randint(*self.offset_range)
+            wav = np.roll(wav, offset, axis=0)
 
         if self.noise:
             snr = 10.0 ** (np.random.uniform(*self.noise_range) / 10.0)
@@ -119,16 +138,19 @@ class FrameSplitter(object):
     """ split C x H x W frames to M x C x H x U where U is unit frames in time
         padding and stride are only applied to W, the time axis
     """
-
     def __init__(self, unit_frames, padding = 0, stride = 1):
         assert unit_frames % 2 == 1, "unit_frames should be odd integer"
         self.unit_frames = unit_frames
+        self.padding = padding
         self.pad = nn.ZeroPad2d((padding, padding, 0, 0))
         self.stride = stride
 
     def __call__(self, tensor):
         with torch.no_grad():
-            tensor = self.pad(tensor.unsqueeze(dim=0))
+            tensor = tensor.unsqueeze(dim=0)
+            # frame-domain padding
+            if self.padding > 0:
+                tensor = self.pad(tensor)
             bins = [(x, self.unit_frames) for x in range(0, tensor.size(3)-self.unit_frames, self.stride)]
             frames = torch.cat([tensor.narrow(3, s, l).clone() for s, l in bins])
             return frames
@@ -149,65 +171,57 @@ class Int2OneHot(object):
         return one_hots
 
 
-class SplitDataset(Dataset):
+class SplitTransformer(torchaudio.transforms.Compose):
 
     def __init__(self,
-                 transform=None, target_transform=None,
-                 resample=False, sample_rate=p.SAMPLE_RATE,
-                 tempo=False, tempo_range=p.TEMPO_RANGE,
-                 gain=False, gain_range=p.GAIN_RANGE,
-                 noise=False, noise_range=p.NOISE_RANGE,
+                 resample=True, sample_rate=p.SAMPLE_RATE,
+                 tempo=True, tempo_range=p.TEMPO_RANGE,
+                 gain=True, gain_range=p.GAIN_RANGE,
+                 noise=True, noise_range=p.NOISE_RANGE,
+                 offset=True,
+                 padding=True,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
-                 frame_margin=0, unit_frames=p.HEIGHT, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if transform is None:
-            self.transform = torchaudio.transforms.Compose([
-                Augment(resample=resample, sample_rate=sample_rate,
-                        tempo=tempo, tempo_range=tempo_range,
-                        gain=gain, gain_range=gain_range,
-                        noise=noise, noise_range=noise_range),
-                Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
-                            window_size=window_size, nfft=nfft),
-                FrameSplitter(frame_margin=frame_margin, unit_frames=unit_frames),
-            ])
-        else:
-            self.transform = transform
-        self.target_transform = target_transform
-        #if target_transform is None:
-        #    self.target_transform = Int2OneHot(p.NUM_LABELS)
-        #else:
-        #    self.target_transform = target_transform
-
-
-class NonSplitDataset(Dataset):
-
-    def __init__(self,
-                 transform=None, target_transform=None,
-                 resample=False, sample_rate=p.SAMPLE_RATE,
-                 tempo=False, tempo_range=p.TEMPO_RANGE,
-                 gain=False, gain_range=p.GAIN_RANGE,
-                 noise=False, noise_range=p.NOISE_RANGE,
-                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
+                 unit_frames=p.WIDTH, stride=2,
                  *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if transform is None:
-            self.transform = torchaudio.transforms.Compose([
-                Augment(resample=resample, sample_rate=sample_rate,
-                        tempo=tempo, tempo_range=tempo_range,
-                        gain=gain, gain_range=gain_range,
-                        noise=noise, noise_range=noise_range),
-                Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
-                            window_size=window_size, nfft=nfft),
-            ])
-        else:
-            self.transform = transform
-        self.target_transform = target_transform
+        offset_range = (0, stride * WIN_SAMP_SHIFT) if offset else (0, 0)
+        num_padding = int((p.WIDTH // 2 - 1) * WIN_SAMP_SHIFT) if padding else 0
+        super().__init__([
+            Augment(resample=resample, sample_rate=sample_rate,
+                    tempo=tempo, tempo_range=tempo_range,
+                    gain=gain, gain_range=gain_range,
+                    noise=noise, noise_range=noise_range,
+                    offset=offset, offset_range=offset_range,
+                    padding=padding, num_padding=num_padding),
+            Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
+                        window_size=window_size, nfft=nfft),
+            FrameSplitter(unit_frames=unit_frames, padding=0, stride=stride),
+        ])
 
 
-WIN_SAMP_SIZE = p.SAMPLE_RATE * p.WINDOW_SIZE
-WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
-#SAMPLE_MARGIN = WIN_SAMP_SHIFT * p.FRAME_MARGIN  # samples
-SAMPLE_MARGIN = 0
+class NonSplitTransformer(torchaudio.transforms.Compose):
+
+    def __init__(self,
+                 resample=True, sample_rate=p.SAMPLE_RATE,
+                 tempo=True, tempo_range=p.TEMPO_RANGE,
+                 gain=True, gain_range=p.GAIN_RANGE,
+                 noise=True, noise_range=p.NOISE_RANGE,
+                 offset=True,
+                 padding=True,
+                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
+                 stride=1,
+                 *args, **kwargs):
+        offset_range = (0, stride * WIN_SAMP_SHIFT) if offset else (0, 0)
+        num_padding = int((p.WIDTH // 2 - 1) * WIN_SAMP_SHIFT) if padding else 0
+        super().__init__([
+            Augment(resample=resample, sample_rate=sample_rate,
+                    tempo=tempo, tempo_range=tempo_range,
+                    gain=gain, gain_range=gain_range,
+                    noise=noise, noise_range=noise_range,
+                    offset=offset, offset_range=offset_range,
+                    padding=padding, num_padding=num_padding),
+            Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
+                        window_size=window_size, nfft=nfft),
+        ])
 
 
 def _smp2frm(samples):
@@ -251,32 +265,107 @@ def _text_to_labels(labeler, text, sil_prop=(0.2, 0.8)):
     return labels
 
 
-class AudioCTCDataset(NonSplitDataset):
+class TrainDataset(Dataset):
 
     def __init__(self, labeler, manifest_file, *args, **kwargs):
         self.labeler = labeler
         self.manifest_file = Path(manifest_file).resolve()
-        super().__init__(tempo=True, gain=True, noise=True, *args, **kwargs)
+        super().__init__(*args, **kwargs)
         self.entries, self.entry_frames = _load_manifest(self.manifest_file)
 
     def __getitem__(self, index):
         uttid, wav_file, samples, txt_file = self.entries[index]
         # read and transform wav file
-        if self.transform is not None:
-            tensors = self.transform(wav_file)
-        # read ctc file
-        #ctc_file = phn_file.replace('phn', 'ctc')
-        #targets = np.loadtxt(ctc_file, dtype="int", ndmin=1)
-        #targets = torch.IntTensor(targets)
+        if self.transformer is not None:
+            tensors = self.transformer(wav_file)
         # read txt file
         with open(txt_file, 'r') as f:
             text = f.read()
         targets = _text_to_labels(self.labeler, text)
         targets = torch.IntTensor(targets)
+        if self.target_transformer is not None:
+            targets = self.target_transformer(targets)
         return tensors, targets, wav_file, text
 
     def __len__(self):
         return len(self.entries)
+
+
+class PredictDataset(Dataset):
+
+    def __init__(self, wav_files, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.entries = wav_files
+
+    def __getitem__(self, index):
+        wav_file = self.entries[index]
+        # read and transform wav file
+        if self.transformer is not None:
+            tensors = self.transformer(wav_file)
+        return tensors, wav_file
+
+    def __len__(self):
+        return len(self.entries)
+
+
+class SplitTrainDataset(TrainDataset):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if 'transformer' in kwargs:
+            self.transformer = kwargs['transformer']
+        else:
+            self.transformer = SplitTransformer(*args, **kwargs)
+        if 'target_transformer' in kwargs:
+            self.target_transformer = kwargs['target_transformer']
+        else:
+            self.target_transformer = None
+
+
+class NonSplitTrainDataset(TrainDataset):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if 'transformer' in kwargs:
+            self.transformer = kwargs['transformer']
+        else:
+            self.transformer = NonSplitTransformer(*args, **kwargs)
+        if 'target_transformer' in kwargs:
+            self.target_transformer = kwargs['target_transformer']
+        else:
+            self.target_transformer = None
+
+
+class SplitPredictDataset(PredictDataset):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if 'transformer' in kwargs:
+            self.transformer = kwargs['transformer']
+        else:
+            self.transformer = SplitTransformer(tempo=False, gain=False,
+                                                noise=True, noise_range=(-20, -20),
+                                                offset=False, padding=False, *args, **kwargs)
+        if 'target_transformer' in kwargs:
+            self.target_transformer = kwargs['target_transformer']
+        else:
+            self.target_transformer = None
+
+
+class NonSplitPredictDataset(PredictDataset):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if 'transformer' in kwargs:
+            self.transformer = kwargs['transformer']
+        else:
+            self.transformer = NonSplitTransformer(tempo=False, gain=False,
+                                                   noise=True, noise_range=(-20, -20),
+                                                   offset=False, padding=False, *args, **kwargs)
+        if 'target_transformer' in kwargs:
+            self.target_transformer = kwargs['target_transformer']
+        else:
+            self.target_transformer = None
 
 
 class AudioSubset(Subset):
@@ -297,32 +386,15 @@ class AudioSubset(Subset):
         return selected
 
 
-class PredictDataset(NonSplitDataset):
-
-    def __init__(self, wav_files, *args, **kwargs):
-        super().__init__(noise=True, noise_range=(-20, -20), *args, **kwargs)
-        self.entries = wav_files
-
-    def __getitem__(self, index):
-        wav_file = self.entries[index]
-        # read and transform wav file
-        if self.transform is not None:
-            tensors = self.transform(wav_file)
-        return tensors, wav_file
-
-    def __len__(self):
-        return len(self.entries)
-
-
 if __name__ == "__main__":
     # test Augment
-    if False:
-        transformer = Augment(resample=True, sample_rate=p.SAMPLE_RATE)
-        wav_file = Path("/home/jbaik/src/enf/stt/test/conan1-8k.wav")
-        audio = transformer(wav_file)
-
-    # test Spectrogram
     if True:
+        transformer = SplitTransformer()
+        wav_file = Path("~/ics-asr/temp/conan1-8k.wav")
+        audio = transformer(wav_file)
+        print(audio.shape)
+    # test Spectrogram
+    else:
         import matplotlib
         matplotlib.use('TkAgg')
         matplotlib.interactive(True)

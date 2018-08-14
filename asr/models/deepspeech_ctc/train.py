@@ -7,8 +7,8 @@ import torch
 from torch.utils.data.dataset import ConcatDataset
 from warpctc_pytorch import CTCLoss
 
-from asr.utils.dataset import AudioCTCDataset, AudioSubset
-from asr.utils.dataloader import AudioNonSplitDataLoader
+from asr.utils.dataset import NonSplitTrainDataset, AudioSubset
+from asr.utils.dataloader import NonSplitTrainDataLoader
 from asr.utils.logger import logger, set_logfile, version_log
 from asr.utils import params as p
 from asr.kaldi.latgen import LatGenCTCDecoder
@@ -48,30 +48,30 @@ def batch_train(argv):
     labeler = trainer.decoder.labeler
 
     train_datasets = [
-        AudioCTCDataset(labeler=labeler, manifest_file="data/aspire/train.csv"),
-        AudioCTCDataset(labeler=labeler, manifest_file="data/aspire/dev.csv"),
-        AudioCTCDataset(labeler=labeler, manifest_file="data/aspire/test.csv"),
-        AudioCTCDataset(labeler=labeler, manifest_file="data/swbd/train.csv"),
+        NonSplitTrainDataset(labeler=labeler, manifest_file="data/aspire/train.csv"),
+        NonSplitTrainDataset(labeler=labeler, manifest_file="data/aspire/dev.csv"),
+        NonSplitTrainDataset(labeler=labeler, manifest_file="data/aspire/test.csv"),
+        NonSplitTrainDataset(labeler=labeler, manifest_file="data/swbd/train.csv"),
     ]
 
     datasets = {
         "train3" : ConcatDataset([AudioSubset(d, max_len=3) for d in train_datasets]),
         "train5" : ConcatDataset([AudioSubset(d, max_len=5) for d in train_datasets]),
         "train10": ConcatDataset([AudioSubset(d, max_len=10) for d in train_datasets]),
-        "dev"    : AudioCTCDataset(labeler=labeler, manifest_file="data/swbd/eval2000.csv"),
-        "test"   : AudioCTCDataset(labeler=labeler, manifest_file="data/swbd/rt03.csv"),
+        "dev"    : NonSplitTrainDataset(labeler=labeler, manifest_file="data/swbd/eval2000.csv"),
+        "test"   : NonSplitTrainDataset(labeler=labeler, manifest_file="data/swbd/rt03.csv"),
     }
     dataloaders = {
-        "train3" : AudioNonSplitDataLoader(datasets["train3"], batch_size=32, num_workers=32, shuffle=True,
-                                           pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
-        "train5" : AudioNonSplitDataLoader(datasets["train5"], batch_size=32, num_workers=32, shuffle=True,
-                                           pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
-        "train10": AudioNonSplitDataLoader(datasets["train10"], batch_size=32, num_workers=32, shuffle=True,
-                                           pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
-        "dev"    : AudioNonSplitDataLoader(datasets["dev"], batch_size=16, num_workers=16, shuffle=True,
-                                           pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
-        "test"   : AudioNonSplitDataLoader(datasets["test"], batch_size=16, num_workers=16, shuffle=True,
-                                           pin_memory=args.use_cuda, frame_shift=FRAME_REDUCE_FACTOR),
+        "train3" : NonSplitTrainDataLoader(datasets["train3"], batch_size=32, num_workers=32,
+                                           shuffle=True, pin_memory=args.use_cuda),
+        "train5" : NonSplitTrainDataLoader(datasets["train5"], batch_size=32, num_workers=32,
+                                           shuffle=True, pin_memory=args.use_cuda),
+        "train10": NonSplitTrainDataLoader(datasets["train10"], batch_size=32, num_workers=32,
+                                           shuffle=True, pin_memory=args.use_cuda),
+        "dev"    : NonSplitTrainDataLoader(datasets["dev"], batch_size=16, num_workers=16,
+                                           shuffle=True, pin_memory=args.use_cuda),
+        "test"   : NonSplitTrainDataLoader(datasets["test"], batch_size=16, num_workers=16,
+                                           shuffle=True, pin_memory=args.use_cuda),
     }
 
     # run inference for a certain number of epochs
@@ -126,18 +126,18 @@ def train(argv):
     labeler = trainer.decoder.labeler
 
     data_opts = {
-        "train" : (f"{args.data_path}/train.csv", 0, FRAME_REDUCE_FACTOR),
-        "dev"   : (f"{args.data_path}/dev.csv", 0, 0),
-        "test"  : (f"{args.data_path}/test.csv", 0, 0),
+        "train" : (f"{args.data_path}/train.csv", 0),
+        "dev"   : (f"{args.data_path}/dev.csv", 0),
+        "test"  : (f"{args.data_path}/test.csv", 0),
     }
     datasets, dataloaders = dict(), dict()
     for k, (v) in data_opts.items():
-        manifest_file, data_size, frame_shift = v
-        datasets[k] = AudioSubset(AudioCTCDataset(labeler=labeler, manifest_file=manifest_file),
+        manifest_file, data_size = v
+        datasets[k] = AudioSubset(NonSplitTrainDataset(labeler=labeler, manifest_file=manifest_file),
                                   data_size=data_size, min_len=args.min_len, max_len=args.max_len)
-        dataloaders[k] = AudioNonSplitDataLoader(datasets[k], batch_size=args.batch_size,
+        dataloaders[k] = NonSplitTrainDataLoader(datasets[k], batch_size=args.batch_size,
                                                  num_workers=args.num_workers, shuffle=True,
-                                                 pin_memory=args.use_cuda, frame_shift=frame_shift)
+                                                 pin_memory=args.use_cuda)
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
@@ -173,10 +173,10 @@ def test(argv):
     labeler = trainer.decoder.labeler
 
     manifest = f"{args.data_path}/eval2000.csv"
-    dataset = AudioSubset(AudioCTCDataset(labeler=labeler, manifest_file=manifest),
+    dataset = AudioSubset(NonSplitTrainDataset(labeler=labeler, manifest_file=manifest),
                           max_len=args.max_len, min_len=args.min_len)
-    dataloader = AudioNonSplitDataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,
-                                         shuffle=True, pin_memory=args.use_cuda, frame_shift=0)
+    dataloader = NonSplitTrainDataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,
+                                         shuffle=True, pin_memory=args.use_cuda)
 
     trainer.test(dataloader)
 

@@ -6,14 +6,11 @@ from tqdm import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data.dataset import ConcatDataset
 import torchvision.utils as tvu
 from warpctc_pytorch import CTCLoss
 import torchnet as tnt
 import Levenshtein as Lev
 
-from asr.utils.dataset import AudioCTCDataset, AudioSubset
-from asr.utils.dataloader import AudioNonSplitDataLoader
 from asr.utils.logger import logger, VisdomLogger, TensorboardLogger
 from asr.utils.misc import onehot2int, remove_duplicates, get_model_file_path
 from asr.utils.lr_scheduler import CosineAnnealingWithRestartsLR
@@ -118,6 +115,33 @@ class Trainer:
         for ckpt in Path(self.log_dir).rglob(f"*_epoch_{epoch:03d}_ckpt_*"):
             ckpt.unlink()
 
+    def unit_train(self, data):
+        xs, ys, frame_lens, label_lens, filenames, _ = data
+        try:
+            if self.use_cuda:
+                xs = xs.cuda()
+            ys_hat = self.model(xs)
+            ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
+            frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
+            #torch.set_printoptions(threshold=5000000)
+            #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
+            #print(onehot2int(ys_hat).squeeze(), ys)
+            loss = self.loss(ys_hat, ys, frame_lens, label_lens)
+            loss_value = loss.item()
+            inf = float("inf")
+            if loss_value == inf or loss_value == -inf:
+                logger.warning("received an inf loss, setting loss value to 0")
+                loss_value = 0
+            self.optimizer.zero_grad()
+            loss.backward()
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
+            self.optimizer.step()
+            del loss
+        except Exception as e:
+            print(e)
+            print(filenames, frame_lens, label_lens)
+        return loss_value
+
     def train_epoch(self, data_loader):
         self.model.train()
         num_ckpt = len(data_loader) // 10
@@ -130,30 +154,7 @@ class Trainer:
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training")
         for i, (data) in t:
-            xs, ys, frame_lens, label_lens, filenames, _ = data
-            try:
-                if self.use_cuda:
-                    xs = xs.cuda()
-                ys_hat = self.model(xs)
-                ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
-                frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
-                #torch.set_printoptions(threshold=5000000)
-                #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
-                #print(onehot2int(ys_hat).squeeze(), ys)
-                loss = self.loss(ys_hat, ys, frame_lens, label_lens)
-                loss_value = loss.item()
-                inf = float("inf")
-                if loss_value == inf or loss_value == -inf:
-                    logger.warning("received an inf loss, setting loss value to 0")
-                    loss_value = 0
-                self.optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
-                self.optimizer.step()
-                del loss
-            except Exception as e:
-                print(e)
-                print(filenames, frame_lens, label_lens)
+            loss_value = self.unit_train(data)
             meter_loss.add(loss_value)
             t.set_description(f"training (loss: {meter_loss.value()[0]:.3f})")
             t.refresh()

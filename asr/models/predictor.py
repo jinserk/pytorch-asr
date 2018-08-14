@@ -5,27 +5,25 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ..utils.dataset import PredictDataset
-from ..utils.dataloader import PredictDataLoader
-from ..utils.logger import logger, set_logfile
-from ..utils.misc import onehot2int, remove_duplicates
-from ..utils import params as p
+from asr.utils.logger import logger, set_logfile
+from asr.utils.misc import onehot2int, remove_duplicates
+from asr.utils import params as p
 
-from ..kaldi.latgen import LatGenCTCDecoder
+from asr.kaldi.latgen import LatGenCTCDecoder
 
-from .train import FRAME_REDUCE_FACTOR
-from .network import *
+from .trainer import FRAME_REDUCE_FACTOR
 
 
 class Predictor:
 
-    def __init__(self, use_cuda=False, continue_from=None, verbose=False, *args, **kwargs):
+    def __init__(self, model, use_cuda=False, continue_from=None, verbose=False,
+                 *args, **kwargs):
+        assert continue_from is not None
         self.use_cuda = use_cuda
         self.verbose = verbose
 
         # load from args
-        assert continue_from is not None
-        self.model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
+        self.model = model
         if self.use_cuda:
             logger.info("using cuda")
             self.model.cuda()
@@ -81,44 +79,6 @@ class Predictor:
         else:
             states = torch.load(file_path, map_location='cuda:0')
         self.model.load_state_dict(states["model"])
-
-
-def predict(argv):
-    import argparse
-    parser = argparse.ArgumentParser(description="DeepSpeech prediction")
-    parser.add_argument('--verbose', default=False, action='store_true', help="set true if you need to check AM output")
-    parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
-    parser.add_argument('--batch-size', default=8, type=int, help="number of simultaneous decoding")
-    parser.add_argument('--log-dir', default='./logs_deepspeech_ctc', type=str, help="filename for logging the outputs")
-    parser.add_argument('--continue-from', type=str, help="model file path to make continued from")
-    parser.add_argument('wav_files', type=str, nargs='+', help="list of wav_files for prediction")
-    args = parser.parse_args(argv)
-
-    log_file = Path(args.log_dir, "predict.log").resolve()
-    print(f"begins logging to file: {str(log_file)}")
-    set_logfile(log_file)
-
-    logger.info(f"PyTorch version: {torch.__version__}")
-    logger.info(f"prediction command options: {' '.join(sys.argv)}")
-    args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
-    logger.info(f"args: {' '.join(args_str)}")
-
-    if args.use_cuda:
-        logger.info("using cuda")
-
-    if args.continue_from is None:
-        logger.error("model name is missing: add '--continue-from <model-name>' in options")
-        #parser.print_help()
-        sys.exit(1)
-
-    predictor = Predictor(**vars(args))
-
-    dataset = PredictDataset(args.wav_files)
-    data_loader = PredictDataLoader(dataset=dataset, batch_size=args.batch_size,
-                                    pin_memory=args.use_cuda)
-
-    # run prediction
-    predictor.decode(data_loader)
 
 
 if __name__ == "__main__":

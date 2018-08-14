@@ -6,41 +6,55 @@ from pathlib import Path
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from torch.utils.data.sampler import RandomSampler, BatchSampler, SequentialSampler
 import torchaudio
 
 from .logger import logger
 from . import params as p
 
 
-class NonSplitCollateFn(object):
+class SplitTrainCollateFn(object):
 
-    def __init__(self, frame_shift=0):
-        self.frame_shift = frame_shift
+    def __call__(self, batch):
+        tensors = list()
+        targets = list()
+        tensor_lens = list()
+        target_lens = list()
+        filenames = list()
+        texts = list()
+        for tensor, target, filename, text in batch:
+            tensors.append(tensor)
+            targets.append(target)
+            tensor_lens.append(tensor.size(0))
+            target_lens.append(target.size(0))
+            filenames.append(filename)
+            texts.append(text)
+        tensors = torch.cat(tensors)
+        targets = torch.cat(targets)
+        tensor_lens = torch.IntTensor(tensor_lens)
+        target_lens = torch.IntTensor(target_lens)
+        return tensors, targets, tensor_lens, target_lens, filenames, texts
+
+
+class SplitTrainDataLoader(DataLoader):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(collate_fn=SplitTrainCollateFn(), *args, **kwargs)
+
+
+class NonSplitTrainCollateFn(object):
 
     def __call__(self, batch):
         batch_size = len(batch)
         longest_tensor = max(batch, key=lambda x: x[0].size(2))[0]
-        #shape = (*tuple(longest_tensor.shape)[:-1], 2000)
-        #longest_target = max(batch, key=lambda x: x[1].size(0))[1]
-        #tensors = torch.zeros(batch_size, *shape)
         tensors = torch.zeros(batch_size, *longest_tensor.shape)
-        targets = []
-        tensor_lens = []
-        target_lens = []
-        filenames = []
-        texts = []
+        targets = list()
+        tensor_lens = list()
+        target_lens = list()
+        filenames = list()
+        texts = list()
         for i in range(batch_size):
             tensor, target, filename, text = batch[i]
-            if self.frame_shift > 0:
-                offset = random.randint(0, self.frame_shift)
-                if offset == 0:
-                    tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
-                else:
-                    tensors[i].narrow(2, 0, offset).copy_(tensor[:, :, -offset:])
-                    tensors[i].narrow(2, 0, tensor.size(2)-offset).copy_(tensor[:, :, :-offset])
-            else:
-                tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
+            tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
             targets.append(target)
             tensor_lens.append(tensor.size(2))
             target_lens.append(target.size(0))
@@ -52,36 +66,42 @@ class NonSplitCollateFn(object):
         return tensors, targets, tensor_lens, target_lens, filenames, texts
 
 
-class AudioSplitDataLoader(DataLoader):
+class NonSplitTrainDataLoader(DataLoader):
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    #def __iter__(self):
-    #    return AudioDataLoaderIter(self)
+        super().__init__(collate_fn=NonSplitTrainCollateFn(), *args, **kwargs)
 
 
-class AudioNonSplitDataLoader(DataLoader):
+class SplitPredictCollateFn(object):
+
+    def __call__(self, batch):
+        tensors = list()
+        tensor_lens = list()
+        filenames = list()
+        for tensor, filename in batch:
+            tensors.append(tensor)
+            tensor_lens.append(tensor.size(0))
+            filenames.append(filename)
+        tensors = torch.cat(tensors)
+        tensor_lens = torch.IntTensor(tensor_lens)
+        return tensors, tensor_lens, filenames
+
+
+class SplitPredictDataLoader(DataLoader):
 
     def __init__(self, *args, **kwargs):
-        if "frame_shift" in kwargs:
-            frame_shift = kwargs["frame_shift"]
-            del(kwargs["frame_shift"])
-        else:
-            frame_shift = 0
-
-        collate_fn = NonSplitCollateFn(frame_shift)
-        super().__init__(collate_fn=collate_fn, *args, **kwargs)
+        kwargs['shuffle'] = False
+        super().__init__(collate_fn=SplitPredictCollateFn(), *args, **kwargs)
 
 
-class PredictCollateFn(object):
+class NonSplitPredictCollateFn(object):
 
     def __call__(self, batch):
         batch_size = len(batch)
         longest_tensor = max(batch, key=lambda x: x[0].size(2))[0]
         tensors = torch.zeros(batch_size, *longest_tensor.shape)
-        tensor_lens = []
-        filenames = []
+        tensor_lens = list()
+        filenames = list()
         for i in range(batch_size):
             tensor, filename = batch[i]
             tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
@@ -91,11 +111,11 @@ class PredictCollateFn(object):
         return tensors, tensor_lens, filenames
 
 
-class PredictDataLoader(DataLoader):
+class NonSplitPredictDataLoader(DataLoader):
 
     def __init__(self, *args, **kwargs):
         kwargs['shuffle'] = False
-        super().__init__(collate_fn=PredictCollateFn(), *args, **kwargs)
+        super().__init__(collate_fn=NonSplitPredictCollateFn(), *args, **kwargs)
 
 
 def test_plot():
@@ -126,31 +146,6 @@ def test_plot():
         if i == 2:
             break
     #plt.close('all')
-
-
-if __name__ == "__main__":
-    # test Augment
-    if False:
-        transformer = Augment(resample=True, sample_rate=p.SAMPLE_RATE)
-        wav_file = Path("/home/jbaik/src/enf/stt/test/conan1-8k.wav")
-        audio = transformer(wav_file)
-
-    # test Spectrogram
-    if True:
-        import matplotlib
-        matplotlib.use('TkAgg')
-        matplotlib.interactive(True)
-        import matplotlib.pyplot as plt
-
-        nperseg = int(p.SAMPLE_RATE * p.WINDOW_SIZE)
-        noverlap = int(p.SAMPLE_RATE * (p.WINDOW_SIZE - p.WINDOW_SHIFT))
-
-        wav_file = Path("../data/aspire/000/fe_03_00047-A-025005-025135.wav")
-        audio, _ = torchaudio.load(wav_file)
-
-        # pyplot specgram
-        audio = torch.squeeze(audio)
-        fig = plt.figure(0)
 
 
 if __name__ == "__main__":
