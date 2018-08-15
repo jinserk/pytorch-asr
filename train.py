@@ -12,6 +12,7 @@ models = set([
     "deepspeech_ce",
     "resnet_ctc",
     "resnet_ce",
+    "resnet_split",
     "capsule1",
     "capsule2",
 ])
@@ -44,6 +45,9 @@ elif model == "resnet_ctc":
 elif model == "resnet_ce":
     from asr.models import resnet_ce
     resnet_ce.train(argv)
+elif model == "resnet_split":
+    from asr.models import resnet_split
+    resnet_split.train(argv)
 elif model == "capsule1":
     from asr.models import capsule1
     capsule1.train(argv)

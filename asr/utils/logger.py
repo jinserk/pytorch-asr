@@ -41,8 +41,8 @@ class VisdomLogger:
 
     def __init__(self, host='127.0.0.1', port=8097, env='main'):
         from visdom import Visdom
+        logger.info(f"using visdom on http://{host}:{port} env={env}")
         self.viz = Visdom(server=f"http://{host}", port=port, env=env)
-
         self.windows = dict()
 
     def add_plot(self, title, **kwargs):
@@ -66,6 +66,7 @@ class VisdomLogger:
 class TensorboardLogger:
 
     def __init__(self, log_dir):
+        logger.info("using tensorboard on --logdir {log_dir}")
         log_path = Path(log_dir)
         try:
             Path.mkdir(log_path, parents=True, exist_ok=True)

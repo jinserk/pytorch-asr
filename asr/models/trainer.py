@@ -58,11 +58,9 @@ class Trainer:
         if visdom:
             try:
                 env = str(Path(log_dir).name)
-                logger.info(f"using visdom on {visdom_host}:{visdom_port}/{env}")
                 self.vlog = VisdomLogger(host=visdom_host, port=visdom_port, env=env)
             except:
                 logger.info("error to use visdom")
-                self.vlog = None
         if self.vlog is not None:
             self.vlog.add_plot(title='loss', xlabel='epoch')
 
@@ -70,11 +68,10 @@ class Trainer:
         self.tlog = None
         if tensorboard:
             try:
-                logger.info("using tensorboard")
-                self.tlog = TensorboardLogger(Path(log_dir, 'tensorboard'))
+                env = str(Path(log_dir, 'tensorboard').resolve)
+                self.tlog = TensorboardLogger(env)
             except:
                 logger.info("error to use tensorboard")
-                self.tlog = None
 
         # setup model
         self.model = model
@@ -144,8 +141,8 @@ class Trainer:
 
     def train_epoch(self, data_loader):
         self.model.train()
-        num_ckpt = len(data_loader) // 10
-        meter_loss = tnt.meter.MovingAverageValueMeter(len(data_loader) // 100)
+        num_ckpt = int(np.ceil(len(data_loader) / 10))
+        meter_loss = tnt.meter.MovingAverageValueMeter(len(data_loader) // 100 + 1)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
         if self.lr_scheduler is not None:
@@ -187,6 +184,20 @@ class Trainer:
         self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
         self.__remove_ckpt_files(self.epoch-1)
 
+    def unit_validate(self, data):
+        xs, ys, frame_lens, label_lens, filenames, _ = data
+        if self.use_cuda:
+            xs = xs.cuda()
+        ys_hat = self.model(xs)
+        # convert likes to ctc labels
+        frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
+        hyps = [onehot2int(yh[:s]).squeeze() for yh, s in zip(ys_hat, frame_lens)]
+        hyps = [remove_duplicates(h, blank=0) for h in hyps]
+        # slice the targets
+        pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(label_lens, dim=0)))
+        refs = [ys[s:l] for s, l in zip(pos[:-1], pos[1:])]
+        return hyps, refs
+
     def validate(self, data_loader):
         "validate with label error rate by the edit distance between hyps and refs"
         self.model.eval()
@@ -194,17 +205,7 @@ class Trainer:
             N, D = 0, 0
             t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating")
             for i, (data) in t:
-                xs, ys, frame_lens, label_lens, filenames, texts = data
-                if self.use_cuda:
-                    xs = xs.cuda()
-                ys_hat = self.model(xs)
-                # convert likes to ctc labels
-                frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
-                hyps = [onehot2int(yh[:s]).squeeze() for yh, s in zip(ys_hat, frame_lens)]
-                hyps = [remove_duplicates(h, blank=0) for h in hyps]
-                # slice the targets
-                pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(label_lens, dim=0)))
-                refs = [ys[s:l] for s, l in zip(pos[:-1], pos[1:])]
+                hyps, refs = self.unit_validate(data)
                 # calculate ler
                 N += self.edit_distance(refs, hyps)
                 D += sum(len(r) for r in refs)
@@ -213,6 +214,23 @@ class Trainer:
                 t.refresh()
             logger.info(f"validating at epoch {self.epoch:03d}: LER {ler:.2f} %")
 
+    def unit_test(self, data):
+        xs, ys, frame_lens, label_lens, filenames, texts = data
+        if self.use_cuda:
+            xs = xs.cuda()
+        ys_hat = self.model(xs)
+        frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
+        # latgen decoding
+        loglikes = torch.log(ys_hat)
+        if self.use_cuda:
+            loglikes = loglikes.cpu()
+        words, alignment, w_sizes, a_sizes = self.decoder(loglikes, frame_lens)
+        hyps = [w[:s] for w, s in zip(words, w_sizes)]
+        # convert target texts to word indices
+        w2i = self.decoder.labeler.word2idx
+        refs = [[w2i(w.strip()) for w in t.strip().split()] for t in texts]
+        return hyps, refs
+
     def test(self, data_loader):
         "test with word error rate by the edit distance between hyps and refs"
         self.model.eval()
@@ -220,20 +238,7 @@ class Trainer:
             N, D = 0, 0
             t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing")
             for i, (data) in t:
-                xs, ys, frame_lens, label_lens, filenames, texts = data
-                if self.use_cuda:
-                    xs = xs.cuda()
-                ys_hat = self.model(xs)
-                frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
-                # latgen decoding
-                loglikes = torch.log(ys_hat)
-                if self.use_cuda:
-                    loglikes = loglikes.cpu()
-                words, alignment, w_sizes, a_sizes = self.decoder(loglikes, frame_lens)
-                hyps = [w[:s] for w, s in zip(words, w_sizes)]
-                # convert target texts to word indices
-                w2i = self.decoder.labeler.word2idx
-                refs = [[w2i(w.strip()) for w in t.strip().split()] for t in texts]
+                hyps, refs = self.unit_test(data)
                 # calculate wer
                 N += self.edit_distance(refs, hyps)
                 D += sum(len(r) for r in refs)
