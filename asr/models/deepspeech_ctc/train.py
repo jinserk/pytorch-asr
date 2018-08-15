@@ -13,7 +13,7 @@ from asr.utils.logger import logger, set_logfile, version_log
 from asr.utils import params as p
 from asr.kaldi.latgen import LatGenCTCDecoder
 
-from ..trainer import FRAME_REDUCE_FACTOR, OPTIMIZER_TYPES, set_seed, Trainer
+from ..trainer import FRAME_REDUCE_FACTOR, OPTIMIZER_TYPES, set_seed, NonSplitTrainer
 from .network import DeepSpeech
 
 
@@ -44,7 +44,7 @@ def batch_train(argv):
 
     # prepare trainer object
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
-    trainer = Trainer(model, **vars(args))
+    trainer = NonSplitTrainer(model, **vars(args))
     labeler = trainer.decoder.labeler
 
     train_datasets = [
@@ -122,7 +122,7 @@ def train(argv):
 
     # prepare trainer object
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
-    trainer = Trainer(model=model, **vars(args))
+    trainer = NonSplitTrainer(model=model, **vars(args))
     labeler = trainer.decoder.labeler
 
     data_opts = {
@@ -169,7 +169,7 @@ def test(argv):
     assert args.continue_from is not None
 
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
-    trainer = Trainer(model, **vars(args))
+    trainer = NonSplitTrainer(model, **vars(args))
     labeler = trainer.decoder.labeler
 
     manifest = f"{args.data_path}/eval2000.csv"

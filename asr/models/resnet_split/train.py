@@ -4,88 +4,17 @@ import argparse
 from pathlib import Path, PurePath
 
 import torch
-import torch.nn as nn
 from torch.utils.data.dataset import ConcatDataset
 from warpctc_pytorch import CTCLoss
 
 from asr.utils.dataset import SplitTrainDataset, AudioSubset
 from asr.utils.dataloader import SplitTrainDataLoader
 from asr.utils.logger import logger, set_logfile, version_log
-from asr.utils.misc import onehot2int , remove_duplicates
 from asr.utils import params as p
 from asr.kaldi.latgen import LatGenCTCDecoder
 
-from ..trainer import FRAME_REDUCE_FACTOR, OPTIMIZER_TYPES, set_seed, Trainer
+from ..trainer import FRAME_REDUCE_FACTOR, OPTIMIZER_TYPES, set_seed, SplitTrainer
 from .network import resnet50, resnet101
-
-
-class SplitTrainer(Trainer):
-
-    def unit_train(self, data):
-        xs, ys, frame_lens, label_lens, filenames, _ = data
-        try:
-            if self.use_cuda:
-                xs = xs.cuda()
-            ys_hat = self.model(xs)
-            ys_hat = ys_hat.unsqueeze(dim=0).transpose(1, 2)
-            pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
-            ys_hats = [ys_hat.narrow(2, p, l).clone() for p, l in zip(pos[:-1], frame_lens)]
-            max_len = torch.max(frame_lens)
-            ys_hats = [nn.ConstantPad1d((0, max_len-yh.size(2)), 0)(yh) for yh in ys_hats]
-            ys_hat = torch.cat(ys_hats).transpose(1, 2).transpose(0, 1)
-            loss = self.loss(ys_hat, ys, frame_lens, label_lens)
-            loss_value = loss.item()
-            inf = float("inf")
-            if loss_value == inf or loss_value == -inf:
-                logger.warning("received an inf loss, setting loss value to 0")
-                loss_value = 0
-            self.optimizer.zero_grad()
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
-            self.optimizer.step()
-            del loss
-        except Exception as e:
-            print(filenames, frame_lens, label_lens)
-            raise
-        return loss_value
-
-    def unit_validate(self, data):
-        xs, ys, frame_lens, label_lens, filenames, _ = data
-        if self.use_cuda:
-            xs = xs.cuda()
-        ys_hat = self.model(xs)
-        pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
-        ys_hat = [ys_hat.narrow(0, p, l).clone() for p, l in zip(pos[:-1], frame_lens)]
-        # convert likes to ctc labels
-        hyps = [onehot2int(yh[:s]).squeeze() for yh, s in zip(ys_hat, frame_lens)]
-        hyps = [remove_duplicates(h, blank=0) for h in hyps]
-        # slice the targets
-        pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(label_lens, dim=0)))
-        refs = [ys[s:l] for s, l in zip(pos[:-1], pos[1:])]
-        return hyps, refs
-
-    def unit_test(self, data):
-        xs, ys, frame_lens, label_lens, filenames, texts = data
-        if self.use_cuda:
-            xs = xs.cuda()
-        ys_hat = self.model(xs)
-        ys_hat = ys_hat.unsqueeze(dim=0).transpose(1, 2)
-        pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
-        ys_hats = [ys_hat.narrow(2, p, l).clone() for p, l in zip(pos[:-1], frame_lens)]
-        max_len = torch.max(frame_lens)
-        ys_hats = [nn.ConstantPad1d((0, max_len-yh.size(2)), 0)(yh) for yh in ys_hats]
-        ys_hat = torch.cat(ys_hats).transpose(1, 2)
-        # latgen decoding
-        loglikes = torch.log(ys_hat)
-        if self.use_cuda:
-            loglikes = loglikes.cpu()
-        words, alignment, w_sizes, a_sizes = self.decoder(loglikes, frame_lens)
-        hyps = [w[:s] for w, s in zip(words, w_sizes)]
-        # convert target texts to word indices
-        w2i = self.decoder.labeler.word2idx
-        refs = [[w2i(w.strip()) for w in t.strip().split()] for t in texts]
-        return hyps, refs
-
 
 
 def batch_train(argv):
@@ -238,9 +167,6 @@ def test(argv):
     version_log(args)
 
     assert args.continue_from is not None
-
-    if args.use_cuda:
-        logger.info("using cuda")
 
     model = resnet50(num_classes=p.NUM_CTC_LABELS)
     trainer = SplitTrainer(model=model, **vars(args))

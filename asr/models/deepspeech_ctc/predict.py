@@ -12,7 +12,7 @@ from asr.utils.logger import logger, set_logfile, version_log
 from asr.utils import params as p
 from asr.kaldi.latgen import LatGenCTCDecoder
 
-from ..predictor import Predictor
+from ..predictor import NonSplitPredictor
 from .network import DeepSpeech
 
 
@@ -35,7 +35,7 @@ def predict(argv):
         sys.exit(1)
 
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
-    predictor = Predictor(model, **vars(args))
+    predictor = NonSplitPredictor(model, **vars(args))
 
     dataset = NonSplitPredictDataset(args.wav_files)
     dataloader = NonSplitPredictDataLoader(dataset=dataset, batch_size=args.batch_size,

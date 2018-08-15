@@ -13,7 +13,7 @@ from asr.utils import params as p
 
 from asr.kaldi.latgen import LatGenCTCDecoder
 
-from ..predictor import Predictor
+from ..predictor import NonSplitPredictor
 from .network import resnet101
 
 
@@ -36,7 +36,7 @@ def predict(argv):
         sys.exit(1)
 
     model = resnet101(num_classes=p.NUM_CTC_LABELS)
-    predictor = Predictor(model, **vars(args))
+    predictor = NonSplitPredictor(model, **vars(args))
 
     dataset = NonSplitPredictDataset(args.wav_files)
     dataloader = NonSplitPredictDataLoader(dataset=dataset, batch_size=args.batch_size,
