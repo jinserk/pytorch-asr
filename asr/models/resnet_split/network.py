@@ -5,6 +5,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 from asr.utils.misc import Swish, InferenceBatchSoftmax
+from asr.utils.params import HEIGHT, WIDTH
 
 
 class BasicBlock(nn.Module):
@@ -86,7 +87,7 @@ class ResNet(nn.Module):
         #self.relu = Swish(inplace=True)
         #self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.conv = nn.Sequential(
-            nn.Conv2d(2, self.inplanes, kernel_size=(41, 11), stride=(2, 2), padding=(20, 5)),
+            nn.Conv2d(4, self.inplanes, kernel_size=(41, 11), stride=(2, 2), padding=(20, 5)),
             nn.BatchNorm2d(self.inplanes),
             #nn.ReLU(inplace=True),
             #nn.Hardtanh(0, 20, inplace=True),
@@ -99,7 +100,7 @@ class ResNet(nn.Module):
         )
 
         # Based on the conv formula (W - F + 2P) // S + 1
-        freq_size = np.array([129, 51])
+        freq_size = np.array([HEIGHT, WIDTH])
         freq_size = (freq_size - np.array([41, 11]) + 2 * np.array([20, 5])) // 2 + 1
         freq_size = (freq_size - np.array([21, 11]) + 2 * np.array([10, 5])) // 2 + 1
 

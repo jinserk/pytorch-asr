@@ -135,8 +135,8 @@ class Spectrogram(object):
 
 # transformer: frame splitter
 class FrameSplitter(object):
-    """ split C x H x W frames to M x C x H x U where U is unit frames in time
-        padding and stride are only applied to W, the time axis
+    """ split C x H x W frames to M x C2 x H x U where U is unit frames in time
+        C2 = stride x C, M = floor((W - U) / stride)
     """
     def __init__(self, unit_frames, padding = 0, stride = 1):
         assert unit_frames % 2 == 1, "unit_frames should be odd integer"
@@ -148,11 +148,17 @@ class FrameSplitter(object):
     def __call__(self, tensor):
         with torch.no_grad():
             tensor = tensor.unsqueeze(dim=0)
-            # frame-domain padding
             if self.padding > 0:
                 tensor = self.pad(tensor)
-            bins = [(x, self.unit_frames) for x in range(0, tensor.size(3)-self.unit_frames, self.stride)]
-            frames = torch.cat([tensor.narrow(3, s, l).clone() for s, l in bins])
+            M, C, H, W = tensor.size()
+            Wp = W // self.stride
+            sWp = Wp * self.stride
+            sC = C * self.stride
+            folded = tensor[:, :, :, :sWp].view(M, C, H, Wp, self.stride)
+            folded = folded.transpose(3, 4).transpose(2, 3).contiguous().view(M, sC, H, Wp)
+            pos = [p for p in range(0, Wp - self.unit_frames)]
+            splits = [folded.narrow(3, p, self.unit_frames).clone() for p in pos]
+            frames = torch.cat(splits)
             return frames
 
 
@@ -387,14 +393,15 @@ class AudioSubset(Subset):
 
 
 if __name__ == "__main__":
+    test = 3
     # test Augment
-    if True:
+    if test == 1:
         transformer = SplitTransformer()
         wav_file = Path("~/ics-asr/temp/conan1-8k.wav")
         audio = transformer(wav_file)
         print(audio.shape)
     # test Spectrogram
-    else:
+    elif test == 2:
         import matplotlib
         matplotlib.use('TkAgg')
         matplotlib.interactive(True)
@@ -434,3 +441,9 @@ if __name__ == "__main__":
 
         plt.show(block=True)
         plt.close('all')
+    elif test == 3:
+        s = FrameSplitter(unit_frames=5, stride=2)
+        x = torch.rand((2, 3, 20))
+        y = s(x)
+        breakpoint()
+
