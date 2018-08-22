@@ -58,6 +58,7 @@ def batch_train(argv):
         "train3" : ConcatDataset([AudioSubset(d, max_len=3) for d in train_datasets]),
         "train5" : ConcatDataset([AudioSubset(d, max_len=5) for d in train_datasets]),
         "train10": ConcatDataset([AudioSubset(d, max_len=10) for d in train_datasets]),
+        "train15": ConcatDataset([AudioSubset(d, max_len=15) for d in train_datasets]),
         "dev"    : NonSplitTrainDataset(labeler=labeler, manifest_file="data/swbd/eval2000.csv"),
         "test"   : NonSplitTrainDataset(labeler=labeler, manifest_file="data/swbd/rt03.csv"),
     }
@@ -67,6 +68,8 @@ def batch_train(argv):
         "train5" : NonSplitTrainDataLoader(datasets["train5"], batch_size=32, num_workers=32,
                                            shuffle=True, pin_memory=args.use_cuda),
         "train10": NonSplitTrainDataLoader(datasets["train10"], batch_size=32, num_workers=32,
+                                           shuffle=True, pin_memory=args.use_cuda),
+        "train15": NonSplitTrainDataLoader(datasets["train15"], batch_size=24, num_workers=24,
                                            shuffle=True, pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"], batch_size=16, num_workers=16,
                                            shuffle=True, pin_memory=args.use_cuda),
@@ -82,8 +85,11 @@ def batch_train(argv):
         elif i < 15:
             trainer.train_epoch(dataloaders["train5"])
             trainer.validate(dataloaders["dev"])
-        else:
+        elif i < 35:
             trainer.train_epoch(dataloaders["train10"])
+            trainer.validate(dataloaders["dev"])
+        else:
+            trainer.train_epoch(dataloaders["train15"])
             trainer.validate(dataloaders["dev"])
 
     # final test to know WER
@@ -95,7 +101,7 @@ def train(argv):
     # for training
     parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
-    parser.add_argument('--max-len', default=10., type=float, help="max length of utterance to use in secs")
+    parser.add_argument('--max-len', default=15., type=float, help="max length of utterance to use in secs")
     parser.add_argument('--batch-size', default=8, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--num-workers', default=8, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
