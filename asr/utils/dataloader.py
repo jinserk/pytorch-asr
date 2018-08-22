@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torchaudio
 
@@ -44,22 +45,21 @@ class SplitTrainDataLoader(DataLoader):
 class NonSplitTrainCollateFn(object):
 
     def __call__(self, batch):
-        batch_size = len(batch)
         longest_tensor = max(batch, key=lambda x: x[0].size(2))[0]
-        tensors = torch.zeros(batch_size, *longest_tensor.shape)
+        tensors = list()
         targets = list()
         tensor_lens = list()
         target_lens = list()
         filenames = list()
         texts = list()
-        for i in range(batch_size):
-            tensor, target, filename, text = batch[i]
-            tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
+        for tensor, target, filename, text in batch:
+            tensors.append(F.pad(tensor, (0, longest_tensor.size(2)-tensor.size(2))).unsqueeze(dim=0))
             targets.append(target)
             tensor_lens.append(tensor.size(2))
             target_lens.append(target.size(0))
             filenames.append(filename)
             texts.append(text)
+        tensors = torch.cat(tensors)
         targets = torch.cat(targets)
         tensor_lens = torch.IntTensor(tensor_lens)
         target_lens = torch.IntTensor(target_lens)
@@ -97,16 +97,15 @@ class SplitPredictDataLoader(DataLoader):
 class NonSplitPredictCollateFn(object):
 
     def __call__(self, batch):
-        batch_size = len(batch)
         longest_tensor = max(batch, key=lambda x: x[0].size(2))[0]
-        tensors = torch.zeros(batch_size, *longest_tensor.shape)
+        tensors = list()
         tensor_lens = list()
         filenames = list()
-        for i in range(batch_size):
-            tensor, filename = batch[i]
-            tensors[i].narrow(2, 0, tensor.size(2)).copy_(tensor)
+        for tensor, filename in batch:
+            tensors.append(F.pad(tensor, (0, longest_tensor.size(2)-tensor.size(2))).unsqueeze(dim=0))
             tensor_lens.append(tensor.size(2))
             filenames.append(filename)
+        tensors = torch.cat(tensors)
         tensor_lens = torch.IntTensor(tensor_lens)
         return tensors, tensor_lens, filenames
 
