@@ -8,6 +8,7 @@ models = set([
     "densenet_ctc",
     "deepspeech_ctc",
     "resnet_ctc",
+    "resnet_split",
 ])
 
 if argv[0] not in models:
@@ -26,4 +27,7 @@ elif model == "deepspeech_ctc":
 elif model == "resnet_ctc":
     from asr.models import resnet_ctc
     resnet_ctc.test(argv)
+elif model == "resnet_split":
+    from asr.models import resnet_split
+    resnet_split.test(argv)
 

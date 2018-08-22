@@ -177,33 +177,6 @@ class Int2OneHot(object):
         return one_hots
 
 
-class SplitTransformer(torchaudio.transforms.Compose):
-
-    def __init__(self,
-                 resample=True, sample_rate=p.SAMPLE_RATE,
-                 tempo=True, tempo_range=p.TEMPO_RANGE,
-                 gain=True, gain_range=p.GAIN_RANGE,
-                 noise=True, noise_range=p.NOISE_RANGE,
-                 offset=True,
-                 padding=True,
-                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
-                 unit_frames=p.WIDTH, stride=2,
-                 *args, **kwargs):
-        offset_range = (0, stride * WIN_SAMP_SHIFT) if offset else (0, 0)
-        num_padding = int((p.WIDTH // 2 - 1) * WIN_SAMP_SHIFT) if padding else 0
-        super().__init__([
-            Augment(resample=resample, sample_rate=sample_rate,
-                    tempo=tempo, tempo_range=tempo_range,
-                    gain=gain, gain_range=gain_range,
-                    noise=noise, noise_range=noise_range,
-                    offset=offset, offset_range=offset_range,
-                    padding=padding, num_padding=num_padding),
-            Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
-                        window_size=window_size, nfft=nfft),
-            FrameSplitter(unit_frames=unit_frames, padding=0, stride=stride),
-        ])
-
-
 class NonSplitTransformer(torchaudio.transforms.Compose):
 
     def __init__(self,
@@ -211,13 +184,15 @@ class NonSplitTransformer(torchaudio.transforms.Compose):
                  tempo=True, tempo_range=p.TEMPO_RANGE,
                  gain=True, gain_range=p.GAIN_RANGE,
                  noise=True, noise_range=p.NOISE_RANGE,
-                 offset=True,
-                 padding=True,
+                 offset=True, offset_range=None,
+                 padding=True, num_padding=None,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
-                 stride=1,
-                 *args, **kwargs):
-        offset_range = (0, stride * WIN_SAMP_SHIFT) if offset else (0, 0)
-        num_padding = int((p.WIDTH // 2 - 1) * WIN_SAMP_SHIFT) if padding else 0
+                 stride=1):
+        if offset and offset_range is None:
+            offset_range = (0, stride * WIN_SAMP_SHIFT)
+        if padding and num_padding is None:
+            pad = int(((p.WIDTH * stride) // 2 - 1) * WIN_SAMP_SHIFT)
+            num_padding = (pad, pad)
         super().__init__([
             Augment(resample=resample, sample_rate=sample_rate,
                     tempo=tempo, tempo_range=tempo_range,
@@ -228,6 +203,13 @@ class NonSplitTransformer(torchaudio.transforms.Compose):
             Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
                         window_size=window_size, nfft=nfft),
         ])
+
+
+class SplitTransformer(NonSplitTransformer):
+
+    def __init__(self, unit_frames=p.WIDTH, stride=1, *args, **kwargs):
+        super().__init__(stride=stride, *args, **kwargs)
+        self.transforms.append(FrameSplitter(unit_frames=unit_frames, padding=0, stride=stride))
 
 
 def _smp2frm(samples):
@@ -314,64 +296,102 @@ class PredictDataset(Dataset):
         return len(self.entries)
 
 
-class SplitTrainDataset(TrainDataset):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if 'transformer' in kwargs:
-            self.transformer = kwargs['transformer']
-        else:
-            self.transformer = SplitTransformer(*args, **kwargs)
-        if 'target_transformer' in kwargs:
-            self.target_transformer = kwargs['target_transformer']
-        else:
-            self.target_transformer = None
-
-
 class NonSplitTrainDataset(TrainDataset):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self,
+                 transformer=None, target_transformer=None,
+                 resample=True, sample_rate=p.SAMPLE_RATE,
+                 tempo=True, tempo_range=p.TEMPO_RANGE,
+                 gain=True, gain_range=p.GAIN_RANGE,
+                 noise=True, noise_range=p.NOISE_RANGE,
+                 offset=True, padding=True,
+                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
+                 stride=3,
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if 'transformer' in kwargs:
-            self.transformer = kwargs['transformer']
+        if transformer is None:
+            self.transformer = NonSplitTransformer(resample=resample, sample_rate=sample_rate,
+                                                   tempo=tempo, tempo_range=tempo_range,
+                                                   gain=gain, gain_range=gain_range,
+                                                   noise=noise, noise_range=noise_range,
+                                                   offset=offset, padding=padding,
+                                                   window_shift=window_shift, window_size=window_size, nfft=nfft,
+                                                   stride=stride)
         else:
-            self.transformer = NonSplitTransformer(*args, **kwargs)
-        if 'target_transformer' in kwargs:
-            self.target_transformer = kwargs['target_transformer']
-        else:
-            self.target_transformer = None
-
-
-class SplitPredictDataset(PredictDataset):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if 'transformer' in kwargs:
-            self.transformer = kwargs['transformer']
-        else:
-            self.transformer = SplitTransformer(tempo=False, gain=False,
-                                                noise=True, noise_range=(-20, -20),
-                                                offset=False, padding=False, *args, **kwargs)
-        if 'target_transformer' in kwargs:
-            self.target_transformer = kwargs['target_transformer']
-        else:
-            self.target_transformer = None
+            self.transformer = transformer
+        self.target_transformer = target_transformer
 
 
 class NonSplitPredictDataset(PredictDataset):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self,
+                 transformer=None, target_transformer=None,
+                 resample=True, sample_rate=p.SAMPLE_RATE,
+                 noise=True, noise_range=(-20, -20),
+                 padding=False,
+                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
+                 stride=3,
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if 'transformer' in kwargs:
-            self.transformer = kwargs['transformer']
+        if transformer is None:
+            self.transformer = SplitTransformer(resample=resample, sample_rate=sample_rate,
+                                                tempo=False, gain=False,
+                                                noise=noise, noise_range=noise_range,
+                                                offset=False, padding=padding,
+                                                window_shift=p.WINDOW_SHIFT, window_size=window_size, nfft=nfft,
+                                                stride=stride)
         else:
-            self.transformer = NonSplitTransformer(tempo=False, gain=False,
-                                                   noise=True, noise_range=(-20, -20),
-                                                   offset=False, padding=False, *args, **kwargs)
-        if 'target_transformer' in kwargs:
-            self.target_transformer = kwargs['target_transformer']
+            self.transformer = transformer
+        self.target_transformer = target_transformer
+
+
+class SplitTrainDataset(TrainDataset):
+
+    def __init__(self,
+                 transformer=None, target_transformer=None,
+                 resample=True, sample_rate=p.SAMPLE_RATE,
+                 tempo=True, tempo_range=p.TEMPO_RANGE,
+                 gain=True, gain_range=p.GAIN_RANGE,
+                 noise=True, noise_range=p.NOISE_RANGE,
+                 offset=True, padding=True,
+                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
+                 unit_frames=p.WIDTH, stride=3,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if transformer is None:
+            self.transformer = SplitTransformer(resample=resample, sample_rate=sample_rate,
+                                                tempo=tempo, tempo_range=tempo_range,
+                                                gain=gain, gain_range=gain_range,
+                                                noise=noise, noise_range=noise_range,
+                                                offset=offset, padding=padding,
+                                                window_shift=window_shift, window_size=window_size, nfft=nfft,
+                                                unit_frames=unit_frames, stride=stride)
         else:
-            self.target_transformer = None
+            self.transformer = transformer
+        self.target_transformer = target_transformer
+
+
+class SplitPredictDataset(PredictDataset):
+
+    def __init__(self,
+                 transformer=None, target_transformer=None,
+                 resample=True, sample_rate=p.SAMPLE_RATE,
+                 noise=True, noise_range=(-20, -20),
+                 padding=False,
+                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
+                 unit_frames=p.WIDTH, stride=3,
+                 *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if transformer is None:
+            self.transformer = SplitTransformer(resample=resample, sample_rate=sample_rate,
+                                                tempo=False, gain=False,
+                                                noise=noise, noise_range=noise_range,
+                                                offset=False, padding=padding,
+                                                window_shift=p.WINDOW_SHIFT, window_size=window_size, nfft=nfft,
+                                                unit_frames=unit_frames, stride=stride)
+        else:
+            self.transformer = transformer
+        self.target_transformer = target_transformer
 
 
 class AudioSubset(Subset):

@@ -178,17 +178,16 @@ class Trainer:
                 ler = N * 100. / D
                 t.set_description(f"validating (LER: {ler:.2f} %)")
                 t.refresh()
-                if self.vlog is not None:
-                    self.vlog.add_point(
-                        title = 'validate',
-                        x = self.epoch+i/len(data_loader),
-                        y = ler
-                    )
-                if self.tlog is not None:
-                    x = self.epoch+i/len(data_loader),
-                    self.tlog.add_scalars('validate', x, { 'LER': ler, })
-
             logger.info(f"validating at epoch {self.epoch:03d}: LER {ler:.2f} %")
+            if self.vlog is not None:
+                self.vlog.add_point(
+                    title = 'validate',
+                    x = self.epoch+i/len(data_loader),
+                    y = ler
+                )
+            if self.tlog is not None:
+                x = self.epoch+i/len(data_loader),
+                self.tlog.add_scalars('validate', x, { 'LER': ler, })
 
     def unit_test(self, data):
         raise NotImplementedError

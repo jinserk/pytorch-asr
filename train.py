@@ -13,6 +13,7 @@ models = set([
     "resnet_ctc",
     "resnet_ce",
     "resnet_split",
+    "resnet_split_ce",
     "capsule1",
     "capsule2",
 ])
@@ -48,6 +49,9 @@ elif model == "resnet_ce":
 elif model == "resnet_split":
     from asr.models import resnet_split
     resnet_split.train(argv)
+elif model == "resnet_split_ce":
+    from asr.models import resnet_split_ce
+    resnet_split_ce.train(argv)
 elif model == "capsule1":
     from asr.models import capsule1
     capsule1.train(argv)
