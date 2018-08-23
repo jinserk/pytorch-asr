@@ -334,12 +334,12 @@ class NonSplitPredictDataset(PredictDataset):
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transformer is None:
-            self.transformer = SplitTransformer(resample=resample, sample_rate=sample_rate,
-                                                tempo=False, gain=False,
-                                                noise=noise, noise_range=noise_range,
-                                                offset=False, padding=padding,
-                                                window_shift=p.WINDOW_SHIFT, window_size=window_size, nfft=nfft,
-                                                stride=stride)
+            self.transformer = NonSplitTransformer(resample=resample, sample_rate=sample_rate,
+                                                   tempo=False, gain=False,
+                                                   noise=noise, noise_range=noise_range,
+                                                   offset=False, padding=padding,
+                                                   window_shift=p.WINDOW_SHIFT, window_size=window_size, nfft=nfft,
+                                                   stride=stride)
         else:
             self.transformer = transformer
         self.target_transformer = target_transformer

@@ -37,7 +37,7 @@ def predict(argv):
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
     predictor = NonSplitPredictor(model, **vars(args))
 
-    dataset = NonSplitPredictDataset(args.wav_files)
+    dataset = NonSplitPredictDataset(wav_files=args.wav_files)
     dataloader = NonSplitPredictDataLoader(dataset=dataset, batch_size=args.batch_size,
                                            pin_memory=args.use_cuda)
 
