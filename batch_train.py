@@ -1,29 +1,25 @@
 #!python
 
 import sys
+import importlib
 
-
-argv = sys.argv[1:]
 models = set([
     "densenet_ctc",
     "deepspeech_ctc",
     "resnet_ctc",
 ])
 
-if argv[0] not in models:
+try:
+    model, argv = sys.argv[1], sys.argv[2:]
+    if model not in models:
+        raise
+except:
     print(f"Error: choose one of models in {models}")
     sys.exit(1)
 
-model = argv[0]
-argv.remove(model)
-
-if model == "densenet_ctc":
-    from asr.models import densenet_ctc
-    densenet_ctc.batch_train(argv)
-elif model == "deepspeech_ctc":
-    from asr.models import deepspeech_ctc
-    deepspeech_ctc.batch_train(argv)
-elif model == "resnet_ctc":
-    from asr.models import resnet_ctc
-    resnet_ctc.batch_train(argv)
+try:
+    m = importlib.import_module(f"asr.models.{model}")
+    m.batch_train(argv)
+except:
+    raise
 
