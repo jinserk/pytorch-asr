@@ -11,6 +11,7 @@ from torch.utils.data.dataset import ConcatDataset
 from asr.utils.dataset import WIN_SAMP_SHIFT, SplitTransformer, TrainDataset, AudioSubset
 from asr.utils.dataloader import SplitTrainDataLoader
 from asr.utils.logger import logger, set_logfile, version_log
+from asr.utils.misc import onehot2int
 from asr.utils import params as p
 from asr.kaldi.latgen import LatGenCTCDecoder
 
