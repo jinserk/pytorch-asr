@@ -33,17 +33,15 @@ OPTIMIZER_TYPES = set([
 ])
 
 
-def init_distributed(backend="mpi", rank=0):
+def init_distributed(backend="mpi"):
     try:
         proc_id = int(os.environ['SLURM_PROCID'])
         ntasks = int(os.environ['SLURM_NTASKS'])
         node_list = os.environ['SLURM_NODELIST']
 
-        if '[' in node_list:
-            node_list = node_list.split(',')[0].replace('[', '')
-        addr = node_list[8:].replace('-', '.')
-        addr = 'tcp://'+addr+':23456'
-        logger.info(f"initialized via {addr} of world_size {ntasks}")
+        node_list = node_list.split(',')
+        addr = 'tcp://' + node_list[0] + ':23456'
+        print(f"initialized via {addr}")
 
         dist.init_process_group(backend=backend, init_method=addr, world_size=ntasks, rank=proc_id)
     except:
@@ -81,13 +79,13 @@ class Trainer:
             logger.visdom.add_plot(title='validate', xlabel='epoch', ylabel='LER')
 
         # setup model
+        if self.use_cuda:
+            logger.info("using cuda")
+            model.cuda()
         if dist.get_world_size() > 1:
             self.model = DistributedDataParallel(model)
         else:
             self.model = model
-        if self.use_cuda:
-            logger.info("using cuda")
-            self.model.cuda()
 
         # setup loss
         self.loss = CTCLoss(blank=0, size_average=True)

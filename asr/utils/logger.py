@@ -20,7 +20,8 @@ def init_logger(args, logfile=None):
         set_logstream()
 
     if LOG_FILE:
-        set_logfile(logfile)
+        logpath = Path(args.log_dir, logfile).resolve()
+        set_logfile(str(logpath))
 
     # prepare visdom
     if args.visdom:

@@ -9,17 +9,13 @@ models = set([
     "resnet_ctc",
 ])
 
-argv = sys.argv
-
 try:
-    model = argv[2]
+    model, argv = sys.argv[1], sys.argv[2:]
     if model not in models:
         raise
 except:
     print(f"Error: choose one of models in {models}")
     sys.exit(1)
-
-argv.remove(model)
 
 try:
     m = importlib.import_module(f"asr.models.{model}")
