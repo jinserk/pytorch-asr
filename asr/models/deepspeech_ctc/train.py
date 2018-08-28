@@ -22,6 +22,7 @@ from .network import DeepSpeech
 def batch_train(argv):
     parser = argparse.ArgumentParser(description="DeepSpeech AM with batch training")
     # for training
+    parser.add_argument('--local_rank', default=0, type=int, help="rank of this node in distributed running")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")
     parser.add_argument('--max-norm', default=400, type=int, help="norm cutoff to prevent explosion of gradients")
@@ -38,16 +39,15 @@ def batch_train(argv):
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
 
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv[1:])
 
     # init distributed env
-    init_distributed()
+    init_distributed(local_rank=args.local_rank)
     if dist.get_world_size() > 1:
-        LOG_STREAM = False
+        #logger.LOG_STREAM = False
         logfile = f"train_rank{dist.get_rank()}.log"
     else:
         logfile = "train.log"
-
     init_logger(args, logfile)
     set_seed(args.seed)
 
@@ -78,21 +78,21 @@ def batch_train(argv):
         #                                   shuffle=False, pin_memory=args.use_cuda),
         "train5" : NonSplitTrainDataLoader(datasets["train5"],
                                            sampler=DistributedSampler(datasets["train5"]),
-                                           batch_size=32, num_workers=8,
+                                           batch_size=32, num_workers=32,
                                            shuffle=False, pin_memory=args.use_cuda),
         "train10": NonSplitTrainDataLoader(datasets["train10"],
                                            sampler=DistributedSampler(datasets["train10"]),
-                                           batch_size=32, num_workers=8,
+                                           batch_size=32, num_workers=32,
                                            shuffle=False, pin_memory=args.use_cuda),
         "train15": NonSplitTrainDataLoader(datasets["train15"],
                                            sampler=DistributedSampler(datasets["train15"]),
-                                           batch_size=24, num_workers=8,
+                                           batch_size=24, num_workers=24,
                                            shuffle=False, pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"],
-                                           batch_size=16, num_workers=4,
+                                           batch_size=16, num_workers=16,
                                            shuffle=False, pin_memory=args.use_cuda),
         "test"   : NonSplitTrainDataLoader(datasets["test"],
-                                           batch_size=16, num_workers=4,
+                                           batch_size=16, num_workers=16,
                                            shuffle=False, pin_memory=args.use_cuda),
     }
 

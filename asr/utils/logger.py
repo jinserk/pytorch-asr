@@ -4,52 +4,39 @@ from pathlib import Path
 import logging
 import torch
 
-LOG_STREAM = True
-LOG_FILE = True
-LOG_VISDOM = False
-LOG_TENSORBOARD = False
-
 # handler
 logger = logging.getLogger('pytorch-asr')
 logger.setLevel(logging.DEBUG)
 _formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
 
+logger.LOG_STREAM = True
+logger.LOG_FILE = True
 
 def init_logger(args, logfile=None):
-    if LOG_STREAM:
+    if logger.LOG_STREAM:
         set_logstream()
 
-    if LOG_FILE:
+    if logger.LOG_FILE:
         logpath = Path(args.log_dir, logfile).resolve()
         set_logfile(str(logpath))
 
     # prepare visdom
+    logger.visdom = None
     if args.visdom:
         try:
             env = str(Path(args.log_dir).name)
             logger.visdom = VisdomLogger(host=args.visdom_host, port=args.visdom_port, env=env)
-            LOG_VISDOM = True
         except:
             logger.info("error to use visdom")
-            logger.visdom = None
-            LOG_VISDOM = False
-    else:
-        logger.visdom = None
-        LOG_VISDOM = False
 
     # prepare tensorboard
+    logger.tensorboard = None
     if args.tensorboard:
         try:
             env = str(Path(args.log_dir, 'tensorboard').resolve)
             logger.tensorboard = TensorboardLogger(env)
-            LOG_TENSORBOARD = False
         except:
             logger.info("error to use tensorboard")
-            logger.tensorboard = None
-            LOG_TENSORBOARD = False
-    else:
-        logger.tensorboard = None
-        LOG_TENSORBOARD = False
 
     version_log(args)
 

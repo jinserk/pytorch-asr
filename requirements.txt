@@ -1,9 +1,9 @@
 #http://download.pytorch.org/whl/cu92/torch-0.4.1.post2-cp37-cp37m-linux_x86_64.whl
-#git+https://github.com/pytorch/audio
-#git+https://github.com/pytorch/vision
-#git+https://github.com/pytorch/text
-#git+https://github.com/pytorch/tnt
-#pyro-ppl
+git+https://github.com/pytorch/audio
+git+https://github.com/pytorch/vision
+git+https://github.com/pytorch/text
+git+https://github.com/pytorch/tnt
+pyro-ppl
 scikit-learn
 matplotlib
 colorlover

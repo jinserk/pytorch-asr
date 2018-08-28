@@ -21,7 +21,7 @@ from asr.utils import params as p
 
 from asr.kaldi.latgen import LatGenCTCDecoder
 
-from .distributed import DistributedDataParallel
+#from .distributed import DistributedDataParallel
 
 
 FRAME_REDUCE_FACTOR = 2
@@ -33,20 +33,26 @@ OPTIMIZER_TYPES = set([
 ])
 
 
-def init_distributed(backend="mpi"):
+def init_distributed(backend="gloo", local_rank=0):
+    """
     try:
         proc_id = int(os.environ['SLURM_PROCID'])
         ntasks = int(os.environ['SLURM_NTASKS'])
         node_list = os.environ['SLURM_NODELIST']
 
-        node_list = node_list.split(',')
-        addr = 'tcp://' + node_list[0] + ':23456'
-        print(f"initialized via {addr}")
+        #if '[' in node_list:
+        #    node_list = node_list.split(',')[0].replace('[', '')
+        #addr = node_list[8:].replace('-', '.')
+        #addr = 'tcp://'+addr+':23456'
+        logger.info(f"initialized via {addr} of world_size {ntasks}")
 
         dist.init_process_group(backend=backend, init_method=addr, world_size=ntasks, rank=proc_id)
     except:
         # rollback to single instance running
         dist.init_process_group(backend=backend, init_method="env://", world_size=1, rank=0)
+    """
+    dist.init_process_group(backend=backend, init_method="env://")
+    torch.cuda.set_device(local_rank)
 
 
 def set_seed(seed=None):
@@ -63,6 +69,7 @@ class Trainer:
     def __init__(self, model, init_lr=1e-4, max_norm=400, use_cuda=False,
                  log_dir='logs', model_prefix='model',
                  checkpoint=False, continue_from=None, opt_type="sgdr",
+                 local_rank=0,
                  *args, **kwargs):
         # training parameters
         self.init_lr = init_lr
@@ -74,7 +81,7 @@ class Trainer:
         self.epoch = 0
 
         # prepare visdom
-        if LOG_VISDOM:
+        if logger.visdom is not None:
             logger.visdom.add_plot(title='train', xlabel='epoch', ylabel='loss')
             logger.visdom.add_plot(title='validate', xlabel='epoch', ylabel='LER')
 
@@ -83,7 +90,8 @@ class Trainer:
             logger.info("using cuda")
             model.cuda()
         if dist.get_world_size() > 1:
-            self.model = DistributedDataParallel(model)
+            self.model = nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank)
+            #self.model = nn.parallel.DistributedDataParallel(model)
         else:
             self.model = model
 
@@ -133,7 +141,7 @@ class Trainer:
             self.lr_scheduler.step()
             logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
         # count the number of supervised batches seen in this epoch
-        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training", disable=(not LOG_STREAM))
+        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training", disable=(not logger.LOG_STREAM))
         for i, (data) in t:
             loss_value = self.unit_train(data)
             meter_loss.add(loss_value)
@@ -142,13 +150,13 @@ class Trainer:
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
             if 0 < i < len(data_loader) and i % num_ckpt == 0:
-                if LOG_VISDOM:
+                if logger.visdom is not None:
                     logger.visdom.add_point(
                         title = 'train',
                         x = self.epoch+i/len(data_loader),
                         y = meter_loss.value()[0]
                     )
-                if LOG_TENSORBOARD:
+                if logger.tensorboard is not None:
                     x = self.epoch * len(data_loader) + i
                     logger.tensorboard.add_graph(self.model, xs)
                     xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
@@ -176,7 +184,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             N, D = 0, 0
-            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating", disable=(not LOG_STREAM))
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating", disable=(not logger.LOG_STREAM))
             for i, (data) in t:
                 hyps, refs = self.unit_validate(data)
                 # calculate ler
@@ -186,13 +194,13 @@ class Trainer:
                 t.set_description(f"validating (LER: {ler:.2f} %)")
                 t.refresh()
             logger.info(f"validating at epoch {self.epoch:03d}: LER {ler:.2f} %")
-            if LOG_VISDOM:
+            if logger.visdom is not None:
                 logger.visdom.add_point(
                     title = 'validate',
                     x = self.epoch+i/len(data_loader),
                     y = ler
                 )
-            if LOG_TENSORBOARD:
+            if logger.tensorboard is not None:
                 x = self.epoch+i/len(data_loader),
                 logger.tensorboard.add_scalars('validate', x, { 'LER': ler, })
 
@@ -204,7 +212,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             N, D = 0, 0
-            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing", disable=(not LOG_STREAM))
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing", disable=(not logger.LOG_STREAM))
             for i, (data) in t:
                 hyps, refs = self.unit_test(data)
                 # calculate wer
