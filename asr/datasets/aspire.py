@@ -28,14 +28,15 @@ class KaldiAspireImporter(KaldiDataImporter):
 
 def prepare(argv):
     parser = argparse.ArgumentParser(description="Prepare dataset by importing from Kaldi recipe")
+    parser.add_argument('--text-only', default=False, action='store_true', help="if you want to process text only when wavs are already stored")
     parser.add_argument('--rebuild', default=False, action='store_true', help="if you want to rebuild manifest only instead of the overall processing")
     parser.add_argument('target_dir', type=str, help="path to store the processed data")
     args = parser.parse_args(argv)
 
     assert args.target_dir is not None
+    assert not (args.text_only and args.rebuild), "options --text-only and --rebuild cannot together. choose either of them."
 
     log_file = Path(args.target_dir, 'prepare.log').resolve()
-    print(f"begins logging to file: {str(log_file)}")
     set_logfile(log_file)
 
     target_path = Path(args.target_dir).resolve()
@@ -43,14 +44,18 @@ def prepare(argv):
 
     importer = KaldiAspireImporter(target_path)
 
-    if not args.rebuild:
-        importer.process("train")
-        importer.process("dev")
-        importer.process("test")
-    else:
+    if args.rebuild:
         importer.rebuild("train")
         importer.rebuild("dev")
         importer.rebuild("test")
+    elif args.text_only:
+        importer.process_text_only("train")
+        importer.process_text_only("dev")
+        importer.process_text_only("test")
+    else:
+        importer.process("train")
+        importer.process("dev")
+        importer.process("test")
 
     logger.info("data preparation finished.")
 

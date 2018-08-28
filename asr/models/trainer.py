@@ -1,4 +1,5 @@
 #!python
+import os
 import sys
 from pathlib import Path
 from tqdm import tqdm
@@ -6,17 +7,21 @@ from tqdm import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.distributed as dist
+
 import torchvision.utils as tvu
 from warpctc_pytorch import CTCLoss
 import torchnet as tnt
 import Levenshtein as Lev
 
-from asr.utils.logger import logger, VisdomLogger, TensorboardLogger
+from asr.utils.logger import *
 from asr.utils.misc import onehot2int, remove_duplicates, get_model_file_path
 from asr.utils.lr_scheduler import CosineAnnealingWithRestartsLR
 from asr.utils import params as p
 
 from asr.kaldi.latgen import LatGenCTCDecoder
+
+from .distributed import DistributedDataParallel
 
 
 FRAME_REDUCE_FACTOR = 2
@@ -26,6 +31,24 @@ OPTIMIZER_TYPES = set([
     "sgdr",
     "adamw",
 ])
+
+
+def init_distributed(backend="mpi", rank=0):
+    try:
+        proc_id = int(os.environ['SLURM_PROCID'])
+        ntasks = int(os.environ['SLURM_NTASKS'])
+        node_list = os.environ['SLURM_NODELIST']
+
+        if '[' in node_list:
+            node_list = node_list.split(',')[0].replace('[', '')
+        addr = node_list[8:].replace('-', '.')
+        addr = 'tcp://'+addr+':23456'
+        logger.info(f"initialized via {addr} of world_size {ntasks}")
+
+        dist.init_process_group(backend=backend, init_method=addr, world_size=ntasks, rank=proc_id)
+    except:
+        # rollback to single instance running
+        dist.init_process_group(backend=backend, init_method="env://", world_size=1, rank=0)
 
 
 def set_seed(seed=None):
@@ -42,8 +65,7 @@ class Trainer:
     def __init__(self, model, init_lr=1e-4, max_norm=400, use_cuda=False,
                  log_dir='logs', model_prefix='model',
                  checkpoint=False, continue_from=None, opt_type="sgdr",
-                 visdom=False, visdom_host="127.0.0.1", visdom_port=8097,
-                 tensorboard=False, *args, **kwargs):
+                 *args, **kwargs):
         # training parameters
         self.init_lr = init_lr
         self.max_norm = max_norm
@@ -54,28 +76,15 @@ class Trainer:
         self.epoch = 0
 
         # prepare visdom
-        self.vlog = None
-        if visdom:
-            try:
-                env = str(Path(log_dir).name)
-                self.vlog = VisdomLogger(host=visdom_host, port=visdom_port, env=env)
-            except:
-                logger.info("error to use visdom")
-        if self.vlog is not None:
-            self.vlog.add_plot(title='train', xlabel='epoch', ylabel='loss')
-            self.vlog.add_plot(title='validate', xlabel='epoch', ylabel='LER')
-
-        # prepare tensorboard
-        self.tlog = None
-        if tensorboard:
-            try:
-                env = str(Path(log_dir, 'tensorboard').resolve)
-                self.tlog = TensorboardLogger(env)
-            except:
-                logger.info("error to use tensorboard")
+        if LOG_VISDOM:
+            logger.visdom.add_plot(title='train', xlabel='epoch', ylabel='loss')
+            logger.visdom.add_plot(title='validate', xlabel='epoch', ylabel='LER')
 
         # setup model
-        self.model = model
+        if dist.get_world_size() > 1:
+            self.model = DistributedDataParallel(model)
+        else:
+            self.model = model
         if self.use_cuda:
             logger.info("using cuda")
             self.model.cuda()
@@ -126,7 +135,7 @@ class Trainer:
             self.lr_scheduler.step()
             logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
         # count the number of supervised batches seen in this epoch
-        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training")
+        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training", disable=(not LOG_STREAM))
         for i, (data) in t:
             loss_value = self.unit_train(data)
             meter_loss.add(loss_value)
@@ -135,20 +144,20 @@ class Trainer:
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
             if 0 < i < len(data_loader) and i % num_ckpt == 0:
-                if self.vlog is not None:
-                    self.vlog.add_point(
+                if LOG_VISDOM:
+                    logger.visdom.add_point(
                         title = 'train',
                         x = self.epoch+i/len(data_loader),
                         y = meter_loss.value()[0]
                     )
-                if self.tlog is not None:
+                if LOG_TENSORBOARD:
                     x = self.epoch * len(data_loader) + i
-                    self.tlog.add_graph(self.model, xs)
+                    logger.tensorboard.add_graph(self.model, xs)
                     xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
-                    self.tlog.add_image('xs', x, xs_img)
+                    logger.tensorboard.add_image('xs', x, xs_img)
                     ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
-                    self.tlog.add_image('ys_hat', x, ys_hat_img)
-                    self.tlog.add_scalars('train', x, { 'loss': meter_loss.value()[0], })
+                    logger.tensorboard.add_image('ys_hat', x, ys_hat_img)
+                    logger.tensorboard.add_scalars('train', x, { 'loss': meter_loss.value()[0], })
                 if self.checkpoint:
                     logger.info(f"training loss at epoch_{self.epoch:03d}_ckpt_{i:07d}: "
                                 f"{meter_loss.value()[0]:5.3f}")
@@ -169,7 +178,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             N, D = 0, 0
-            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating")
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating", disable=(not LOG_STREAM))
             for i, (data) in t:
                 hyps, refs = self.unit_validate(data)
                 # calculate ler
@@ -179,15 +188,15 @@ class Trainer:
                 t.set_description(f"validating (LER: {ler:.2f} %)")
                 t.refresh()
             logger.info(f"validating at epoch {self.epoch:03d}: LER {ler:.2f} %")
-            if self.vlog is not None:
-                self.vlog.add_point(
+            if LOG_VISDOM:
+                logger.visdom.add_point(
                     title = 'validate',
                     x = self.epoch+i/len(data_loader),
                     y = ler
                 )
-            if self.tlog is not None:
+            if LOG_TENSORBOARD:
                 x = self.epoch+i/len(data_loader),
-                self.tlog.add_scalars('validate', x, { 'LER': ler, })
+                logger.tensorboard.add_scalars('validate', x, { 'LER': ler, })
 
     def unit_test(self, data):
         raise NotImplementedError
@@ -197,7 +206,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             N, D = 0, 0
-            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing")
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing", disable=(not LOG_STREAM))
             for i, (data) in t:
                 hyps, refs = self.unit_test(data)
                 # calculate wer

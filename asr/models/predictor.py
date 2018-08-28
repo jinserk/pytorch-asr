@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from asr.utils.logger import logger, set_logfile
+from asr.utils.logger import logger
 from asr.utils.misc import onehot2int, remove_duplicates
 from asr.utils import params as p
 

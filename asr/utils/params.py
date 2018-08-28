@@ -14,7 +14,7 @@ NFFT = 256
 
 # augmentation
 TEMPO_RANGE = (0.85, 1.15)
-GAIN_RANGE = (-6., 8.)
+PITCH_RANGE = (-1., 1.)
 NOISE_RANGE = (-20., -3.)
 
 # images

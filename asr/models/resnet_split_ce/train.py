@@ -43,7 +43,7 @@ class SplitCETrainDataset(CETrainDataset):
                  transformer=None, target_transformer=None,
                  resample=True, sample_rate=p.SAMPLE_RATE,
                  tempo=False, tempo_range=p.TEMPO_RANGE,
-                 gain=True, gain_range=p.GAIN_RANGE,
+                 pitch=False, pitch_range=p.PITCH_RANGE,
                  noise=True, noise_range=p.NOISE_RANGE,
                  offset=True, padding=True,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
@@ -56,7 +56,7 @@ class SplitCETrainDataset(CETrainDataset):
         if transformer is None:
             self.transformer = SplitTransformer(resample=resample, sample_rate=sample_rate,
                                                 tempo=False, tempo_range=tempo_range,
-                                                gain=gain, gain_range=gain_range,
+                                                pitch=False, pitch_range=pitch_range,
                                                 noise=noise, noise_range=noise_range,
                                                 offset=offset, padding=padding, num_padding=num_padding,
                                                 window_shift=window_shift, window_size=window_size, nfft=nfft,

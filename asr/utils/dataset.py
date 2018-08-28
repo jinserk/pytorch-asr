@@ -7,7 +7,7 @@ import tempfile
 import numpy as np
 import scipy.io.wavfile
 from scipy.signal import tukey
-import sox
+import librosa
 
 import torch
 import torch.nn as nn
@@ -28,15 +28,14 @@ SAMPLE_MARGIN = 0
 # transformer: resampling and augmentation
 class Augment(object):
 
-    def __init__(self, resample, sample_rate, tempo, tempo_range, gain, gain_range,
+    def __init__(self, resample, sample_rate, tempo, tempo_range, pitch, pitch_range,
                  noise, noise_range, offset, offset_range, padding, num_padding):
         self.resample = resample
         self.sample_rate = sample_rate
         self.tempo = tempo
         self.tempo_range = tempo_range
-        self.last_tempo = 1.
-        self.gain = gain
-        self.gain_range = gain_range
+        self.pitch = pitch
+        self.pitch_range = pitch_range
         self.noise = noise
         self.noise_range = noise_range
         self.offset = offset
@@ -44,49 +43,31 @@ class Augment(object):
         self.padding = padding
         self.num_padding=num_padding
 
-    def __call__(self, wav_file, tar_file=None):
+    def __call__(self, wav_file):
         if not Path(wav_file).exists():
             print(wav_file)
             raise IOError
 
-        tfm = sox.Transformer()
-        tfm.set_globals(verbosity=0)
-
-        if self.resample:
-            tfm.rate(self.sample_rate, quality='h')
-
-        if self.tempo:
-            tempo = np.random.uniform(*self.tempo_range)
-            if tempo < 0.9 or tempo > 1.1:
-                tfm.tempo(tempo, audio_type='s')
-            else:
-                tfm.stretch(tempo)
-            self.last_tempo = tempo
-
-        if self.gain:
-            gain = np.random.uniform(*self.gain_range)
-            tfm.gain(gain, normalize=True)
-
-        if tar_file is None:
-            tmp_dir = tempfile._get_default_tempdir()
-            tmp_name = next(tempfile._get_candidate_names())
-            tmp_file = Path(tmp_dir, tmp_name + ".wav")
-            tfm.build(str(wav_file), str(tmp_file))
-            sr, wav = scipy.io.wavfile.read(tmp_file)
-            os.unlink(tmp_file)
-        else:
-            Path(tar_file).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-            tfm.build(str(wav_file), str(tar_file))
-            sr, wav = scipy.io.wavfile.read(tar_file)
-
+        sr, wav = scipy.io.wavfile.read(wav_file)
         if wav.ndim > 1 and wav.shape[1] > 1:
             logger.error("wav file has two or more channels")
             sys.exit(1)
+        wav = wav.astype('float64')
+
+        if self.resample:
+            wav = librosa.core.resample(wav, sr, self.sample_rate)
+
+        if self.tempo:
+            tempo_change = np.random.uniform(*self.tempo_range)
+            wav = librosa.effects.time_stretch(wav, tempo_change)
+
+        if self.pitch:
+            pitch_change = 4 * np.random.uniform(*self.pitch_range)
+            wav = librosa.effects.pitch_shift(wav, self.sample_rate, n_steps=pitch_change, bins_per_octave=24)
 
         # normalize audio power
         # (TODO: how about tfm.gain above?)
         gain = 0.1
-        wav = wav.astype(np.float32)
         wav_energy = np.sqrt(np.sum(np.power(wav, 2)) / wav.size)
         wav = gain * wav / wav_energy
 
@@ -182,7 +163,7 @@ class NonSplitTransformer(torchaudio.transforms.Compose):
     def __init__(self,
                  resample=True, sample_rate=p.SAMPLE_RATE,
                  tempo=True, tempo_range=p.TEMPO_RANGE,
-                 gain=True, gain_range=p.GAIN_RANGE,
+                 pitch=True, pitch_range=p.PITCH_RANGE,
                  noise=True, noise_range=p.NOISE_RANGE,
                  offset=True, offset_range=None,
                  padding=True, num_padding=None,
@@ -196,7 +177,7 @@ class NonSplitTransformer(torchaudio.transforms.Compose):
         super().__init__([
             Augment(resample=resample, sample_rate=sample_rate,
                     tempo=tempo, tempo_range=tempo_range,
-                    gain=gain, gain_range=gain_range,
+                    pitch=pitch, pitch_range=pitch_range,
                     noise=noise, noise_range=noise_range,
                     offset=offset, offset_range=offset_range,
                     padding=padding, num_padding=num_padding),
@@ -302,7 +283,7 @@ class NonSplitTrainDataset(TrainDataset):
                  transformer=None, target_transformer=None,
                  resample=True, sample_rate=p.SAMPLE_RATE,
                  tempo=True, tempo_range=p.TEMPO_RANGE,
-                 gain=True, gain_range=p.GAIN_RANGE,
+                 pitch=True, pitch_range=p.PITCH_RANGE,
                  noise=True, noise_range=p.NOISE_RANGE,
                  offset=True, padding=True,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
@@ -312,7 +293,7 @@ class NonSplitTrainDataset(TrainDataset):
         if transformer is None:
             self.transformer = NonSplitTransformer(resample=resample, sample_rate=sample_rate,
                                                    tempo=tempo, tempo_range=tempo_range,
-                                                   gain=gain, gain_range=gain_range,
+                                                   pitch=pitch, pitch_range=pitch_range,
                                                    noise=noise, noise_range=noise_range,
                                                    offset=offset, padding=padding,
                                                    window_shift=window_shift, window_size=window_size, nfft=nfft,
@@ -335,7 +316,7 @@ class NonSplitPredictDataset(PredictDataset):
         super().__init__(*args, **kwargs)
         if transformer is None:
             self.transformer = NonSplitTransformer(resample=resample, sample_rate=sample_rate,
-                                                   tempo=False, gain=False,
+                                                   tempo=False, pitch=False,
                                                    noise=noise, noise_range=noise_range,
                                                    offset=False, padding=padding,
                                                    window_shift=p.WINDOW_SHIFT, window_size=window_size, nfft=nfft,
@@ -351,7 +332,7 @@ class SplitTrainDataset(TrainDataset):
                  transformer=None, target_transformer=None,
                  resample=True, sample_rate=p.SAMPLE_RATE,
                  tempo=True, tempo_range=p.TEMPO_RANGE,
-                 gain=True, gain_range=p.GAIN_RANGE,
+                 pitch=True, pitch_range=p.PITCH_RANGE,
                  noise=True, noise_range=p.NOISE_RANGE,
                  offset=True, padding=True,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
@@ -361,7 +342,7 @@ class SplitTrainDataset(TrainDataset):
         if transformer is None:
             self.transformer = SplitTransformer(resample=resample, sample_rate=sample_rate,
                                                 tempo=tempo, tempo_range=tempo_range,
-                                                gain=gain, gain_range=gain_range,
+                                                pitch=pitch, pitch_range=pitch_range,
                                                 noise=noise, noise_range=noise_range,
                                                 offset=offset, padding=padding,
                                                 window_shift=window_shift, window_size=window_size, nfft=nfft,
@@ -384,7 +365,7 @@ class SplitPredictDataset(PredictDataset):
         super().__init__(*args, **kwargs)
         if transformer is None:
             self.transformer = SplitTransformer(resample=resample, sample_rate=sample_rate,
-                                                tempo=False, gain=False,
+                                                tempo=False, pitch=False,
                                                 noise=noise, noise_range=noise_range,
                                                 offset=False, padding=padding,
                                                 window_shift=p.WINDOW_SHIFT, window_size=window_size, nfft=nfft,

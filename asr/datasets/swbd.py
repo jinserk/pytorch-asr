@@ -12,7 +12,7 @@ Importing the data from Kaldi's egs/swbd/s5c recipe directory
 
 CHAR_MASK = "abcdefghijklmnopqrstuvwxyz'-._<>[] "
 
-REPLACE_TABLE = {
+CORRECT_TABLE = {
     "\[vocalized-noise\]":  "<unk>",
     "\(\%hesitation\)":     "",
     "p h d":                "p._h._d.",
@@ -46,11 +46,13 @@ class KaldiSwbdImporter(KaldiDataImporter):
     def strip_text(self, text):
         import re
         text = text.lower()
-        for k, v in sorted(REPLACE_TABLE, key=len, reverse=True).items():
-            text = re.sub(fr"^{k}", v, text)
-            text = re.sub(fr"{k}$", v, text)
-            text = re.sub(fr"(\s){k}(\s)", fr"\1{v}\2", text)
-            text = re.sub(fr"(\s){k}(\s)", fr"\1{v}\2", text)
+        for k in sorted(CORRECT_TABLE, key=len, reverse=True):
+            v = CORRECT_TABLE[k]
+            while True:
+                out = re.sub(fr"(^|\s){k}($|\s)", fr"\1{v}\2", text)
+                if out == text:
+                    break
+                text = out
         # match abbreviated words
         p = re.compile(r'([a-z]\.\s)+[a-z]\.')
         matches = p.findall(text)
@@ -58,21 +60,22 @@ class KaldiSwbdImporter(KaldiDataImporter):
             for m in matches:
                 s = m.group().replace(' ', '_')
                 text = text.replace(m.group(), s)
-        text = ' '.join(text.strip().split())
-        text = ''.join([x for x in text if x in CHAR_MASK])
+        text = ' '.join([w.strip() for w in text.strip().split()])
+        text = ''.join([c for c in text if c in CHAR_MASK])
         return text
 
 
 def prepare(argv):
     parser = argparse.ArgumentParser(description="Prepare dataset by importing from Kaldi recipe")
+    parser.add_argument('--text-only', default=False, action='store_true', help="if you want to process text only when wavs are already stored")
     parser.add_argument('--rebuild', default=False, action='store_true', help="if you want to rebuild manifest only instead of the overall processing")
     parser.add_argument('target_dir', type=str, help="path to store the processed data")
     args = parser.parse_args(argv)
 
     assert args.target_dir is not None
+    assert not (args.text_only and args.rebuild), "options --text-only and --rebuild cannot together. choose either of them."
 
     log_file = Path(args.target_dir, 'prepare.log').resolve()
-    print(f"begins logging to file: {str(log_file)}")
     set_logfile(log_file)
 
     target_path = Path(args.target_dir).resolve()
@@ -80,14 +83,18 @@ def prepare(argv):
 
     importer = KaldiSwbdImporter(target_path)
 
-    if not args.rebuild:
-        importer.process("train")
-        importer.process("eval2000")
-        importer.process("rt03")
-    else:
+    if args.rebuild:
         importer.rebuild("train")
         importer.rebuild("eval2000")
         importer.rebuild("rt03")
+    elif args.text_only:
+        importer.process_text_only("train")
+        importer.process_text_only("eval2000")
+        importer.process_text_only("rt03")
+    else:
+        importer.process("train")
+        importer.process("eval2000")
+        importer.process("rt03")
 
     logger.info("data preparation finished.")
 

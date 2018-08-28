@@ -4,16 +4,65 @@ from pathlib import Path
 import logging
 import torch
 
-# handler
-logger = logging.getLogger('ss_vae.pytorch')
-logger.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+LOG_STREAM = True
+LOG_FILE = True
+LOG_VISDOM = False
+LOG_TENSORBOARD = False
 
-# stdout handler
-chdr = logging.StreamHandler()
-chdr.setLevel(logging.DEBUG)
-chdr.setFormatter(formatter)
-logger.addHandler(chdr)
+# handler
+logger = logging.getLogger('pytorch-asr')
+logger.setLevel(logging.DEBUG)
+_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+
+
+def init_logger(args, logfile=None):
+    if LOG_STREAM:
+        set_logstream()
+
+    if LOG_FILE:
+        set_logfile(logfile)
+
+    # prepare visdom
+    if args.visdom:
+        try:
+            env = str(Path(args.log_dir).name)
+            logger.visdom = VisdomLogger(host=args.visdom_host, port=args.visdom_port, env=env)
+            LOG_VISDOM = True
+        except:
+            logger.info("error to use visdom")
+            logger.visdom = None
+            LOG_VISDOM = False
+    else:
+        logger.visdom = None
+        LOG_VISDOM = False
+
+    # prepare tensorboard
+    if args.tensorboard:
+        try:
+            env = str(Path(args.log_dir, 'tensorboard').resolve)
+            logger.tensorboard = TensorboardLogger(env)
+            LOG_TENSORBOARD = False
+        except:
+            logger.info("error to use tensorboard")
+            logger.tensorboard = None
+            LOG_TENSORBOARD = False
+    else:
+        logger.tensorboard = None
+        LOG_TENSORBOARD = False
+
+    version_log(args)
+
+
+def set_logstream():
+    # stdout handler
+    chdr = logging.StreamHandler()
+    chdr.setLevel(logging.DEBUG)
+    chdr.setFormatter(_formatter)
+    logger.addHandler(chdr)
+
+
+def unset_logstream():
+    logger.removeHandler(chdr)
 
 
 def set_logfile(filename):
@@ -25,9 +74,9 @@ def set_logfile(filename):
     # file handler
     fhdr = logging.FileHandler(filepath)
     fhdr.setLevel(logging.DEBUG)
-    fhdr.setFormatter(formatter)
+    fhdr.setFormatter(_formatter)
     logger.addHandler(fhdr)
-    print(f"begins logging to file: {str(filepath)}")
+    logger.info(f"begins logging to file: {str(filepath)}")
 
 
 def version_log(args):
