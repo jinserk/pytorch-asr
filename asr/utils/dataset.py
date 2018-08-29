@@ -7,7 +7,7 @@ import tempfile
 import numpy as np
 import scipy.io.wavfile
 from scipy.signal import tukey
-import librosa
+from pysndfx import AudioEffectsChain
 
 import torch
 import torch.nn as nn
@@ -52,21 +52,34 @@ class Augment(object):
         if wav.ndim > 1 and wav.shape[1] > 1:
             logger.error("wav file has two or more channels")
             sys.exit(1)
-        wav = wav.astype('float64')
+        wav = wav.astype('float32')
+        wav = wav / max(abs(wav))
+
+        fx = AudioEffectsChain()
 
         if self.resample:
-            wav = librosa.core.resample(wav, sr, self.sample_rate)
+            if self.sample_rate > sr:
+                ratio = int(self.sample_rate / sr)
+                fx.upsample(ratio)
+            elif self.sample_rate < sr:
+                ratio = int(sr / self.sample_rate)
+                fx.custom(f"downsample {ratio}")
 
         if self.tempo:
             tempo_change = np.random.uniform(*self.tempo_range)
-            wav = librosa.effects.time_stretch(wav, tempo_change)
+            fx.tempo(tempo_change, opt_flag="s")
 
         if self.pitch:
-            pitch_change = 4 * np.random.uniform(*self.pitch_range)
-            wav = librosa.effects.pitch_shift(wav, self.sample_rate, n_steps=pitch_change, bins_per_octave=24)
+            pitch_change = np.random.uniform(*self.pitch_range)
+            fx.pitch(pitch_change)
+
+        # dithering
+        fx.custom(f"dither -s")
+
+        wav = fx(wav, sample_in=sr, sample_out=self.sample_rate)
+        #wav = wav / max(abs(wav))
 
         # normalize audio power
-        # (TODO: how about tfm.gain above?)
         gain = 0.1
         wav_energy = np.sqrt(np.sum(np.power(wav, 2)) / wav.size)
         wav = gain * wav / wav_energy
@@ -86,7 +99,8 @@ class Augment(object):
             noise_energy = np.sqrt(np.sum(np.power(noise, 2)) / noise.size)
             wav = wav + snr * gain * noise / noise_energy
 
-        #scipy.io.wavfile.write("test.wav", sr, wav)
+        #filename = wav_file.replace(".wav", "_augmented.wav")
+        #scipy.io.wavfile.write(filename, self.sample_rate, wav)
         return torch.FloatTensor(wav)
 
 
@@ -394,13 +408,17 @@ class AudioSubset(Subset):
 
 
 if __name__ == "__main__":
-    test = 3
+    test = 1
     # test Augment
     if test == 1:
-        transformer = SplitTransformer()
-        wav_file = Path("~/ics-asr/temp/conan1-8k.wav")
+        transformer = Augment(resample=True, sample_rate=8000,
+                              tempo=True, tempo_range=(0.9, 1.1),
+                              pitch=True, pitch_range=(-150., -150.),
+                              noise=True, noise_range=(-20., -5.),
+                              offset=False, offset_range=(0, 40),
+                              padding=False, num_padding=0)
+        wav_file = "/d1/jbaik/ics-asr/temp/conan1-8k.wav"
         audio = transformer(wav_file)
-        print(audio.shape)
     # test Spectrogram
     elif test == 2:
         import matplotlib

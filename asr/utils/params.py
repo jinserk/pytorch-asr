@@ -13,9 +13,9 @@ WINDOW_SIZE = 0.025   # sec
 NFFT = 256
 
 # augmentation
-TEMPO_RANGE = (0.85, 1.15)
-PITCH_RANGE = (-1., 1.)
-NOISE_RANGE = (-20., -3.)
+TEMPO_RANGE = (0.9, 1.1)
+PITCH_RANGE = (-150., 150.)
+NOISE_RANGE = (-10., -3.)
 
 # images
 CHANNEL = 2

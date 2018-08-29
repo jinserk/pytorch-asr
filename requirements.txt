@@ -9,7 +9,7 @@ matplotlib
 colorlover
 t_sne_bhcuda
 tqdm
-librosa
+pysndfx
 python-Levenshtein
 visdom
 tensorboardx

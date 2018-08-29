@@ -21,8 +21,6 @@ from asr.utils import params as p
 
 from asr.kaldi.latgen import LatGenCTCDecoder
 
-#from .distributed import DistributedDataParallel
-
 
 FRAME_REDUCE_FACTOR = 2
 
@@ -34,8 +32,8 @@ OPTIMIZER_TYPES = set([
 
 
 def init_distributed(backend="gloo", local_rank=0):
-    """
     try:
+        """
         proc_id = int(os.environ['SLURM_PROCID'])
         ntasks = int(os.environ['SLURM_NTASKS'])
         node_list = os.environ['SLURM_NODELIST']
@@ -47,12 +45,13 @@ def init_distributed(backend="gloo", local_rank=0):
         logger.info(f"initialized via {addr} of world_size {ntasks}")
 
         dist.init_process_group(backend=backend, init_method=addr, world_size=ntasks, rank=proc_id)
+        """
+        dist.init_process_group(backend=backend, init_method="env://")
+        torch.cuda.set_device(local_rank)
     except:
-        # rollback to single instance running
+        os.environ['MASTER_ADDR'] = '127.0.0.1'
+        os.environ['MASTER_PORT'] = '23456'
         dist.init_process_group(backend=backend, init_method="env://", world_size=1, rank=0)
-    """
-    dist.init_process_group(backend=backend, init_method="env://")
-    torch.cuda.set_device(local_rank)
 
 
 def set_seed(seed=None):
