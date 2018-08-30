@@ -24,6 +24,7 @@ WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
 #SAMPLE_MARGIN = WIN_SAMP_SHIFT * p.FRAME_MARGIN  # samples
 SAMPLE_MARGIN = 0
 
+np.seterr(all='raise')
 
 # transformer: resampling and augmentation
 class Augment(object):
@@ -52,8 +53,12 @@ class Augment(object):
         if wav.ndim > 1 and wav.shape[1] > 1:
             logger.error("wav file has two or more channels")
             sys.exit(1)
-        wav = wav.astype('float32')
-        wav = wav / max(abs(wav))
+        if type(wav[0]) is np.int32:
+            wav = wav.astype('float32', copy=False) / 2147483648.0
+        elif type(wav[0]) is np.int16:
+            wav = wav.astype('float32', copy=False) / 32768.0
+        elif type(wav[0]) is np.uint8:
+            wav = wav.astype('float32', copy=False) / 256.0 - 128.0
 
         fx = AudioEffectsChain()
 

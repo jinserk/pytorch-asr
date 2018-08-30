@@ -41,7 +41,7 @@ def batch_train(argv):
 
     # init distributed env
     init_distributed(args.use_cuda)
-    if is_distribued():
+    if is_distributed():
         #disable_log_stream()
         logfile = f"train_rank{dist.get_rank()}.log"
     else:
@@ -75,23 +75,23 @@ def batch_train(argv):
         "train5" : NonSplitTrainDataLoader(datasets["train5"],
                                            sampler=(DistributedSampler(datasets["train5"])
                                                     if is_distributed() else None),
-                                           batch_size=32, num_workers=32,
+                                           batch_size=64, num_workers=32,
                                            shuffle=(not is_distributed()), pin_memory=args.use_cuda),
         "train10": NonSplitTrainDataLoader(datasets["train10"],
                                            sampler=(DistributedSampler(datasets["train10"])
                                                     if is_distributed() else None),
-                                           batch_size=32, num_workers=32,
+                                           batch_size=32, num_workers=16,
                                            shuffle=(not is_distributed()), pin_memory=args.use_cuda),
         "train15": NonSplitTrainDataLoader(datasets["train15"],
                                            sampler=(DistributedSampler(datasets["train15"])
                                                     if is_distributed() else None),
-                                           batch_size=24, num_workers=24,
+                                           batch_size=16, num_workers=8,
                                            shuffle=(not is_distributed()), pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"],
-                                           batch_size=16, num_workers=16,
+                                           batch_size=16, num_workers=8,
                                            shuffle=False, pin_memory=args.use_cuda),
         "test"   : NonSplitTrainDataLoader(datasets["test"],
-                                           batch_size=16, num_workers=16,
+                                           batch_size=16, num_workers=8,
                                            shuffle=False, pin_memory=args.use_cuda),
     }
 
@@ -123,7 +123,7 @@ def train(argv):
     parser.add_argument('--data-path', default='data/aspire', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
     parser.add_argument('--max-len', default=15., type=float, help="max length of utterance to use in secs")
-    parser.add_argument('--batch-size', default=8, type=int, help="number of images (and labels) to be considered in a batch")
+    parser.add_argument('--batch-size', default=16, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--num-workers', default=8, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")

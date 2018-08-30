@@ -13,9 +13,8 @@ eval "$(pyenv init -)"
 export NCCL_DEBUG=INFO
 
 srun \
-  python train.py deepspeech_ctc \
+  python batch_train.py deepspeech_ctc \
     --use-cuda \
-    --max-len 15 \
-    --log-dir logs_20180829_deepspeech_ctc \
+    --log-dir logs_20180830_deepspeech_ctc \
     --visdom \
     --visdom-host 172.26.15.44

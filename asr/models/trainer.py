@@ -10,6 +10,9 @@ import torch
 import torch.nn as nn
 import torch.distributed as dist
 
+from apex.parallel import DistributedDataParallel
+from apex.fp16_utils import *
+
 import torchvision.utils as tvu
 from warpctc_pytorch import CTCLoss
 import torchnet as tnt
@@ -104,15 +107,18 @@ class Trainer:
                 logger.visdom.add_plot(title=f'validate', xlabel='epoch', ylabel='LER')
 
         # setup model
-        model.half()
         if self.use_cuda:
             logger.info("using cuda")
             model.cuda()
+            model = network_to_half(model)
+
         if is_distributed():
-            local_rank = torch.cuda.current_device()
-            self.model = nn.parallel.DistributedDataParallel(model,
-                                                             device_ids=[local_rank],
-                                                             output_device=local_rank)
+            if self.use_cuda:
+                local_rank = torch.cuda.current_device()
+                #self.model = DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank)
+                self.model = DistributedDataParallel(model)
+            else:
+                self.model = nn.parallel.DistributedDataParallel(model)
         else:
             self.model = model
 
@@ -135,6 +141,8 @@ class Trainer:
             logger.info("using AdamW")
             self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0005, l2_reg=False)
             self.lr_scheduler = None
+        if self.use_cuda:
+            self.optimizer = FP16_Optimizer(self.optimizer, static_loss_scale=128.)
 
         # setup decoder for test
         self.decoder = LatGenCTCDecoder()
@@ -287,6 +295,8 @@ class NonSplitTrainer(Trainer):
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
             ys_hat = self.model(xs)
+            if self.use_cuda:
+                ys_hat = ys_hat.float()
             ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
             frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
             #torch.set_printoptions(threshold=5000000)
@@ -299,9 +309,14 @@ class NonSplitTrainer(Trainer):
                 logger.warning("received an inf loss, setting loss value to 0")
                 loss_value = 0
             self.optimizer.zero_grad()
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
+            if self.use_cuda:
+                self.optimizer.backward(loss)
+                self.optimizer.clip_master_grads(self.max_norm)
+            else:
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
             self.optimizer.step()
+            torch.cuda.synchronize()
             del loss
             return loss_value
         except Exception as e:
@@ -314,6 +329,8 @@ class NonSplitTrainer(Trainer):
         if self.use_cuda:
             xs = xs.cuda(non_blocking=True)
         ys_hat = self.model(xs)
+        if self.use_cuda:
+            ys_hat = ys_hat.float()
         # convert likes to ctc labels
         frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
         hyps = [onehot2int(yh[:s]).squeeze() for yh, s in zip(ys_hat, frame_lens)]
@@ -328,6 +345,8 @@ class NonSplitTrainer(Trainer):
         if self.use_cuda:
             xs = xs.cuda(non_blocking=True)
         ys_hat = self.model(xs)
+        if self.use_cuda:
+            ys_hat = ys_hat.float()
         frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
         # latgen decoding
         loglikes = torch.log(ys_hat)
@@ -352,6 +371,8 @@ class SplitTrainer(Trainer):
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
             ys_hat = self.model(xs)
+            if self.use_cuda:
+                ys_hat = ys_hat.float()
             ys_hat = ys_hat.unsqueeze(dim=0).transpose(1, 2)
             pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
             ys_hats = [ys_hat.narrow(2, p, l).clone() for p, l in zip(pos[:-1], frame_lens)]
@@ -365,8 +386,12 @@ class SplitTrainer(Trainer):
                 logger.warning("received an inf loss, setting loss value to 0")
                 loss_value = 0
             self.optimizer.zero_grad()
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
+            if self.use_cuda:
+                self.optimizer.backward(loss)
+                self.optimizer.clip_master_grads(self.max_norm)
+            else:
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
             self.optimizer.step()
             del loss
         except Exception as e:
@@ -379,6 +404,8 @@ class SplitTrainer(Trainer):
         if self.use_cuda:
             xs = xs.cuda(non_blocking=True)
         ys_hat = self.model(xs)
+        if self.use_cuda:
+            ys_hat = ys_hat.float()
         pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
         ys_hat = [ys_hat.narrow(0, p, l).clone() for p, l in zip(pos[:-1], frame_lens)]
         # convert likes to ctc labels
@@ -394,6 +421,8 @@ class SplitTrainer(Trainer):
         if self.use_cuda:
             xs = xs.cuda(non_blocking=True)
         ys_hat = self.model(xs)
+        if self.use_cuda:
+            ys_hat = ys_hat.float()
         ys_hat = ys_hat.unsqueeze(dim=0).transpose(1, 2)
         pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
         ys_hats = [ys_hat.narrow(2, p, l).clone() for p, l in zip(pos[:-1], frame_lens)]
