@@ -40,7 +40,7 @@ class NonSplitPredictor:
                 # predict phones using AM
                 xs, frame_lens, filenames = data
                 if self.use_cuda:
-                    xs = xs.cuda()
+                    xs = xs.cuda(non_blocking=True)
                 ys_hat = self.model(xs)
                 frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
                 # decode using Kaldi's latgen decoder
@@ -75,10 +75,8 @@ class NonSplitPredictor:
             logger.error(f"no such file {file_path} exists")
             sys.exit(1)
         logger.info(f"loading the model from {file_path}")
-        if not self.use_cuda:
-            states = torch.load(file_path, map_location='cpu')
-        else:
-            states = torch.load(file_path, map_location='cuda:0')
+        to_device = f"cuda:{torch.cuda.current_device()}" if self.use_cuda else "cpu"
+        states = torch.load(file_path, map_location=to_device)
         self.model.load_state_dict(states["model"])
 
 
@@ -91,7 +89,7 @@ class SplitPredictor(NonSplitPredictor):
                 # predict phones using AM
                 xs, frame_lens, filenames = data
                 if self.use_cuda:
-                    xs = xs.cuda()
+                    xs = xs.cuda(non_blocking=True)
                 ys_hat = self.model(xs)
                 ys_hat = ys_hat.unsqueeze(dim=0).transpose(1, 2)
                 pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))

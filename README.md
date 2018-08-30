@@ -2,7 +2,7 @@
 
 This repository maintains an experimental code for speech recognition using [PyTorch](https://github.com/pytorch/pytorch) and [Kaldi](https://github.com/kaldi-asr/kaldi).
 The Kaldi latgen decoder is integrated with PyTorch binding for CTC based acoustic model training.
-The code was tested with Python 3.7 and PyTorch 0.4.1.
+The code was tested with Python 3.7 and PyTorch 0.4.1+.
 
 ## Installation
 
@@ -15,8 +15,8 @@ The code was tested with Python 3.7 and PyTorch 0.4.1.
 We recommend [pyenv](https://github.com/pyenv/pyenv).
 Do not forget to set `pyenv local 3.7.0` in the local repo if you're using pyenv.
 
-If you want to use AdamW as your optimizer, you need to patch ([PR #4429](https://github.com/pytorch/pytorch/pull/4429) to PyTorch source by yourself.
-CosineAnnealingWithRestartLR for SGDR from [PR #7821](https://github.com/pytorch/pytorch/pull/7821)) is included in `asr/utils/lr_scheduler.py` as a part of project.
+If you want to use AdamW as your optimizer, you need to patch [PR #4429](https://github.com/pytorch/pytorch/pull/4429) to PyTorch source by yourself.
+CosineAnnealingWithRestartLR for SGDR from [PR #7821](https://github.com/pytorch/pytorch/pull/7821) is included in `asr/utils/lr_scheduler.py` as a part of this project.
 
 To avoid the `-fPIC` related compile error, you have to configure Kaldi with `--shared` option when you install it.
 
@@ -30,8 +30,12 @@ Install required Python modules:
 $ cd pytorch-asr
 $ pip install -r requirements.txt
 ```
-If you have installation error of `torchaudio` on CentOS machine, just comment out the line from `requirements.txt` and install it from its [source](https://github.com/pytorch/audio.git).
-You need to modify `#include <sox.h>` to `#include <sox/sox.h>` in `torchaudio/torch_sox.cpp` of the source to install and run.
+
+If you have installation error of `torchaudio` on CentOS machine, add the followings to your `~/.bashrc`.
+```
+export CPLUS_INCLUDE_PATH=/usr/include/sox:$CPLUS_INCLUDE_PATH
+```
+don't forget `$ source ~/.bashrc` before you try to install the requirements.
 
 Modify the Kaldi path in `_path.py`:
 ```
@@ -54,21 +58,13 @@ If you want to use your own language model or graphs, modify `asr/kaldi/scripts/
 Pytorch-asr is targeted to develop a framework supporting multiple acoustic models. You have to specify one of model to train or predict.
 Currently, `resnet_{ctc,ed}`, `densenet_{ctc,ed}`, and `deepspeech_{ctc,ed}` models work for training and prediction. Try these models first.
 
-If you do training for the first time, you have to preprocess the dataset.
-Currently we utilize Kaldi's recipe directory containing preprocessed corpus data.
-You need to run the preparation script in Kaldi recipe before doing the followings.
-Now we support only the Kaldi's ASpIRE recipe datatset, originated from LDC's fisher corpus.
-Please modify `RECIPE_PATH` variable in `asr/dataset/aspire.py` first according to the location of your Kaldi setup.
+If you do training for the first time, you need to preprocess the dataset.
+Currently we utilize the contents of `data` directory in Kaldi's recipe directories that are containing preprocessed corpus data.
+You need to run the preparation script in each Kaldi recipe before doing the followings.
+Now we support the Kaldi's `aspire`, `swbd`, and `tedlium` recipes. You will need LDC's corpora to use `aspire` and `swbd` datasets.
+Please modify `RECIPE_PATH` variable in `asr/datasets/*.py` first according to the location of your Kaldi setup.
 ```
-$ python prepare.py aspire
-```
-
-If you have any related Kaldi recipe and its `exp` directories which contains the result of training,
-you can use the phone alignment result for CTC training.
-If you don't use the Kaldi's training result, you can generate the ctc labeling files from each utterence's transcript and the corresponding lexicon dictionary.
-```
-$ cd asr/kaldi
-$ python prep_ctc_trans.py ../../data/aspire
+$ python prepare.py aspire <data-path>
 ```
 
 Start a new training with:
@@ -83,6 +79,7 @@ $ python train.py <model-name> --use-cuda --continue-from <model-file>
 ```
 
 You can use `--visdom` or `--tensorboard` option to see the loss propagation.
+Please make sure that you already have a running visdom process before you start a training with `--visdom` option.
 
 
 ## Prediction
@@ -96,7 +93,7 @@ $ python predict.py <model-name> --continue-from <model-file> <target-wav-file1>
 
 Some models are imported from the following projects. We appreciate all their work and all right of the codes belongs to them.
 
-* DeepSpeech : Sean Naren (https://github.com/SeanNaren/deepspeech.pytorch.git)
-* ResNet : PyTorch Vision Team (https://github.com/pytorch/vision.git)
-* DenseNet : PyTorch Vision Team (https://github.com/pytorch/vision.git)
+* DeepSpeech : (https://github.com/SeanNaren/deepspeech.pytorch.git)
+* ResNet : (https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py)
+* DenseNet : (https://github.com/pytorch/vision/blob/master/torchvision/models/densenet.py)
 

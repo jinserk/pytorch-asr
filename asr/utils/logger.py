@@ -3,20 +3,22 @@ import sys
 from pathlib import Path
 import logging
 import torch
+from tqdm import tqdm
+
+
+LOG_STREAM = True
+LOG_FILE = True
 
 # handler
 logger = logging.getLogger('pytorch-asr')
 logger.setLevel(logging.DEBUG)
 _formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
 
-logger.LOG_STREAM = True
-logger.LOG_FILE = True
-
 def init_logger(args, logfile=None):
-    if logger.LOG_STREAM:
+    if LOG_STREAM:
         set_logstream()
 
-    if logger.LOG_FILE:
+    if LOG_FILE:
         logpath = Path(args.log_dir, logfile).resolve()
         set_logfile(str(logpath))
 
@@ -38,7 +40,9 @@ def init_logger(args, logfile=None):
         except:
             logger.info("error to use tensorboard")
 
-    version_log(args)
+
+def disable_log_stream():
+    LOG_STREAM = False
 
 
 def set_logstream():
@@ -47,10 +51,6 @@ def set_logstream():
     chdr.setLevel(logging.DEBUG)
     chdr.setFormatter(_formatter)
     logger.addHandler(chdr)
-
-
-def unset_logstream():
-    logger.removeHandler(chdr)
 
 
 def set_logfile(filename):
@@ -72,6 +72,27 @@ def version_log(args):
     logger.info(f"command-line options: {' '.join(sys.argv)}")
     args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
     logger.info(f"args: {' '.join(args_str)}")
+
+
+#class TqdmHandler(logging.Handler):
+#
+#    def emit(self, record):
+#        try:
+#            msg = self.format(record)
+#            tqdm.write(msg)  # , file=sys.stderr)
+#            self.flush()
+#        except (KeyboardInterrupt, SystemExit):
+#            raise
+#        except:
+#            self.handleError(record)
+#
+#
+#def set_logtqdm():
+#    # stdout handler
+#    thdr = TqdmHandler()
+#    thdr.setLevel(logging.DEBUG)
+#    thdr.setFormatter(_formatter)
+#    logger.addHandler(thdr)
 
 
 class VisdomLogger:

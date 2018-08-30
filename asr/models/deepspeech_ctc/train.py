@@ -4,7 +4,6 @@ import argparse
 from pathlib import Path, PurePath
 
 import torch
-import torch.distributed as dist
 from torch.utils.data.dataset import ConcatDataset
 from torch.utils.data.distributed import DistributedSampler
 from warpctc_pytorch import CTCLoss
@@ -15,14 +14,13 @@ from asr.utils.logger import *
 from asr.utils import params as p
 from asr.kaldi.latgen import LatGenCTCDecoder
 
-from ..trainer import FRAME_REDUCE_FACTOR, OPTIMIZER_TYPES, set_seed, init_distributed, NonSplitTrainer
+from ..trainer import *
 from .network import DeepSpeech
 
 
 def batch_train(argv):
     parser = argparse.ArgumentParser(description="DeepSpeech AM with batch training")
     # for training
-    parser.add_argument('--local_rank', default=0, type=int, help="rank of this node in distributed running")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")
     parser.add_argument('--max-norm', default=400, type=int, help="norm cutoff to prevent explosion of gradients")
@@ -39,16 +37,17 @@ def batch_train(argv):
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
 
-    args = parser.parse_args(argv[1:])
+    args = parser.parse_args(argv)
 
     # init distributed env
-    init_distributed(local_rank=args.local_rank)
-    if dist.get_world_size() > 1:
-        #logger.LOG_STREAM = False
+    init_distributed(args.use_cuda)
+    if is_distribued():
+        #disable_log_stream()
         logfile = f"train_rank{dist.get_rank()}.log"
     else:
         logfile = "train.log"
     init_logger(args, logfile)
+    version_log(args)
     set_seed(args.seed)
 
     # prepare trainer object
@@ -56,38 +55,38 @@ def batch_train(argv):
     trainer = NonSplitTrainer(model, **vars(args))
     labeler = trainer.decoder.labeler
 
+    data_path = "/d1/jbaik/ics-asr/data"
     train_datasets = [
-        NonSplitTrainDataset(labeler=labeler, manifest_file="/d1/jbaik/ics-asr/data/aspire/train.csv"),
-        NonSplitTrainDataset(labeler=labeler, manifest_file="/d1/jbaik/ics-asr/data/aspire/dev.csv"),
-        NonSplitTrainDataset(labeler=labeler, manifest_file="/d1/jbaik/ics-asr/data/aspire/test.csv"),
-        NonSplitTrainDataset(labeler=labeler, manifest_file="/d1/jbaik/ics-asr/data/swbd/train.csv"),
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{data_path}/aspire/train.csv"),
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{data_path}/aspire/dev.csv"),
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{data_path}/aspire/test.csv"),
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{data_path}/swbd/train.csv"),
     ]
 
     datasets = {
-        #"train3" : ConcatDataset([AudioSubset(d, max_len=3) for d in train_datasets]),
         "train5" : ConcatDataset([AudioSubset(d, max_len=5) for d in train_datasets]),
         "train10": ConcatDataset([AudioSubset(d, max_len=10) for d in train_datasets]),
         "train15": ConcatDataset([AudioSubset(d, max_len=15) for d in train_datasets]),
-        "dev"    : NonSplitTrainDataset(labeler=labeler, manifest_file="/d1/jbaik/ics-asr/data/swbd/eval2000.csv"),
-        "test"   : NonSplitTrainDataset(labeler=labeler, manifest_file="/d1/jbaik/ics-asr/data/swbd/rt03.csv"),
+        "dev"    : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{data_path}/swbd/eval2000.csv"),
+        "test"   : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{data_path}/swbd/rt03.csv"),
     }
+
     dataloaders = {
-        #"train3" : NonSplitTrainDataLoader(datasets["train3"],
-        #                                   sampler=DistributedSampler(datasets["train3"]),
-        #                                   batch_size=32, num_workers=32,
-        #                                   shuffle=False, pin_memory=args.use_cuda),
         "train5" : NonSplitTrainDataLoader(datasets["train5"],
-                                           sampler=DistributedSampler(datasets["train5"]),
+                                           sampler=(DistributedSampler(datasets["train5"])
+                                                    if is_distributed() else None),
                                            batch_size=32, num_workers=32,
-                                           shuffle=False, pin_memory=args.use_cuda),
+                                           shuffle=(not is_distributed()), pin_memory=args.use_cuda),
         "train10": NonSplitTrainDataLoader(datasets["train10"],
-                                           sampler=DistributedSampler(datasets["train10"]),
+                                           sampler=(DistributedSampler(datasets["train10"])
+                                                    if is_distributed() else None),
                                            batch_size=32, num_workers=32,
-                                           shuffle=False, pin_memory=args.use_cuda),
+                                           shuffle=(not is_distributed()), pin_memory=args.use_cuda),
         "train15": NonSplitTrainDataLoader(datasets["train15"],
-                                           sampler=DistributedSampler(datasets["train15"]),
+                                           sampler=(DistributedSampler(datasets["train15"])
+                                                    if is_distributed() else None),
                                            batch_size=24, num_workers=24,
-                                           shuffle=False, pin_memory=args.use_cuda),
+                                           shuffle=(not is_distributed()), pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"],
                                            batch_size=16, num_workers=16,
                                            shuffle=False, pin_memory=args.use_cuda),
@@ -98,20 +97,19 @@ def batch_train(argv):
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
-        #if i < 5:
-        #    dataloaders["train3"].sampler.set_epoch(i)
-        #    trainer.train_epoch(dataloaders["train3"])
-        #    trainer.validate(dataloaders["dev"])
-        if i < 11:
-            dataloaders["train5"].sampler.set_epoch(i)
+        if i < 10:
+            if is_distributed():
+                dataloaders["train5"].sampler.set_epoch(i)
             trainer.train_epoch(dataloaders["train5"])
             trainer.validate(dataloaders["dev"])
         elif i < 40:
-            dataloaders["train10"].sampler.set_epoch(i)
+            if is_distributed():
+                dataloaders["train10"].sampler.set_epoch(i)
             trainer.train_epoch(dataloaders["train10"])
             trainer.validate(dataloaders["dev"])
         else:
-            dataloaders["train15"].sampler.set_epoch(i)
+            if is_distributed():
+                dataloaders["train15"].sampler.set_epoch(i)
             trainer.train_epoch(dataloaders["train15"])
             trainer.validate(dataloaders["dev"])
 
@@ -145,7 +143,14 @@ def train(argv):
 
     args = parser.parse_args(argv)
 
-    set_logfile(Path(args.log_dir, "train.log"))
+    # init distributed env
+    init_distributed(args.use_cuda)
+    if is_distributed():
+        #disable_log_stream()
+        logfile = f"train_rank{dist.get_rank()}.log"
+    else:
+        logfile = "train.log"
+    init_logger(args, logfile)
     version_log(args)
     set_seed(args.seed)
 
@@ -164,12 +169,17 @@ def train(argv):
         manifest_file, data_size = v
         datasets[k] = AudioSubset(NonSplitTrainDataset(labeler=labeler, manifest_file=manifest_file),
                                   data_size=data_size, min_len=args.min_len, max_len=args.max_len)
-        dataloaders[k] = NonSplitTrainDataLoader(datasets[k], batch_size=args.batch_size,
-                                                 num_workers=args.num_workers, shuffle=True,
+        dataloaders[k] = NonSplitTrainDataLoader(datasets[k],
+                                                 sampler=(DistributedSampler(datasets[k])
+                                                          if is_distributed() else None),
+                                                 batch_size=args.batch_size,
+                                                 num_workers=args.num_workers, shuffle=(not is_distributed()),
                                                  pin_memory=args.use_cuda)
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
+        if is_distributed():
+            dataloaders["train"].sampler.set_epoch(i)
         trainer.train_epoch(dataloaders["train"])
         trainer.validate(dataloaders["dev"])
 
@@ -192,7 +202,7 @@ def test(argv):
 
     args = parser.parse_args(argv)
 
-    set_logfile(Path(args.log_dir, "test.log"))
+    init_logger(args, "test.log")
     version_log(args)
 
     assert args.continue_from is not None

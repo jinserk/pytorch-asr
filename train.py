@@ -18,7 +18,7 @@ models = set([
 ])
 
 try:
-    model, argv = sys.argv[7], sys.argv[8:]
+    model, argv = sys.argv[1], sys.argv[2:]
     if model not in models:
         raise
 except:

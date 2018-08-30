@@ -3,6 +3,7 @@ import os
 import sys
 from pathlib import Path
 from tqdm import tqdm
+import multiprocessing as mp
 
 import numpy as np
 import torch
@@ -31,27 +32,42 @@ OPTIMIZER_TYPES = set([
 ])
 
 
-def init_distributed(backend="gloo", local_rank=0):
+def init_distributed(use_cuda, backend="nccl", init="slurm"):
     try:
-        """
-        proc_id = int(os.environ['SLURM_PROCID'])
-        ntasks = int(os.environ['SLURM_NTASKS'])
-        node_list = os.environ['SLURM_NODELIST']
+        mp.set_start_method('spawn') # spawn, forkserver, and fork
+    except RuntimeError:
+        pass
 
-        #if '[' in node_list:
-        #    node_list = node_list.split(',')[0].replace('[', '')
-        #addr = node_list[8:].replace('-', '.')
-        #addr = 'tcp://'+addr+':23456'
-        logger.info(f"initialized via {addr} of world_size {ntasks}")
+    try:
+        if init == "slurm":
+            rank = int(os.environ['SLURM_PROCID'])
+            world_size = int(os.environ['SLURM_NTASKS'])
+            local_rank = int(os.environ['SLURM_LOCALID'])
+            #maser_node = os.environ['SLURM_TOPOLOGY_ADDR']
+        elif init == "ompi":
+            rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
+            world_size = int(os.environ['OMPI_COMM_WORLD_SIZE'])
+            local_rank = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
 
-        dist.init_process_group(backend=backend, init_method=addr, world_size=ntasks, rank=proc_id)
-        """
-        dist.init_process_group(backend=backend, init_method="env://")
-        torch.cuda.set_device(local_rank)
-    except:
-        os.environ['MASTER_ADDR'] = '127.0.0.1'
+        if use_cuda:
+            torch.cuda.set_device(local_rank)
+            print(f"set cuda device to cuda:{local_rank}")
+
+        os.environ['MASTER_ADDR'] = '172.30.1.237'
         os.environ['MASTER_PORT'] = '23456'
-        dist.init_process_group(backend=backend, init_method="env://", world_size=1, rank=0)
+        #init_method = f"tcp://{master_node}:{master_port}"
+        init_method = "env://"
+        dist.init_process_group(backend=backend, init_method=init_method, world_size=world_size, rank=rank)
+        print(f"initialized as {rank}/{world_size} via {init_method}")
+    except:
+        print(f"initialized as single process")
+
+
+def is_distributed():
+    try:
+        return (dist.get_world_size() > 1)
+    except:
+        return False
 
 
 def set_seed(seed=None):
@@ -68,7 +84,6 @@ class Trainer:
     def __init__(self, model, init_lr=1e-4, max_norm=400, use_cuda=False,
                  log_dir='logs', model_prefix='model',
                  checkpoint=False, continue_from=None, opt_type="sgdr",
-                 local_rank=0,
                  *args, **kwargs):
         # training parameters
         self.init_lr = init_lr
@@ -81,16 +96,23 @@ class Trainer:
 
         # prepare visdom
         if logger.visdom is not None:
-            logger.visdom.add_plot(title='train', xlabel='epoch', ylabel='loss')
-            logger.visdom.add_plot(title='validate', xlabel='epoch', ylabel='LER')
+            if is_distributed():
+                logger.visdom.add_plot(title=f'train_rank{dist.get_rank()}', xlabel='epoch', ylabel='loss')
+                logger.visdom.add_plot(title=f'validate_rank{dist.get_rank()}', xlabel='epoch', ylabel='LER')
+            else:
+                logger.visdom.add_plot(title=f'train', xlabel='epoch', ylabel='loss')
+                logger.visdom.add_plot(title=f'validate', xlabel='epoch', ylabel='LER')
 
         # setup model
+        model.half()
         if self.use_cuda:
             logger.info("using cuda")
             model.cuda()
-        if dist.get_world_size() > 1:
-            self.model = nn.parallel.DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank)
-            #self.model = nn.parallel.DistributedDataParallel(model)
+        if is_distributed():
+            local_rank = torch.cuda.current_device()
+            self.model = nn.parallel.DistributedDataParallel(model,
+                                                             device_ids=[local_rank],
+                                                             output_device=local_rank)
         else:
             self.model = model
 
@@ -139,8 +161,9 @@ class Trainer:
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
             logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
+
         # count the number of supervised batches seen in this epoch
-        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training", disable=(not logger.LOG_STREAM))
+        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training")
         for i, (data) in t:
             loss_value = self.unit_train(data)
             meter_loss.add(loss_value)
@@ -148,32 +171,33 @@ class Trainer:
             t.refresh()
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
+
             if 0 < i < len(data_loader) and i % num_ckpt == 0:
+                title = f"train_rank{dist.get_rank()}" if is_distributed() else "train"
+                x = self.epoch + i / len(data_loader)
                 if logger.visdom is not None:
-                    logger.visdom.add_point(
-                        title = 'train',
-                        x = self.epoch+i/len(data_loader),
-                        y = meter_loss.value()[0]
-                    )
+                    logger.visdom.add_point(title=title, x=x, y=meter_loss.value()[0])
                 if logger.tensorboard is not None:
-                    x = self.epoch * len(data_loader) + i
                     logger.tensorboard.add_graph(self.model, xs)
                     xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
                     logger.tensorboard.add_image('xs', x, xs_img)
                     ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
                     logger.tensorboard.add_image('ys_hat', x, ys_hat_img)
-                    logger.tensorboard.add_scalars('train', x, { 'loss': meter_loss.value()[0], })
+                    logger.tensorboard.add_scalars(title, x, { 'loss': meter_loss.value()[0], })
                 if self.checkpoint:
                     logger.info(f"training loss at epoch_{self.epoch:03d}_ckpt_{i:07d}: "
                                 f"{meter_loss.value()[0]:5.3f}")
-                    self.save(self.__get_model_name(f"epoch_{self.epoch:03d}_ckpt_{i:07d}"))
+                    if dist.get_rank() == 0:
+                        self.save(self.__get_model_name(f"epoch_{self.epoch:03d}_ckpt_{i:07d}"))
             #input("press key to continue")
+
         self.epoch += 1
         logger.info(f"epoch {self.epoch:03d}: "
                     f"training loss {meter_loss.value()[0]:5.3f} ")
                     #f"training accuracy {meter_accuracy.value()[0]:6.3f}")
-        self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
-        self.__remove_ckpt_files(self.epoch-1)
+        if self.rank == 0:
+            self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
+            self.__remove_ckpt_files(self.epoch-1)
 
     def unit_validate(self, data):
         raise NotImplementedError
@@ -183,7 +207,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             N, D = 0, 0
-            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating", disable=(not logger.LOG_STREAM))
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating")
             for i, (data) in t:
                 hyps, refs = self.unit_validate(data)
                 # calculate ler
@@ -193,15 +217,13 @@ class Trainer:
                 t.set_description(f"validating (LER: {ler:.2f} %)")
                 t.refresh()
             logger.info(f"validating at epoch {self.epoch:03d}: LER {ler:.2f} %")
+
+            title = f"validate_rank{dist.get_rank()}" if is_distributed() else "validate"
+            x = self.epoch + i / len(data_loader)
             if logger.visdom is not None:
-                logger.visdom.add_point(
-                    title = 'validate',
-                    x = self.epoch+i/len(data_loader),
-                    y = ler
-                )
+                logger.visdom.add_point(title=title, x=x, y=ler)
             if logger.tensorboard is not None:
-                x = self.epoch+i/len(data_loader),
-                logger.tensorboard.add_scalars('validate', x, { 'LER': ler, })
+                logger.tensorboard.add_scalars(title, x, { 'LER': ler, })
 
     def unit_test(self, data):
         raise NotImplementedError
@@ -211,7 +233,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             N, D = 0, 0
-            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing", disable=(not logger.LOG_STREAM))
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing")
             for i, (data) in t:
                 hyps, refs = self.unit_test(data)
                 # calculate wer
@@ -248,10 +270,8 @@ class Trainer:
             logger.error(f"no such file {file_path} exists")
             sys.exit(1)
         logger.info(f"loading the model from {file_path}")
-        if not self.use_cuda:
-            states = torch.load(file_path, map_location='cpu')
-        else:
-            states = torch.load(file_path, map_location='cuda:0')
+        to_device = f"cuda:{torch.cuda.current_device()}" if self.use_cuda else "cpu"
+        states = torch.load(file_path, map_location=to_device)
         self.epoch = states["epoch"]
         self.model.load_state_dict(states["model"])
         self.optimizer.load_state_dict(states["optimizer"])
@@ -265,7 +285,7 @@ class NonSplitTrainer(Trainer):
         xs, ys, frame_lens, label_lens, filenames, _ = data
         try:
             if self.use_cuda:
-                xs = xs.cuda()
+                xs = xs.cuda(non_blocking=True)
             ys_hat = self.model(xs)
             ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
             frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
@@ -283,15 +303,16 @@ class NonSplitTrainer(Trainer):
             nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
             self.optimizer.step()
             del loss
+            return loss_value
         except Exception as e:
             print(e)
             print(filenames, frame_lens, label_lens)
-        return loss_value
+            return 0
 
     def unit_validate(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
         if self.use_cuda:
-            xs = xs.cuda()
+            xs = xs.cuda(non_blocking=True)
         ys_hat = self.model(xs)
         # convert likes to ctc labels
         frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
@@ -305,7 +326,7 @@ class NonSplitTrainer(Trainer):
     def unit_test(self, data):
         xs, ys, frame_lens, label_lens, filenames, texts = data
         if self.use_cuda:
-            xs = xs.cuda()
+            xs = xs.cuda(non_blocking=True)
         ys_hat = self.model(xs)
         frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
         # latgen decoding
@@ -329,7 +350,7 @@ class SplitTrainer(Trainer):
         xs, ys, frame_lens, label_lens, filenames, _ = data
         try:
             if self.use_cuda:
-                xs = xs.cuda()
+                xs = xs.cuda(non_blocking=True)
             ys_hat = self.model(xs)
             ys_hat = ys_hat.unsqueeze(dim=0).transpose(1, 2)
             pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
@@ -356,7 +377,7 @@ class SplitTrainer(Trainer):
     def unit_validate(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
         if self.use_cuda:
-            xs = xs.cuda()
+            xs = xs.cuda(non_blocking=True)
         ys_hat = self.model(xs)
         pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
         ys_hat = [ys_hat.narrow(0, p, l).clone() for p, l in zip(pos[:-1], frame_lens)]
@@ -371,7 +392,7 @@ class SplitTrainer(Trainer):
     def unit_test(self, data):
         xs, ys, frame_lens, label_lens, filenames, texts = data
         if self.use_cuda:
-            xs = xs.cuda()
+            xs = xs.cuda(non_blocking=True)
         ys_hat = self.model(xs)
         ys_hat = ys_hat.unsqueeze(dim=0).transpose(1, 2)
         pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
