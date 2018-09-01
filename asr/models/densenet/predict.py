@@ -32,7 +32,7 @@ class Predict(object):
             for line in f:
                 self.phns.append(line.strip().split()[0])
 
-    def predict(self, wav_files, logging=False):
+    def predict(self, wav_files, verbose=False):
         for wav_file in wav_files:
             xs = self.dataloader.load(wav_file)
             xs = Variable(xs)
@@ -45,7 +45,7 @@ class Predict(object):
             else:
                 phns = list(torch.squeeze(phn_idx).numpy())
 
-            if logging:
+            if verbose:
                 logger.info(f"prediction of {wav_file}: {phns}")
                 phn_sbls = [self.phns[i] for i, j in zip(phns[:-1], phns[1:]) if i != j]
                 logger.info(f"phone symbols: {phn_sbls}")
@@ -102,7 +102,7 @@ def predict(argv):
     if args.decode:
         predict.decode(args.wav_files)
     else:
-        predict.predict(args.wav_files, logging=True)
+        predict.predict(args.wav_files, verbose=True)
 
 
 if __name__ == "__main__":

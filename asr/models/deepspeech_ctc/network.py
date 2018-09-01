@@ -129,7 +129,7 @@ class Lookahead(nn.Module):
 class DeepSpeech(nn.Module):
 
     def __init__(self, rnn_type=nn.LSTM, num_classes=p.NUM_CTC_LABELS,
-                 rnn_hidden_size=512, nb_layers=5, bidirectional=True, context=20):
+                 rnn_hidden_size=512, nb_layers=4, bidirectional=True, context=20):
         super().__init__()
 
         # model metadata needed for serialization/deserialization
@@ -185,16 +185,12 @@ class DeepSpeech(nn.Module):
 
     def forward(self, x):
         x = self.conv(x)
-
         sizes = x.size()
         x = x.view(sizes[0], sizes[1] * sizes[2], sizes[3])  # Collapse feature dimension
         x = x.transpose(1, 2).transpose(0, 1).contiguous()  # TxNxH
-
         x = self.rnns(x)
-
         if not self._bidirectional:  # no need for lookahead layer in bidirectional
             x = self.lookahead(x)
-
         x = self.fc(x)
         x = x.transpose(0, 1)
         # identity in training mode, softmax in eval mode

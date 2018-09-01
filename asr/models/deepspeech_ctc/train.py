@@ -10,7 +10,7 @@ from warpctc_pytorch import CTCLoss
 
 from asr.utils.dataset import NonSplitTrainDataset, AudioSubset
 from asr.utils.dataloader import NonSplitTrainDataLoader
-from asr.utils.logger import *
+from asr.utils.logger import logger, init_logger
 from asr.utils import params as p
 from asr.kaldi.latgen import LatGenCTCDecoder
 
@@ -26,6 +26,7 @@ def batch_train(argv):
     parser.add_argument('--max-norm', default=400, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
+    parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
     parser.add_argument('--visdom', default=False, action='store_true', help="use visdom logging")
     parser.add_argument('--visdom-host', default="127.0.0.1", type=str, help="visdom server ip address")
     parser.add_argument('--visdom-port', default=8097, type=int, help="visdom server port")
@@ -36,18 +37,11 @@ def batch_train(argv):
     parser.add_argument('--checkpoint', default=True, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
-
     args = parser.parse_args(argv)
 
-    # init distributed env
     init_distributed(args.use_cuda)
-    if is_distributed():
-        #disable_log_stream()
-        logfile = f"train_rank{dist.get_rank()}.log"
-    else:
-        logfile = "train.log"
-    init_logger(args, logfile)
-    version_log(args)
+    log_file = f"train_rank{dist.get_rank()}.log" if is_distributed() else "train.log"
+    init_logger(log_file=log_file, **vars(args))
     set_seed(args.seed)
 
     # prepare trainer object
@@ -130,6 +124,7 @@ def train(argv):
     parser.add_argument('--max-norm', default=400, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
+    parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
     parser.add_argument('--visdom', default=False, action='store_true', help="use visdom logging")
     parser.add_argument('--visdom-host', default="127.0.0.1", type=str, help="visdom server ip address")
     parser.add_argument('--visdom-port', default=8097, type=int, help="visdom server port")
@@ -140,18 +135,11 @@ def train(argv):
     parser.add_argument('--checkpoint', default=True, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
-
     args = parser.parse_args(argv)
 
-    # init distributed env
     init_distributed(args.use_cuda)
-    if is_distributed():
-        #disable_log_stream()
-        logfile = f"train_rank{dist.get_rank()}.log"
-    else:
-        logfile = "train.log"
-    init_logger(args, logfile)
-    version_log(args)
+    log_file = f"train_rank{dist.get_rank()}.log" if is_distributed() else "train.log"
+    init_logger(log_file=log_file, **vars(args))
     set_seed(args.seed)
 
     # prepare trainer object
@@ -197,13 +185,12 @@ def test(argv):
     parser.add_argument('--batch-size', default=4, type=int, help="number of images (and labels) to be considered in a batch")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
+    parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
     parser.add_argument('--log-dir', default='./logs_deepspeech_ctc', type=str, help="filename for logging the outputs")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
-
     args = parser.parse_args(argv)
 
-    init_logger(args, "test.log")
-    version_log(args)
+    init_logger(log_file="test.log", **vars(args))
 
     assert args.continue_from is not None
 

@@ -40,11 +40,11 @@ class Predict(object):
         self.data_loader = PredictLoader(use_cuda=args.use_cuda, resample=True, sample_rate=p.SAMPLE_RATE,
                                          frame_margin=p.FRAME_MARGIN, unit_frames=p.HEIGHT)
 
-    def __call__(self, wav_files, logging=False):
+    def __call__(self, wav_files, verbose=False):
         for wav_file in wav_files:
-            self._predict(wav_file, logging)
+            self._predict(wav_file, verbose)
 
-    def _predict(self, wav_file, logging=False):
+    def _predict(self, wav_file, verbose=False):
         # prepare data
         xs = self.data_loader.load(wav_file)
         xs = Variable(xs)
@@ -57,7 +57,7 @@ class Predict(object):
             phns = list(torch.squeeze(phn_idx).cpu().numpy())
         else:
             phns = list(torch.squeeze(phn_idx).numpy())
-        if logging:
+        if verbose:
             logger.info(f"prediction of {wav_file}: {phns}")
         return phns
 
@@ -110,5 +110,5 @@ if __name__ == "__main__":
 
     # run prediction
     predict = Predict(args)
-    predict(args.wav_files, logging=True)
+    predict(args.wav_files, verbose=True)
 

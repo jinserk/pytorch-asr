@@ -3,96 +3,61 @@ import sys
 from pathlib import Path
 import logging
 import torch
-from tqdm import tqdm
 
 
-LOG_STREAM = True
-LOG_FILE = True
+logger = logging.getLogger(__name__)
 
-# handler
-logger = logging.getLogger('pytorch-asr')
-logger.setLevel(logging.DEBUG)
-_formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
 
-def init_logger(args, logfile=None):
-    if LOG_STREAM:
-        set_logstream()
+def init_logger(**kwargs):
+    args_str = ' '.join([f"{k}={v}" for (k, v) in kwargs.items()])
 
-    if LOG_FILE:
-        logpath = Path(args.log_dir, logfile).resolve()
-        set_logfile(str(logpath))
+    _formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+    logger.handlers.clear()
+    logger.setLevel(logging.DEBUG)
+
+    # stream handler
+    chdr = logging.StreamHandler()
+    chdr.setLevel(logging.DEBUG)
+    chdr.setFormatter(_formatter)
+    logger.addHandler(chdr)
+
+    log_dir = kwargs.pop("log_dir", ".")
+    # file handler
+    if "log_file" in kwargs:
+        log_file = kwargs.pop("log_file")
+        log_path = Path(log_dir, log_file).resolve()
+        Path.mkdir(log_path.parent, parents=True, exist_ok=True)
+        fhdr = logging.FileHandler(log_path)
+        fhdr.setLevel(logging.DEBUG)
+        fhdr.setFormatter(_formatter)
+        logger.addHandler(fhdr)
+
+    logger.info(f"begins logging to file: {str(log_path)}")
 
     # prepare visdom
     logger.visdom = None
-    if args.visdom:
+    if "visdom" in kwargs and kwargs["visdom"]:
+        env = str(Path(log_dir).name)
+        visdom_host = kwargs.pop("visdom_host", "127.0.0.1")
+        visdom_port = kwargs.pop("visdom_port", "8097")
         try:
-            env = str(Path(args.log_dir).name)
             logger.visdom = VisdomLogger(host=args.visdom_host, port=args.visdom_port, env=env)
         except:
             logger.info("error to use visdom")
 
     # prepare tensorboard
     logger.tensorboard = None
-    if args.tensorboard:
+    if "tensorboard" in kwargs and kwargs["tensorboard"]:
+        env = str(Path(log_dir, 'tensorboard').resolve)
         try:
-            env = str(Path(args.log_dir, 'tensorboard').resolve)
             logger.tensorboard = TensorboardLogger(env)
         except:
             logger.info("error to use tensorboard")
 
-
-def disable_log_stream():
-    LOG_STREAM = False
-
-
-def set_logstream():
-    # stdout handler
-    chdr = logging.StreamHandler()
-    chdr.setLevel(logging.DEBUG)
-    chdr.setFormatter(_formatter)
-    logger.addHandler(chdr)
-
-
-def set_logfile(filename):
-    filepath = Path(filename).resolve()
-    try:
-        Path.mkdir(filepath.parent, parents=True, exist_ok=True)
-    except OSError:
-        raise
-    # file handler
-    fhdr = logging.FileHandler(filepath)
-    fhdr.setLevel(logging.DEBUG)
-    fhdr.setFormatter(_formatter)
-    logger.addHandler(fhdr)
-    logger.info(f"begins logging to file: {str(filepath)}")
-
-
-def version_log(args):
+    # print version and args
     logger.info(f"PyTorch version: {torch.__version__}")
     logger.info(f"command-line options: {' '.join(sys.argv)}")
-    args_str = [f"{k}={v}" for (k, v) in vars(args).items()]
-    logger.info(f"args: {' '.join(args_str)}")
-
-
-#class TqdmHandler(logging.Handler):
-#
-#    def emit(self, record):
-#        try:
-#            msg = self.format(record)
-#            tqdm.write(msg)  # , file=sys.stderr)
-#            self.flush()
-#        except (KeyboardInterrupt, SystemExit):
-#            raise
-#        except:
-#            self.handleError(record)
-#
-#
-#def set_logtqdm():
-#    # stdout handler
-#    thdr = TqdmHandler()
-#    thdr.setLevel(logging.DEBUG)
-#    thdr.setFormatter(_formatter)
-#    logger.addHandler(thdr)
+    logger.info(f"args: {args_str}")
 
 
 class VisdomLogger:

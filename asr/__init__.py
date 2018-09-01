@@ -1,2 +1,6 @@
-from . import utils
-from . import kaldi
+__all__ = [
+    'modules',
+    'utils',
+    'datasets',
+    'kaldi',
+]

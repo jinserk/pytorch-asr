@@ -1,3 +1,5 @@
-from . import aspire
-from . import swbd
-from . import tedlium
+__all__ = [
+    'aspire',
+    'swbd',
+    'tedlium',
+]

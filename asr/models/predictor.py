@@ -28,6 +28,7 @@ class NonSplitPredictor:
         if self.use_cuda:
             logger.info("using cuda")
             self.model.cuda()
+
         self.load(continue_from)
 
         # prepare kaldi latgen decoder

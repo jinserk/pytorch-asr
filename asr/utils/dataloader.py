@@ -9,7 +9,6 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torchaudio
 
-from .logger import logger
 from . import params as p
 
 
@@ -121,12 +120,12 @@ def test_plot():
     from ..util.audio import AudioDataLoader, NonSplitDataLoader
     train_dataset = AsrDataset(mode="test")
     loader = AudioDataLoader(train_dataset, batch_size=10, num_workers=4, shuffle=True)
-    logger.info(f"num_workers={loader.num_workers}")
+    print(f"num_workers={loader.num_workers}")
 
     for i, data in enumerate(loader):
         tensors, targets = data
         #for tensors, targets in data:
-        logger.info("f{tensors}, {targets}")
+        print("f{tensors}, {targets}")
         if False:
             import matplotlib
             matplotlib.use('TkAgg')

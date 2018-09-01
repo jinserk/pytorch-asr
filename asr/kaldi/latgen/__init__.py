@@ -1,2 +1,8 @@
-from ._latgen import LatGenDecoder, LatGenCTCDecoder
+from ._latgen import Labeler, LatGenDecoder, LatGenCTCDecoder
+
+__all__ = [
+    'Labeler',
+    'LatGenDecoder',
+    'LatGenCTCDecoder',
+]
 

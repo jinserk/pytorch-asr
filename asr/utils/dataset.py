@@ -24,7 +24,7 @@ WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
 #SAMPLE_MARGIN = WIN_SAMP_SHIFT * p.FRAME_MARGIN  # samples
 SAMPLE_MARGIN = 0
 
-np.seterr(all='raise')
+#np.seterr(all='raise')
 
 # transformer: resampling and augmentation
 class Augment(object):
@@ -138,12 +138,14 @@ class FrameSplitter(object):
     """ split C x H x W frames to M x C2 x H x U where U is unit frames in time
         C2 = stride x C, M = floor((W - U) / stride)
     """
-    def __init__(self, unit_frames, padding = 0, stride = 1):
-        assert unit_frames % 2 == 1, "unit_frames should be odd integer"
-        self.unit_frames = unit_frames
+    def __init__(self, unit_frames, padding=0, stride=1, split=True):
         self.padding = padding
         self.pad = nn.ZeroPad2d((padding, padding, 0, 0))
         self.stride = stride
+        self.split = split
+        if split:
+            assert unit_frames % 2 == 1, "unit_frames should be odd integer"
+            self.unit_frames = unit_frames
 
     def __call__(self, tensor):
         with torch.no_grad():
@@ -156,6 +158,8 @@ class FrameSplitter(object):
             sC = C * self.stride
             folded = tensor[:, :, :, :sWp].view(M, C, H, Wp, self.stride)
             folded = folded.transpose(3, 4).transpose(2, 3).contiguous().view(M, sC, H, Wp)
+            if not split:
+                return folded
             pos = [p for p in range(0, Wp - self.unit_frames)]
             splits = [folded.narrow(3, p, self.unit_frames).clone() for p in pos]
             frames = torch.cat(splits)

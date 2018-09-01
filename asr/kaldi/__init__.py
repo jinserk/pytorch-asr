@@ -1,3 +1,4 @@
-from . import latgen
-
+__all__ = [
+    'latgen',
+]
 

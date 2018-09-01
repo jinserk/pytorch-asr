@@ -5,6 +5,8 @@ git+https://github.com/pytorch/text
 git+https://github.com/pytorch/tnt
 git+https://github.com/NVIDIA/apex
 pyro-ppl
+cffi
+pyyaml
 scikit-learn
 matplotlib
 colorlover

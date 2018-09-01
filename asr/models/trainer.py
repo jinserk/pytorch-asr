@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.distributed as dist
 
-from apex.parallel import DistributedDataParallel
+import apex.parallel
 from apex.fp16_utils import *
 
 import torchvision.utils as tvu
@@ -18,7 +18,7 @@ from warpctc_pytorch import CTCLoss
 import torchnet as tnt
 import Levenshtein as Lev
 
-from asr.utils.logger import *
+from asr.utils.logger import logger
 from asr.utils.misc import onehot2int, remove_duplicates, get_model_file_path
 from asr.utils.lr_scheduler import CosineAnnealingWithRestartsLR
 from asr.utils import params as p
@@ -47,6 +47,7 @@ def init_distributed(use_cuda, backend="nccl", init="slurm"):
             world_size = int(os.environ['SLURM_NTASKS'])
             local_rank = int(os.environ['SLURM_LOCALID'])
             #maser_node = os.environ['SLURM_TOPOLOGY_ADDR']
+            #maser_port = '23456'
         elif init == "ompi":
             rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
             world_size = int(os.environ['OMPI_COMM_WORLD_SIZE'])
@@ -56,8 +57,8 @@ def init_distributed(use_cuda, backend="nccl", init="slurm"):
             torch.cuda.set_device(local_rank)
             print(f"set cuda device to cuda:{local_rank}")
 
-        os.environ['MASTER_ADDR'] = '172.30.1.237'
-        os.environ['MASTER_PORT'] = '23456'
+        #os.environ["MASTER_ADDR"] = "172.30.1.237"
+        #os.environ["MASTER_PORT"] = "23456"
         #init_method = f"tcp://{master_node}:{master_port}"
         init_method = "env://"
         dist.init_process_group(backend=backend, init_method=init_method, world_size=world_size, rank=rank)
@@ -85,13 +86,18 @@ def set_seed(seed=None):
 class Trainer:
 
     def __init__(self, model, init_lr=1e-4, max_norm=400, use_cuda=False,
-                 log_dir='logs', model_prefix='model',
+                 fp16=False, log_dir='logs', model_prefix='model',
                  checkpoint=False, continue_from=None, opt_type="sgdr",
                  *args, **kwargs):
+        if fp16:
+            if not use_cuda:
+                raise RuntimeError
+
         # training parameters
         self.init_lr = init_lr
         self.max_norm = max_norm
         self.use_cuda = use_cuda
+        self.fp16 = fp16
         self.log_dir = log_dir
         self.model_prefix = model_prefix
         self.checkpoint = checkpoint
@@ -107,20 +113,10 @@ class Trainer:
                 logger.visdom.add_plot(title=f'validate', xlabel='epoch', ylabel='LER')
 
         # setup model
+        self.model = model
         if self.use_cuda:
             logger.info("using cuda")
-            model.cuda()
-            model = network_to_half(model)
-
-        if is_distributed():
-            if self.use_cuda:
-                local_rank = torch.cuda.current_device()
-                #self.model = DistributedDataParallel(model, device_ids=[local_rank], output_device=local_rank)
-                self.model = DistributedDataParallel(model)
-            else:
-                self.model = nn.parallel.DistributedDataParallel(model)
-        else:
-            self.model = model
+            self.model.cuda()
 
         # setup loss
         self.loss = CTCLoss(blank=0, size_average=True)
@@ -139,16 +135,34 @@ class Trainer:
             self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
         elif opt_type == "adam":
             logger.info("using AdamW")
-            self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0005, l2_reg=False)
+            self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8,
+                                              weight_decay=0.0005, l2_reg=False)
             self.lr_scheduler = None
-        if self.use_cuda:
-            self.optimizer = FP16_Optimizer(self.optimizer, static_loss_scale=128.)
 
         # setup decoder for test
         self.decoder = LatGenCTCDecoder()
 
+        # load from pre-trained model if needed
         if continue_from is not None:
             self.load(continue_from)
+
+        # FP16 and distributed after load
+        if self.fp16:
+            self.model = network_to_half(self.model)
+            self.optimizer = FP16_Optimizer(self.optimizer, static_loss_scale=128.)
+
+        if is_distributed():
+            if self.use_cuda:
+                local_rank = torch.cuda.current_device()
+                if fp16:
+                    self.model = apex.parallel.DistributedDataParallel(self.model)
+                else:
+                    self.model = nn.parallel.DistributedDataParallel(self.model,
+                                                                     device_ids=[local_rank],
+                                                                     output_device=local_rank)
+            else:
+                self.model = nn.parallel.DistributedDataParallel(self.model)
+
 
     def __get_model_name(self, desc):
         return str(get_model_file_path(self.log_dir, self.model_prefix, desc))
@@ -195,7 +209,7 @@ class Trainer:
                 if self.checkpoint:
                     logger.info(f"training loss at epoch_{self.epoch:03d}_ckpt_{i:07d}: "
                                 f"{meter_loss.value()[0]:5.3f}")
-                    if dist.get_rank() == 0:
+                    if is_distributed() and dist.get_rank() == 0:
                         self.save(self.__get_model_name(f"epoch_{self.epoch:03d}_ckpt_{i:07d}"))
             #input("press key to continue")
 
@@ -203,7 +217,7 @@ class Trainer:
         logger.info(f"epoch {self.epoch:03d}: "
                     f"training loss {meter_loss.value()[0]:5.3f} ")
                     #f"training accuracy {meter_accuracy.value()[0]:6.3f}")
-        if self.rank == 0:
+        if is_distributed() and dist.get_rank() == 0:
             self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
             self.__remove_ckpt_files(self.epoch-1)
 
@@ -266,7 +280,13 @@ class Trainer:
         logger.info(f"saving the model to {file_path}")
         states = kwargs
         states["epoch"] = self.epoch
-        states["model"] = self.model.state_dict()
+        if is_distributed():
+            model_state_dict = self.model.state_dict()
+            strip_prefix = 9 if self.fp16 else 7
+            # remove "module.1." prefix from keys
+            states["model"] = {k[strip_prefix:]: v for k, v in model_state_dict.items()}
+        else:
+            states["model"] = self.model.state_dict()
         states["optimizer"] = self.optimizer.state_dict()
         states["lr_scheduler"] = self.lr_scheduler.state_dict()
         torch.save(states, file_path)
@@ -295,7 +315,7 @@ class NonSplitTrainer(Trainer):
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
             ys_hat = self.model(xs)
-            if self.use_cuda:
+            if self.fp16:
                 ys_hat = ys_hat.float()
             ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
             frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
@@ -309,7 +329,7 @@ class NonSplitTrainer(Trainer):
                 logger.warning("received an inf loss, setting loss value to 0")
                 loss_value = 0
             self.optimizer.zero_grad()
-            if self.use_cuda:
+            if self.fp16:
                 self.optimizer.backward(loss)
                 self.optimizer.clip_master_grads(self.max_norm)
             else:
@@ -329,7 +349,7 @@ class NonSplitTrainer(Trainer):
         if self.use_cuda:
             xs = xs.cuda(non_blocking=True)
         ys_hat = self.model(xs)
-        if self.use_cuda:
+        if self.fp16:
             ys_hat = ys_hat.float()
         # convert likes to ctc labels
         frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
@@ -345,7 +365,7 @@ class NonSplitTrainer(Trainer):
         if self.use_cuda:
             xs = xs.cuda(non_blocking=True)
         ys_hat = self.model(xs)
-        if self.use_cuda:
+        if self.fp16:
             ys_hat = ys_hat.float()
         frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
         # latgen decoding
@@ -371,7 +391,7 @@ class SplitTrainer(Trainer):
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
             ys_hat = self.model(xs)
-            if self.use_cuda:
+            if self.fp16:
                 ys_hat = ys_hat.float()
             ys_hat = ys_hat.unsqueeze(dim=0).transpose(1, 2)
             pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
@@ -386,7 +406,7 @@ class SplitTrainer(Trainer):
                 logger.warning("received an inf loss, setting loss value to 0")
                 loss_value = 0
             self.optimizer.zero_grad()
-            if self.use_cuda:
+            if self.fp16:
                 self.optimizer.backward(loss)
                 self.optimizer.clip_master_grads(self.max_norm)
             else:
@@ -404,7 +424,7 @@ class SplitTrainer(Trainer):
         if self.use_cuda:
             xs = xs.cuda(non_blocking=True)
         ys_hat = self.model(xs)
-        if self.use_cuda:
+        if self.fp16:
             ys_hat = ys_hat.float()
         pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
         ys_hat = [ys_hat.narrow(0, p, l).clone() for p, l in zip(pos[:-1], frame_lens)]
@@ -421,7 +441,7 @@ class SplitTrainer(Trainer):
         if self.use_cuda:
             xs = xs.cuda(non_blocking=True)
         ys_hat = self.model(xs)
-        if self.use_cuda:
+        if self.fp16:
             ys_hat = ys_hat.float()
         ys_hat = ys_hat.unsqueeze(dim=0).transpose(1, 2)
         pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))

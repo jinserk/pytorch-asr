@@ -1,16 +1,11 @@
 #!python
 import sys
 import argparse
-from pathlib import Path
-
-import numpy as np
-import torch
 
 from asr.utils.dataset import NonSplitPredictDataset
 from asr.utils.dataloader import NonSplitPredictDataLoader
-from asr.utils.logger import logger, set_logfile, version_log
+from asr.utils.logger import logger, init_logger
 from asr.utils import params as p
-from asr.kaldi.latgen import LatGenCTCDecoder
 
 from ..predictor import NonSplitPredictor
 from .network import DeepSpeech
@@ -26,12 +21,10 @@ def predict(argv):
     parser.add_argument('wav_files', type=str, nargs='+', help="list of wav_files for prediction")
     args = parser.parse_args(argv)
 
-    set_logfile(Path(args.log_dir, "predict.log"))
-    version_log(args)
+    init_logger(log_file="predict.log", **vars(args))
 
     if args.continue_from is None:
         logger.error("model name is missing: add '--continue-from <model-name>' in options")
-        #parser.print_help()
         sys.exit(1)
 
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
