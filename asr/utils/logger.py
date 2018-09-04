@@ -36,11 +36,12 @@ def init_logger(**kwargs):
     if "visdom" in kwargs and kwargs["visdom"]:
         env = str(Path(log_dir).name)
         visdom_host = kwargs.pop("visdom_host", "127.0.0.1")
-        visdom_port = kwargs.pop("visdom_port", "8097")
+        visdom_port = kwargs.pop("visdom_port", 8097)
         try:
-            logger.visdom = VisdomLogger(host=args.visdom_host, port=args.visdom_port, env=env)
+            logger.visdom = VisdomLogger(host=visdom_host, port=visdom_port, env=env)
         except:
             logger.info("error to use visdom")
+            raise
 
     # prepare tensorboard
     logger.tensorboard = None

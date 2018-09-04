@@ -310,12 +310,10 @@ class NonSplitTrainer(Trainer):
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
-        print(frame_lens)
         try:
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
             ys_hat = self.model(xs)
-            print(ys_hat.shape)
             if self.fp16:
                 ys_hat = ys_hat.float()
             ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
