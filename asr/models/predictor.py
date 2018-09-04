@@ -12,8 +12,6 @@ from asr.utils import params as p
 
 from asr.kaldi.latgen import LatGenCTCDecoder
 
-from .trainer import FRAME_REDUCE_FACTOR
-
 
 class NonSplitPredictor:
 
@@ -37,13 +35,12 @@ class NonSplitPredictor:
     def decode(self, data_loader):
         self.model.eval()
         with torch.no_grad():
-            for i, (data) in enumerate(data_loader):
+            for xs, frame_lens, filenames in data_loader:
                 # predict phones using AM
-                xs, frame_lens, filenames = data
                 if self.use_cuda:
                     xs = xs.cuda(non_blocking=True)
                 ys_hat = self.model(xs)
-                frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
+                #frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
                 # decode using Kaldi's latgen decoder
                 # no need to normalize posteriors with state priors when we use CTC
                 # https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/43908.pdf

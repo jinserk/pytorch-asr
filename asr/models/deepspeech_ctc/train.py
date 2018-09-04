@@ -21,7 +21,7 @@ from .network import DeepSpeech
 def batch_train(argv):
     parser = argparse.ArgumentParser(description="DeepSpeech AM with batch training")
     # for training
-    parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
+    parser.add_argument('--num-epochs', default=200, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")
     parser.add_argument('--max-norm', default=400, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
@@ -70,17 +70,20 @@ def batch_train(argv):
                                            sampler=(DistributedSampler(datasets["train5"])
                                                     if is_distributed() else None),
                                            batch_size=64, num_workers=32,
-                                           shuffle=(not is_distributed()), pin_memory=args.use_cuda),
+                                           shuffle=(not is_distributed()),
+                                           pin_memory=args.use_cuda),
         "train10": NonSplitTrainDataLoader(datasets["train10"],
                                            sampler=(DistributedSampler(datasets["train10"])
                                                     if is_distributed() else None),
                                            batch_size=32, num_workers=16,
-                                           shuffle=(not is_distributed()), pin_memory=args.use_cuda),
+                                           shuffle=(not is_distributed()),
+                                           pin_memory=args.use_cuda),
         "train15": NonSplitTrainDataLoader(datasets["train15"],
                                            sampler=(DistributedSampler(datasets["train15"])
                                                     if is_distributed() else None),
                                            batch_size=16, num_workers=8,
-                                           shuffle=(not is_distributed()), pin_memory=args.use_cuda),
+                                           shuffle=(not is_distributed()),
+                                           pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"],
                                            batch_size=16, num_workers=8,
                                            shuffle=False, pin_memory=args.use_cuda),
@@ -91,19 +94,13 @@ def batch_train(argv):
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
-        if i < 10:
-            if is_distributed():
-                dataloaders["train5"].sampler.set_epoch(i)
+        if i < 15: # 5+10
             trainer.train_epoch(dataloaders["train5"])
             trainer.validate(dataloaders["dev"])
-        elif i < 40:
-            if is_distributed():
-                dataloaders["train10"].sampler.set_epoch(i)
+        elif i < 75: # 5+10+20+40
             trainer.train_epoch(dataloaders["train10"])
             trainer.validate(dataloaders["dev"])
         else:
-            if is_distributed():
-                dataloaders["train15"].sampler.set_epoch(i)
             trainer.train_epoch(dataloaders["train15"])
             trainer.validate(dataloaders["dev"])
 
@@ -161,13 +158,12 @@ def train(argv):
                                                  sampler=(DistributedSampler(datasets[k])
                                                           if is_distributed() else None),
                                                  batch_size=args.batch_size,
-                                                 num_workers=args.num_workers, shuffle=(not is_distributed()),
+                                                 num_workers=args.num_workers,
+                                                 shuffle=(not is_distributed()),
                                                  pin_memory=args.use_cuda)
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
-        if is_distributed():
-            dataloaders["train"].sampler.set_epoch(i)
         trainer.train_epoch(dataloaders["train"])
         trainer.validate(dataloaders["dev"])
 

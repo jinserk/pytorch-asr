@@ -93,7 +93,7 @@ $ python predict.py <model-name> --continue-from <model-file> <target-wav-file1>
 
 Some models are imported from the following projects. We appreciate all their work and all right of the codes belongs to them.
 
-* DeepSpeech : (https://github.com/SeanNaren/deepspeech.pytorch.git)
-* ResNet : (https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py)
-* DenseNet : (https://github.com/pytorch/vision/blob/master/torchvision/models/densenet.py)
+* DeepSpeech : https://github.com/SeanNaren/deepspeech.pytorch.git
+* ResNet : https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
+* DenseNet : https://github.com/pytorch/vision/blob/master/torchvision/models/densenet.py
 

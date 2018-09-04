@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torchaudio
 
+from .logger import logger
 from . import params as p
 
 
@@ -44,7 +45,7 @@ class SplitTrainDataLoader(DataLoader):
 class NonSplitTrainCollateFn(object):
 
     def __call__(self, batch):
-        longest_tensor = max(batch, key=lambda x: x[0].size(2))[0]
+        longest_tensor = max(batch, key=lambda x: x[0].size(3))[0]
         tensors = list()
         targets = list()
         tensor_lens = list()
@@ -52,9 +53,9 @@ class NonSplitTrainCollateFn(object):
         filenames = list()
         texts = list()
         for tensor, target, filename, text in batch:
-            tensors.append(F.pad(tensor, (0, longest_tensor.size(2)-tensor.size(2))).unsqueeze(dim=0))
+            tensors.append(F.pad(tensor, (0, longest_tensor.size(3)-tensor.size(3))))
             targets.append(target)
-            tensor_lens.append(tensor.size(2))
+            tensor_lens.append(tensor.size(3))
             target_lens.append(target.size(0))
             filenames.append(filename)
             texts.append(text)
@@ -96,13 +97,13 @@ class SplitPredictDataLoader(DataLoader):
 class NonSplitPredictCollateFn(object):
 
     def __call__(self, batch):
-        longest_tensor = max(batch, key=lambda x: x[0].size(2))[0]
+        longest_tensor = max(batch, key=lambda x: x[0].size(3))[0]
         tensors = list()
         tensor_lens = list()
         filenames = list()
         for tensor, filename in batch:
-            tensors.append(F.pad(tensor, (0, longest_tensor.size(2)-tensor.size(2))).unsqueeze(dim=0))
-            tensor_lens.append(tensor.size(2))
+            tensors.append(F.pad(tensor, (0, longest_tensor.size(3)-tensor.size(3))))
+            tensor_lens.append(tensor.size(3))
             filenames.append(filename)
         tensors = torch.cat(tensors)
         tensor_lens = torch.IntTensor(tensor_lens)

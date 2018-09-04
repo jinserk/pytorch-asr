@@ -5,20 +5,17 @@ import logging
 import torch
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("pytorch-asr")
+logger.setLevel(logging.DEBUG)
 
 
 def init_logger(**kwargs):
     args_str = ' '.join([f"{k}={v}" for (k, v) in kwargs.items()])
-
-    _formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
-    logger.handlers.clear()
-    logger.setLevel(logging.DEBUG)
-
+    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
     # stream handler
     chdr = logging.StreamHandler()
     chdr.setLevel(logging.DEBUG)
-    chdr.setFormatter(_formatter)
+    chdr.setFormatter(formatter)
     logger.addHandler(chdr)
 
     log_dir = kwargs.pop("log_dir", ".")
@@ -29,7 +26,7 @@ def init_logger(**kwargs):
         Path.mkdir(log_path.parent, parents=True, exist_ok=True)
         fhdr = logging.FileHandler(log_path)
         fhdr.setLevel(logging.DEBUG)
-        fhdr.setFormatter(_formatter)
+        fhdr.setFormatter(formatter)
         logger.addHandler(fhdr)
 
     logger.info(f"begins logging to file: {str(log_path)}")

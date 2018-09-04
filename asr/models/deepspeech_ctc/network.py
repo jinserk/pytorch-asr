@@ -128,7 +128,7 @@ class Lookahead(nn.Module):
 
 class DeepSpeech(nn.Module):
 
-    def __init__(self, rnn_type=nn.LSTM, num_classes=p.NUM_CTC_LABELS,
+    def __init__(self, rnn_type=nn.LSTM, num_classes=p.NUM_CTC_LABELS, input_folding=3,
                  rnn_hidden_size=512, nb_layers=4, bidirectional=True, context=20):
         super().__init__()
 
@@ -139,7 +139,7 @@ class DeepSpeech(nn.Module):
         self._bidirectional = bidirectional
 
         self.conv = nn.Sequential(
-            nn.Conv2d(2, 32, kernel_size=(41, 11), stride=(2, 2), padding=(0, 5)),
+            nn.Conv2d(2*input_folding, 32, kernel_size=(41, 11), stride=(2, 1), padding=(0, 5)),
             nn.BatchNorm2d(32),
             #nn.Hardtanh(0, 20, inplace=True),
             #nn.ReLU(inplace=True),

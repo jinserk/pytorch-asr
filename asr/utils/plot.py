@@ -4,7 +4,7 @@ import torch
 from torch.autograd import Variable
 from visdom import Visdom
 
-from utils.logger import logger
+from .logger import logger
 
 viz = Visdom()
 viz_wins = dict()

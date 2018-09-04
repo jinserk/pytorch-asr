@@ -20,3 +20,4 @@ srun --export=ALL \
     --log-dir logs_20180901_deepspeech_ctc_h512_l4 \
     --visdom \
     --visdom-host 172.26.15.44 \
+    --continue-from logs_20180901_deepspeech_ctc_h512_l4/deepspeech_ctc_epoch_003.pth.tar \

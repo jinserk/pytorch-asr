@@ -26,8 +26,6 @@ from asr.utils import params as p
 from asr.kaldi.latgen import LatGenCTCDecoder
 
 
-FRAME_REDUCE_FACTOR = 2
-
 OPTIMIZER_TYPES = set([
     "sgd",
     "sgdr",
@@ -183,7 +181,8 @@ class Trainer:
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
             logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
-
+        if is_distributed():
+            data_loader.sampler.set_epoch(self.epoch)
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training")
         for i, (data) in t:
@@ -311,14 +310,16 @@ class NonSplitTrainer(Trainer):
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
+        print(frame_lens)
         try:
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
             ys_hat = self.model(xs)
+            print(ys_hat.shape)
             if self.fp16:
                 ys_hat = ys_hat.float()
             ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
-            frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
+            #frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
             #torch.set_printoptions(threshold=5000000)
             #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
             #print(onehot2int(ys_hat).squeeze(), ys)
@@ -352,7 +353,7 @@ class NonSplitTrainer(Trainer):
         if self.fp16:
             ys_hat = ys_hat.float()
         # convert likes to ctc labels
-        frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
+        #frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
         hyps = [onehot2int(yh[:s]).squeeze() for yh, s in zip(ys_hat, frame_lens)]
         hyps = [remove_duplicates(h, blank=0) for h in hyps]
         # slice the targets
@@ -367,7 +368,7 @@ class NonSplitTrainer(Trainer):
         ys_hat = self.model(xs)
         if self.fp16:
             ys_hat = ys_hat.float()
-        frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
+        #frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
         # latgen decoding
         loglikes = torch.log(ys_hat)
         if self.use_cuda:

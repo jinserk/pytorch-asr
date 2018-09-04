@@ -158,7 +158,7 @@ class FrameSplitter(object):
             sC = C * self.stride
             folded = tensor[:, :, :, :sWp].view(M, C, H, Wp, self.stride)
             folded = folded.transpose(3, 4).transpose(2, 3).contiguous().view(M, sC, H, Wp)
-            if not split:
+            if not self.split:
                 return folded
             pos = [p for p in range(0, Wp - self.unit_frames)]
             splits = [folded.narrow(3, p, self.unit_frames).clone() for p in pos]
@@ -181,7 +181,7 @@ class Int2OneHot(object):
         return one_hots
 
 
-class NonSplitTransformer(torchaudio.transforms.Compose):
+class BatchTransformer(torchaudio.transforms.Compose):
 
     def __init__(self,
                  resample=True, sample_rate=p.SAMPLE_RATE,
@@ -191,7 +191,7 @@ class NonSplitTransformer(torchaudio.transforms.Compose):
                  offset=True, offset_range=None,
                  padding=True, num_padding=None,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
-                 stride=1):
+                 unit_frames=p.WIDTH, stride=3, split=False):
         if offset and offset_range is None:
             offset_range = (0, stride * WIN_SAMP_SHIFT)
         if padding and num_padding is None:
@@ -206,14 +206,8 @@ class NonSplitTransformer(torchaudio.transforms.Compose):
                     padding=padding, num_padding=num_padding),
             Spectrogram(sample_rate=sample_rate, window_shift=window_shift,
                         window_size=window_size, nfft=nfft),
+            FrameSplitter(unit_frames=unit_frames, padding=0, stride=stride, split=split),
         ])
-
-
-class SplitTransformer(NonSplitTransformer):
-
-    def __init__(self, unit_frames=p.WIDTH, stride=1, *args, **kwargs):
-        super().__init__(stride=stride, *args, **kwargs)
-        self.transforms.append(FrameSplitter(unit_frames=unit_frames, padding=0, stride=stride))
 
 
 def _smp2frm(samples):
@@ -314,13 +308,13 @@ class NonSplitTrainDataset(TrainDataset):
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transformer is None:
-            self.transformer = NonSplitTransformer(resample=resample, sample_rate=sample_rate,
-                                                   tempo=tempo, tempo_range=tempo_range,
-                                                   pitch=pitch, pitch_range=pitch_range,
-                                                   noise=noise, noise_range=noise_range,
-                                                   offset=offset, padding=padding,
-                                                   window_shift=window_shift, window_size=window_size, nfft=nfft,
-                                                   stride=stride)
+            self.transformer = BatchTransformer(resample=resample, sample_rate=sample_rate,
+                                                tempo=tempo, tempo_range=tempo_range,
+                                                pitch=pitch, pitch_range=pitch_range,
+                                                noise=noise, noise_range=noise_range,
+                                                offset=offset, padding=padding,
+                                                window_shift=window_shift, window_size=window_size, nfft=nfft,
+                                                unit_frames=1, stride=stride, split=False)
         else:
             self.transformer = transformer
         self.target_transformer = target_transformer
@@ -338,12 +332,12 @@ class NonSplitPredictDataset(PredictDataset):
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transformer is None:
-            self.transformer = NonSplitTransformer(resample=resample, sample_rate=sample_rate,
-                                                   tempo=False, pitch=False,
-                                                   noise=noise, noise_range=noise_range,
-                                                   offset=False, padding=padding,
-                                                   window_shift=p.WINDOW_SHIFT, window_size=window_size, nfft=nfft,
-                                                   stride=stride)
+            self.transformer = BatchTransformer(resample=resample, sample_rate=sample_rate,
+                                                tempo=False, pitch=False,
+                                                noise=noise, noise_range=noise_range,
+                                                offset=False, padding=padding,
+                                                window_shift=p.WINDOW_SHIFT, window_size=window_size, nfft=nfft,
+                                                unit_frames=1, stride=stride, split=False)
         else:
             self.transformer = transformer
         self.target_transformer = target_transformer
@@ -363,13 +357,13 @@ class SplitTrainDataset(TrainDataset):
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transformer is None:
-            self.transformer = SplitTransformer(resample=resample, sample_rate=sample_rate,
+            self.transformer = BatchTransformer(resample=resample, sample_rate=sample_rate,
                                                 tempo=tempo, tempo_range=tempo_range,
                                                 pitch=pitch, pitch_range=pitch_range,
                                                 noise=noise, noise_range=noise_range,
                                                 offset=offset, padding=padding,
                                                 window_shift=window_shift, window_size=window_size, nfft=nfft,
-                                                unit_frames=unit_frames, stride=stride)
+                                                unit_frames=unit_frames, stride=stride, split=True)
         else:
             self.transformer = transformer
         self.target_transformer = target_transformer
@@ -387,12 +381,12 @@ class SplitPredictDataset(PredictDataset):
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transformer is None:
-            self.transformer = SplitTransformer(resample=resample, sample_rate=sample_rate,
+            self.transformer = BatchTransformer(resample=resample, sample_rate=sample_rate,
                                                 tempo=False, pitch=False,
                                                 noise=noise, noise_range=noise_range,
                                                 offset=False, padding=padding,
                                                 window_shift=p.WINDOW_SHIFT, window_size=window_size, nfft=nfft,
-                                                unit_frames=unit_frames, stride=stride)
+                                                unit_frames=unit_frames, stride=stride, split=True)
         else:
             self.transformer = transformer
         self.target_transformer = target_transformer
