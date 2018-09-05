@@ -117,7 +117,7 @@ class Trainer:
             self.model.cuda()
 
         # setup loss
-        self.loss = CTCLoss(blank=0, size_average=True)
+        self.loss = CTCLoss(blank=0, size_average=True, length_average=True)
 
         # setup optimizer
         assert opt_type in OPTIMIZER_TYPES
@@ -181,8 +181,9 @@ class Trainer:
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
             logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
-        if is_distributed():
+        if is_distributed() and data_loader.sampler is not None:
             data_loader.sampler.set_epoch(self.epoch)
+
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training")
         for i, (data) in t:

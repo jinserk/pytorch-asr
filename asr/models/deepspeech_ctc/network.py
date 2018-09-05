@@ -61,17 +61,76 @@ class TemporalRowConvolution(nn.Module):
         return nn._functions.thnn.auto.TemporalRowConvolution.apply(input_, kernel_size, stride, padding)
 
 
+class LayerNormLSTMCell(nn.Module):
+
+    def __init__(self, input_size, hidden_size, bias):
+        super().__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.bias = bias
+        self.weight_ih = Parameter(torch.Tensor(4 * hidden_size, input_size))
+        self.weight_hh = Parameter(torch.Tensor(4 * hidden_size, hidden_size))
+        if bias:
+            self.bias_ih = Parameter(torch.Tensor(4 * hidden_size))
+            self.bias_hh = Parameter(torch.Tensor(4 * hidden_size))
+        else:
+            self.register_parameter('bias_ih', None)
+            self.register_parameter('bias_hh', None)
+        self.reset_parameters()
+        self.ln_ih = nn.LayerNorm(4 * hidden_size)
+        self.ln_hh = nn.LayerNorm(4 * hidden_size)
+        self.ln_ho = nn.LayerNorm(hidden_size)
+
+    def check_forward_input(self, input):
+        if input.size(1) != self.input_size:
+            raise RuntimeError(
+                "input has inconsistent input_size: got {}, expected {}".format(
+                    input.size(1), self.input_size))
+
+    def check_forward_hidden(self, input, hx, hidden_label=''):
+        if input.size(0) != hx.size(0):
+            raise RuntimeError(
+                "Input batch size {} doesn't match hidden{} batch size {}".format(
+                    input.size(0), hidden_label, hx.size(0)))
+
+        if hx.size(1) != self.hidden_size:
+            raise RuntimeError(
+                "hidden{} has inconsistent hidden_size: got {}, expected {}".format(
+                    hidden_label, hx.size(1), self.hidden_size))
+
+    def reset_parameters(self):
+        stdv = 1.0 / math.sqrt(self.hidden_size)
+        for weight in self.parameters():
+            init.uniform_(weight, -stdv, stdv)
+
+    def forward(self, input, hidden):
+        self.check_forward_input(input)
+        hx, cx = hidden
+        self.check_forward_hidden(input, hx, 'hx')
+        self.check_forward_hidden(input, cx, 'cx')
+        gates = self.ln_ih(F.linear(input, self.weight_ih, self.bias_ih)) + self.ln_hh(F.linear(hx, self.weight_hh, self.bias_hh))
+        ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
+
+        ingate = F.sigmoid(ingate)
+        forgetgate = F.sigmoid(forgetgate)
+        cellgate = F.tanh(cellgate)
+        outgate = F.sigmoid(outgate)
+
+        cy = (forgetgate * cx) + (ingate * cellgate)
+        hy = outgate * F.tanh(self.ln_ho(cy))
+        return hy, cy
+
+
 class BatchRNN(nn.Module):
 
-    def __init__(self, input_size, hidden_size, rnn_type=nn.LSTM, bidirectional=False, batch_norm=True):
+    def __init__(self, input_size, hidden_size, rnn_type=nn.LSTM, bidirectional=False, batch_norm=False):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.bidirectional = bidirectional
         self.batch_norm = SequenceWise(nn.BatchNorm1d(input_size)) if batch_norm else None
         self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size,
-                            bidirectional=bidirectional, bias=False)
-        self.num_directions = 2 if bidirectional else 1
+                            bidirectional=bidirectional, bias=True, dropout=0.5)
 
     def flatten_parameters(self):
         self.rnn.flatten_parameters()
@@ -138,34 +197,50 @@ class DeepSpeech(nn.Module):
         self._rnn_type = rnn_type
         self._bidirectional = bidirectional
 
+        # Based on above convolutions and spectrogram size using conv formula (W - F + 2P)/ S+1
+        w0 = 129
+        w1 = (w0 - 41 + 2*20) // 2 + 1
+        w2 = (w1 - 21 + 2*10) // 2 + 1
+        w3 = (w2 - 11 + 2*5) // 2 + 1
+        c0 = 2 * input_folding
+        c1 = c0 * 6
+        w4 = c1 * w3
+        w5 = 2 * rnn_hidden_size if bidirectional else rnn_hidden_size
+
         self.conv = nn.Sequential(
-            nn.Conv2d(2*input_folding, 32, kernel_size=(41, 11), stride=(2, 1), padding=(0, 5)),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(c0, c1, kernel_size=(41, 11), stride=(2, 1), padding=(20, 5)),
+            nn.GroupNorm(c0, c1),
+            #nn.BatchNorm2d(32),
             #nn.Hardtanh(0, 20, inplace=True),
             #nn.ReLU(inplace=True),
             Swish(inplace=True),
-            nn.Conv2d(32, 32, kernel_size=(21, 11), stride=(2, 1), padding=(0, 5)),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(c1, c1, kernel_size=(21, 11), stride=(2, 1), padding=(10, 5)),
+            nn.GroupNorm(c0, c1),
+            #nn.BatchNorm2d(32),
+            #nn.Hardtanh(0, 20, inplace=True)
+            #nn.ReLU(inplace=True),
+            Swish(inplace=True),
+            nn.Conv2d(c1, c1, kernel_size=(11, 11), stride=(2, 1), padding=(5, 5)),
+            nn.GroupNorm(c0, c1),
+            #nn.BatchNorm2d(32),
             #nn.Hardtanh(0, 20, inplace=True)
             #nn.ReLU(inplace=True),
             Swish(inplace=True),
         )
 
-        # Based on above convolutions and spectrogram size using conv formula (W - F + 2P)/ S+1
-        freq_size = 129
-        freq_size = (freq_size - 41) // 2 + 1
-        freq_size = (freq_size - 21) // 2 + 1
-        freq_size *= 32
+        #rnns = []
+        #rnn = BatchRNN(input_size=w4, hidden_size=rnn_hidden_size, rnn_type=rnn_type,
+        #               bidirectional=bidirectional, batch_norm=False)
+        #rnns.append(('0', rnn))
+        #for x in range(nb_layers - 1):
+        #    rnn = BatchRNN(input_size=rnn_hidden_size, hidden_size=rnn_hidden_size, rnn_type=rnn_type,
+        #                   bidirectional=bidirectional)
+        #    rnns.append(('%d' % (x + 1), rnn))
+        #self.rnns = nn.Sequential(OrderedDict(rnns))
 
-        rnns = []
-        rnn = BatchRNN(input_size=freq_size, hidden_size=rnn_hidden_size, rnn_type=rnn_type,
-                       bidirectional=bidirectional, batch_norm=False)
-        rnns.append(('0', rnn))
-        for x in range(nb_layers - 1):
-            rnn = BatchRNN(input_size=rnn_hidden_size, hidden_size=rnn_hidden_size, rnn_type=rnn_type,
-                           bidirectional=bidirectional)
-            rnns.append(('%d' % (x + 1), rnn))
-        self.rnns = nn.Sequential(OrderedDict(rnns))
+        self.rnns = nn.LSTM(input_size=w4, hidden_size=rnn_hidden_size, num_layers=nb_layers,
+                            bidirectional=bidirectional, dropout=0.5)
+
         self.lookahead = nn.Sequential(
             # consider adding batch norm?
             Lookahead(rnn_hidden_size, context=context),
@@ -175,8 +250,8 @@ class DeepSpeech(nn.Module):
         ) if not bidirectional else None
 
         fully_connected = nn.Sequential(
-            nn.BatchNorm1d(rnn_hidden_size),
-            nn.Linear(rnn_hidden_size, num_classes, bias=False)
+            nn.BatchNorm1d(w5),
+            nn.Linear(w5, num_classes, bias=False)
         )
         self.fc = nn.Sequential(
             SequenceWise(fully_connected),
@@ -188,7 +263,9 @@ class DeepSpeech(nn.Module):
         sizes = x.size()
         x = x.view(sizes[0], sizes[1] * sizes[2], sizes[3])  # Collapse feature dimension
         x = x.transpose(1, 2).transpose(0, 1).contiguous()  # TxNxH
-        x = self.rnns(x)
+        #x = self.rnns(x)
+        x, _ = self.rnns(x)
+
         if not self._bidirectional:  # no need for lookahead layer in bidirectional
             x = self.lookahead(x)
         x = self.fc(x)
