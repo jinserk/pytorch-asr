@@ -241,7 +241,7 @@ class Trainer:
             logger.info(f"validating at epoch {self.epoch:03d}: LER {ler:.2f} %")
 
             title = f"validate_rank{dist.get_rank()}" if is_distributed() else "validate"
-            x = self.epoch + i / len(data_loader)
+            x = self.epoch - 1 + i / len(data_loader)
             if logger.visdom is not None:
                 logger.visdom.add_point(title=title, x=x, y=ler)
             if logger.tensorboard is not None:

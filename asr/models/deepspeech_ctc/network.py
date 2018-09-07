@@ -4,6 +4,7 @@ from collections import OrderedDict
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.autograd import Variable
 
 from asr.utils import params as p
@@ -61,64 +62,70 @@ class TemporalRowConvolution(nn.Module):
         return nn._functions.thnn.auto.TemporalRowConvolution.apply(input_, kernel_size, stride, padding)
 
 
-class LayerNormLSTMCell(nn.Module):
+class LayerNormLSTMCell(nn.LSTMCell):
 
-    def __init__(self, input_size, hidden_size, bias):
-        super().__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.bias = bias
-        self.weight_ih = Parameter(torch.Tensor(4 * hidden_size, input_size))
-        self.weight_hh = Parameter(torch.Tensor(4 * hidden_size, hidden_size))
-        if bias:
-            self.bias_ih = Parameter(torch.Tensor(4 * hidden_size))
-            self.bias_hh = Parameter(torch.Tensor(4 * hidden_size))
-        else:
-            self.register_parameter('bias_ih', None)
-            self.register_parameter('bias_hh', None)
-        self.reset_parameters()
+    def __init__(self, input_size, hidden_size, bias=True):
+        super().__init__(input_size, hidden_size, bias)
+
         self.ln_ih = nn.LayerNorm(4 * hidden_size)
         self.ln_hh = nn.LayerNorm(4 * hidden_size)
         self.ln_ho = nn.LayerNorm(hidden_size)
 
-    def check_forward_input(self, input):
-        if input.size(1) != self.input_size:
-            raise RuntimeError(
-                "input has inconsistent input_size: got {}, expected {}".format(
-                    input.size(1), self.input_size))
-
-    def check_forward_hidden(self, input, hx, hidden_label=''):
-        if input.size(0) != hx.size(0):
-            raise RuntimeError(
-                "Input batch size {} doesn't match hidden{} batch size {}".format(
-                    input.size(0), hidden_label, hx.size(0)))
-
-        if hx.size(1) != self.hidden_size:
-            raise RuntimeError(
-                "hidden{} has inconsistent hidden_size: got {}, expected {}".format(
-                    hidden_label, hx.size(1), self.hidden_size))
-
-    def reset_parameters(self):
-        stdv = 1.0 / math.sqrt(self.hidden_size)
-        for weight in self.parameters():
-            init.uniform_(weight, -stdv, stdv)
-
-    def forward(self, input, hidden):
+    def forward(self, input, hidden=None):
         self.check_forward_input(input)
-        hx, cx = hidden
-        self.check_forward_hidden(input, hx, 'hx')
-        self.check_forward_hidden(input, cx, 'cx')
-        gates = self.ln_ih(F.linear(input, self.weight_ih, self.bias_ih)) + self.ln_hh(F.linear(hx, self.weight_hh, self.bias_hh))
-        ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
+        if hidden is None:
+            hx = input.new_zeros(input.size(0), self.hidden_size, requires_grad=False)
+            cx = input.new_zeros(input.size(0), self.hidden_size, requires_grad=False)
+        else:
+            hx, cx = hidden
+        self.check_forward_hidden(input, hx, '[0]')
+        self.check_forward_hidden(input, cx, '[1]')
 
-        ingate = F.sigmoid(ingate)
-        forgetgate = F.sigmoid(forgetgate)
-        cellgate = F.tanh(cellgate)
-        outgate = F.sigmoid(outgate)
+        gates = self.ln_ih(F.linear(input, self.weight_ih, self.bias_ih)) \
+                 + self.ln_hh(F.linear(hx, self.weight_hh, self.bias_hh))
+        i, f, o = gates[:, :(3 * self.hidden_size)].sigmoid().chunk(3, 1)
+        g = gates[:, (3 * self.hidden_size):].tanh()
 
-        cy = (forgetgate * cx) + (ingate * cellgate)
-        hy = outgate * F.tanh(self.ln_ho(cy))
+        cy = (f * cx) + (i * g)
+        hy = o * self.ln_ho(cy).tanh()
         return hy, cy
+
+
+class LayerNormLSTM(nn.Module):
+
+    def __init__(self, input_size, hidden_size, num_layers=1, bias=True):
+        super().__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+
+        self.hidden = nn.ModuleList([
+            LayerNormLSTMCell(input_size=(input_size if layer == 0 else hidden_size),
+                              hidden_size=hidden_size)
+            for layer in range(num_layers)
+        ])
+
+    def forward(self, input, hidden=None):
+        seq_len, batch_size, hidden_size = input.size()  # supports TxNxH only
+        if hidden is None:
+            hx = input.new_zeros(self.num_layers, batch_size, self.hidden_size, requires_grad=False)
+            cx = input.new_zeros(self.num_layers, batch_size, self.hidden_size, requires_grad=False)
+            hidden = (hx, cx)
+        ht = input.new_zeros(seq_len, self.num_layers, batch_size, self.hidden_size, requires_grad=False)
+        ct = input.new_zeros(seq_len, self.num_layers, batch_size, self.hidden_size, requires_grad=False)
+
+        h, c = hidden
+        for t, x in enumerate(input):
+            for l, layer in enumerate(self.hidden):
+                ht[t, l], ct[t, l] = layer(x, (h[l], c[l]))
+                x = ht[t, l]
+            h, c = ht[t], ct[t]
+
+        y  = ht[:, -1, :, :].contiguous()
+        hy = ht[-1, :, :, :].contiguous()
+        cy = ct[-1, :, :, :].contiguous()
+
+        return y, (hy, cy)
 
 
 class BatchRNN(nn.Module):
@@ -130,7 +137,7 @@ class BatchRNN(nn.Module):
         self.bidirectional = bidirectional
         self.batch_norm = SequenceWise(nn.BatchNorm1d(input_size)) if batch_norm else None
         self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size,
-                            bidirectional=bidirectional, bias=True, dropout=0.5)
+                            bidirectional=bidirectional, bias=True)
 
     def flatten_parameters(self):
         self.rnn.flatten_parameters()
@@ -187,59 +194,63 @@ class Lookahead(nn.Module):
 
 class DeepSpeech(nn.Module):
 
-    def __init__(self, rnn_type=nn.LSTM, num_classes=p.NUM_CTC_LABELS, input_folding=3,
-                 rnn_hidden_size=512, nb_layers=4, bidirectional=True, context=20):
+    def __init__(self, num_classes=p.NUM_CTC_LABELS, input_folding=3, rnn_type=nn.LSTM,
+                 rnn_hidden_size=512, rnn_num_layers=4, bidirectional=True, context=20):
         super().__init__()
 
         # model metadata needed for serialization/deserialization
-        self._hidden_size = rnn_hidden_size
-        self._hidden_layers = nb_layers
         self._rnn_type = rnn_type
+        self._hidden_size = rnn_hidden_size
+        self._hidden_layers = rnn_num_layers
         self._bidirectional = bidirectional
 
         # Based on above convolutions and spectrogram size using conv formula (W - F + 2P)/ S+1
-        w0 = 129
-        w1 = (w0 - 41 + 2*20) // 2 + 1
-        w2 = (w1 - 21 + 2*10) // 2 + 1
-        w3 = (w2 - 11 + 2*5) // 2 + 1
-        c0 = 2 * input_folding
-        c1 = c0 * 6
-        w4 = c1 * w3
-        w5 = 2 * rnn_hidden_size if bidirectional else rnn_hidden_size
+        W0 = 129
+        W1 = (W0 - 41 + 2*20) // 2 + 1
+        W2 = (W1 - 21 + 2*10) // 2 + 1
+        W3 = (W2 - 11 + 2*5) // 2 + 1
+        C0 = 2 * input_folding
+        C1 = C0 * 2
+        C2 = C1 * 2
+        C3 = C2 * 2
+        W4 = C3 * W3
+        W5 = rnn_hidden_size
 
         self.conv = nn.Sequential(
-            nn.Conv2d(c0, c1, kernel_size=(41, 11), stride=(2, 1), padding=(20, 5)),
-            nn.GroupNorm(c0, c1),
-            #nn.BatchNorm2d(32),
+            nn.Conv2d(C0, C1, kernel_size=(41, 11), stride=(2, 1), padding=(20, 5)),
+            nn.BatchNorm2d(C1),
             #nn.Hardtanh(0, 20, inplace=True),
             #nn.ReLU(inplace=True),
             Swish(inplace=True),
-            nn.Conv2d(c1, c1, kernel_size=(21, 11), stride=(2, 1), padding=(10, 5)),
-            nn.GroupNorm(c0, c1),
-            #nn.BatchNorm2d(32),
+            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
+            nn.Conv2d(C1, C2, kernel_size=(21, 11), stride=(2, 1), padding=(10, 5)),
+            nn.BatchNorm2d(C2),
             #nn.Hardtanh(0, 20, inplace=True)
             #nn.ReLU(inplace=True),
             Swish(inplace=True),
-            nn.Conv2d(c1, c1, kernel_size=(11, 11), stride=(2, 1), padding=(5, 5)),
-            nn.GroupNorm(c0, c1),
-            #nn.BatchNorm2d(32),
+            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
+            nn.Conv2d(C2, C3, kernel_size=(11, 11), stride=(2, 1), padding=(5, 5)),
+            nn.BatchNorm2d(C3),
             #nn.Hardtanh(0, 20, inplace=True)
             #nn.ReLU(inplace=True),
             Swish(inplace=True),
+            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
         )
 
-        #rnns = []
-        #rnn = BatchRNN(input_size=w4, hidden_size=rnn_hidden_size, rnn_type=rnn_type,
-        #               bidirectional=bidirectional, batch_norm=False)
-        #rnns.append(('0', rnn))
-        #for x in range(nb_layers - 1):
-        #    rnn = BatchRNN(input_size=rnn_hidden_size, hidden_size=rnn_hidden_size, rnn_type=rnn_type,
-        #                   bidirectional=bidirectional)
-        #    rnns.append(('%d' % (x + 1), rnn))
-        #self.rnns = nn.Sequential(OrderedDict(rnns))
+        # using BatchRNN
+        #self.rnns = nn.Sequential(OrderedDict([
+        #    (str(layer), BatchRNN(input_size=(W4 if layer == 0 else rnn_hidden_size),
+        #                          hidden_size=rnn_hidden_size, rnn_type=rnn_type,
+        #                          bidirectional=bidirectional, batch_norm=True))
+        #    for layer in range(rnn_num_layers)
+        #]))
 
-        self.rnns = nn.LSTM(input_size=w4, hidden_size=rnn_hidden_size, num_layers=nb_layers,
-                            bidirectional=bidirectional, dropout=0.5)
+        # using multi-layered nn.LSTM
+        #self.rnns = nn.LSTM(input_size=W4, hidden_size=rnn_hidden_size, num_layers=rnn_num_layers,
+        #                    bidirectional=bidirectional, dropout=0)
+
+        # using multi-layered LayerNorm LSTM
+        self.rnns = LayerNormLSTM(input_size=W4, hidden_size=rnn_hidden_size, num_layers=4)
 
         self.lookahead = nn.Sequential(
             # consider adding batch norm?
@@ -250,8 +261,8 @@ class DeepSpeech(nn.Module):
         ) if not bidirectional else None
 
         fully_connected = nn.Sequential(
-            nn.BatchNorm1d(w5),
-            nn.Linear(w5, num_classes, bias=False)
+            nn.BatchNorm1d(W5),
+            nn.Linear(W5, num_classes, bias=False)
         )
         self.fc = nn.Sequential(
             SequenceWise(fully_connected),
