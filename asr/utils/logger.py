@@ -35,10 +35,11 @@ def init_logger(**kwargs):
     logger.visdom = None
     if "visdom" in kwargs and kwargs["visdom"]:
         env = str(Path(log_dir).name)
+        log_path = Path(log_dir, "visdom.log").resolve()
         visdom_host = kwargs.pop("visdom_host", "127.0.0.1")
         visdom_port = kwargs.pop("visdom_port", 8097)
         try:
-            logger.visdom = VisdomLogger(host=visdom_host, port=visdom_port, env=env)
+            logger.visdom = VisdomLogger(host=visdom_host, port=visdom_port, env=env, log_path=log_path)
         except:
             logger.info("error to use visdom")
             raise
@@ -60,17 +61,29 @@ def init_logger(**kwargs):
 
 class VisdomLogger:
 
-    def __init__(self, host='127.0.0.1', port=8097, env='main'):
+    def __init__(self, host='127.0.0.1', port=8097, env='main', log_path=None):
         from visdom import Visdom
+        import json
         logger.info(f"using visdom on http://{host}:{port} env={env}")
-        self.viz = Visdom(server=f"http://{host}", port=port, env=env)
+        self.env = env
+        self.viz = Visdom(server=f"http://{host}", port=port, env=env, log_to_filename=log_path)
         self.windows = dict()
+        # if prev log exists
+        if log_path.exists():
+            self.viz.replay_log(log_path)
+            wins = json.loads(self.viz.get_window_data(win=None, env=env))
+            for k, v in wins.items():
+                names = [int(x['name']) for x in v['content']['data']]
+                name = str(max(names) + 1)
+                self.windows[v['title']] = { 'win': v['id'], 'name': name }
 
     def add_plot(self, title, **kwargs):
-        self.windows[title] = {
-            'win': None,
-            'opts': { 'title': title, },
-        }
+        if title not in self.windows:
+            self.windows[title] = {
+                'win': None,
+                'name': '1',
+            }
+        self.windows[title]['opts'] = { 'title': title, }
         self.windows[title]['opts'].update(kwargs)
 
     def add_point(self, title, x, y):
@@ -78,10 +91,10 @@ class VisdomLogger:
         if title not in self.windows:
             self.add_plot(title)
         if self.windows[title]['win'] is None:
-            w = self.viz.line(Y=Y, X=X, opts=self.windows[title]['opts'])
+            w = self.viz.line(Y=Y, X=X, opts=self.windows[title]['opts'], name=self.windows[title]['name'])
             self.windows[title]['win'] = w
         else:
-            self.viz.line(Y=Y, X=X, update='append', win=self.windows[title]['win'])
+            self.viz.line(Y=Y, X=X, update='append', win=self.windows[title]['win'], name=self.windows[title]['name'])
 
 
 class TensorboardLogger:
