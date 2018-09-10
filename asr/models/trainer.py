@@ -209,7 +209,7 @@ class Trainer:
                 if self.checkpoint:
                     logger.info(f"training loss at epoch_{self.epoch:03d}_ckpt_{i:07d}: "
                                 f"{meter_loss.value()[0]:5.3f}")
-                    if is_distributed() and dist.get_rank() == 0:
+                    if not is_distributed() or (is_distributed() and dist.get_rank() == 0):
                         self.save(self.__get_model_name(f"epoch_{self.epoch:03d}_ckpt_{i:07d}"))
             #input("press key to continue")
 
@@ -217,7 +217,7 @@ class Trainer:
         logger.info(f"epoch {self.epoch:03d}: "
                     f"training loss {meter_loss.value()[0]:5.3f} ")
                     #f"training accuracy {meter_accuracy.value()[0]:6.3f}")
-        if is_distributed() and dist.get_rank() == 0:
+        if not is_distributed() or (is_distributed() and dist.get_rank() == 0):
             self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
             self.__remove_ckpt_files(self.epoch-1)
 
@@ -340,6 +340,7 @@ class NonSplitTrainer(Trainer):
             del loss
             return loss_value
         except Exception as e:
+            raise
             print(e)
             print(filenames, frame_lens, label_lens)
             return 0

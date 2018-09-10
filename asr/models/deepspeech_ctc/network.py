@@ -2,6 +2,7 @@
 import math
 from collections import OrderedDict
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -93,37 +94,64 @@ class LayerNormLSTMCell(nn.LSTMCell):
 
 class LayerNormLSTM(nn.Module):
 
-    def __init__(self, input_size, hidden_size, num_layers=1, bias=True):
+    def __init__(self, input_size, hidden_size, num_layers=1, bias=True, bidirectional=False):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+        self.bidirectional = bidirectional
 
-        self.hidden = nn.ModuleList([
-            LayerNormLSTMCell(input_size=(input_size if layer == 0 else hidden_size),
-                              hidden_size=hidden_size)
+        num_directions = 2 if bidirectional else 1
+        self.hidden0 = nn.ModuleList([
+            LayerNormLSTMCell(input_size=(input_size if layer == 0 else hidden_size * num_directions),
+                              hidden_size=hidden_size, bias=bias)
             for layer in range(num_layers)
         ])
 
+        if self.bidirectional:
+            self.hidden1 = nn.ModuleList([
+                LayerNormLSTMCell(input_size=(input_size if layer == 0 else hidden_size * num_directions),
+                                  hidden_size=hidden_size, bias=bias)
+                for layer in range(num_layers)
+            ])
+
     def forward(self, input, hidden=None):
         seq_len, batch_size, hidden_size = input.size()  # supports TxNxH only
+        num_directions = 2 if self.bidirectional else 1
         if hidden is None:
-            hx = input.new_zeros(self.num_layers, batch_size, self.hidden_size, requires_grad=False)
-            cx = input.new_zeros(self.num_layers, batch_size, self.hidden_size, requires_grad=False)
-            hidden = (hx, cx)
-        ht = input.new_zeros(seq_len, self.num_layers, batch_size, self.hidden_size, requires_grad=False)
-        ct = input.new_zeros(seq_len, self.num_layers, batch_size, self.hidden_size, requires_grad=False)
+            hx = input.new_zeros(self.num_layers * num_directions, batch_size, self.hidden_size, requires_grad=False)
+            cx = input.new_zeros(self.num_layers * num_directions, batch_size, self.hidden_size, requires_grad=False)
+        else:
+            hx, cx = hidden
 
-        h, c = hidden
-        for t, x in enumerate(input):
-            for l, layer in enumerate(self.hidden):
-                ht[t, l], ct[t, l] = layer(x, (h[l], c[l]))
-                x = ht[t, l]
-            h, c = ht[t], ct[t]
+        ht = [[None, ] * (self.num_layers * num_directions)] * seq_len
+        ct = [[None, ] * (self.num_layers * num_directions)] * seq_len
 
-        y  = ht[:, -1, :, :].contiguous()
-        hy = ht[-1, :, :, :].contiguous()
-        cy = ct[-1, :, :, :].contiguous()
+        if self.bidirectional:
+            xs = input
+            for l, (layer0, layer1) in enumerate(zip(self.hidden0, self.hidden1)):
+                l0, l1 = 2 * l, 2 * l + 1
+                h0, c0, h1, c1 = hx[l0], cx[l0], hx[l1], cx[l1]
+                for t, (x0, x1) in enumerate(zip(xs, reversed(xs))):
+                    ht[t][l0], ct[t][l0] = layer0(x0, (h0, c0))
+                    h0, c0 = ht[t][l0], ct[t][l0]
+                    t = seq_len - 1 - t
+                    ht[t][l1], ct[t][l1] = layer1(x1, (h1, c1))
+                    h1, c1 = ht[t][l1], ct[t][l1]
+                xs = [torch.cat((h[l0], h[l1]), dim=1) for h in ht]
+            y  = torch.stack(xs)
+            hy = torch.stack(ht[-1])
+            cy = torch.stack(ct[-1])
+        else:
+            h, c = hx, cx
+            for t, x in enumerate(input):
+                for l, layer in enumerate(self.hidden0):
+                    ht[t][l], ct[t][l] = layer(x, (h[l], c[l]))
+                    x = ht[t][l]
+                h, c = ht[t], ct[t]
+            y  = torch.stack([h[-1] for h in ht])
+            hy = torch.stack(ht[-1])
+            cy = torch.stack(ct[-1])
 
         return y, (hy, cy)
 
@@ -195,7 +223,7 @@ class Lookahead(nn.Module):
 class DeepSpeech(nn.Module):
 
     def __init__(self, num_classes=p.NUM_CTC_LABELS, input_folding=3, rnn_type=nn.LSTM,
-                 rnn_hidden_size=512, rnn_num_layers=4, bidirectional=True, context=20):
+                 rnn_hidden_size=512, rnn_num_layers=4, bidirectional=False, context=20):
         super().__init__()
 
         # model metadata needed for serialization/deserialization
@@ -214,6 +242,7 @@ class DeepSpeech(nn.Module):
         C2 = C1 * 2
         C3 = C2 * 2
         W4 = C3 * W3
+        #W5 = 2 * rnn_hidden_size if bidirectional else rnn_hidden_size
         W5 = rnn_hidden_size
 
         self.conv = nn.Sequential(
@@ -238,23 +267,24 @@ class DeepSpeech(nn.Module):
         )
 
         # using BatchRNN
-        #self.rnns = nn.Sequential(OrderedDict([
-        #    (str(layer), BatchRNN(input_size=(W4 if layer == 0 else rnn_hidden_size),
-        #                          hidden_size=rnn_hidden_size, rnn_type=rnn_type,
-        #                          bidirectional=bidirectional, batch_norm=True))
-        #    for layer in range(rnn_num_layers)
-        #]))
+        self.rnns = nn.Sequential(OrderedDict([
+            (str(layer), BatchRNN(input_size=(W4 if layer == 0 else rnn_hidden_size),
+                                  hidden_size=rnn_hidden_size, rnn_type=rnn_type,
+                                  bidirectional=bidirectional, batch_norm=True))
+            for layer in range(rnn_num_layers)
+        ]))
 
         # using multi-layered nn.LSTM
         #self.rnns = nn.LSTM(input_size=W4, hidden_size=rnn_hidden_size, num_layers=rnn_num_layers,
         #                    bidirectional=bidirectional, dropout=0)
 
         # using multi-layered LayerNorm LSTM
-        self.rnns = LayerNormLSTM(input_size=W4, hidden_size=rnn_hidden_size, num_layers=4)
+        #self.rnns = LayerNormLSTM(input_size=W4, hidden_size=rnn_hidden_size, num_layers=4,
+        #                          bidirectional=bidirectional)
 
         self.lookahead = nn.Sequential(
             # consider adding batch norm?
-            Lookahead(rnn_hidden_size, context=context),
+            Lookahead(W5, context=context),
             #nn.Hardtanh(0, 20, inplace=True)
             #nn.ReLU(inplace=True),
             Swish(inplace=True)
@@ -274,9 +304,8 @@ class DeepSpeech(nn.Module):
         sizes = x.size()
         x = x.view(sizes[0], sizes[1] * sizes[2], sizes[3])  # Collapse feature dimension
         x = x.transpose(1, 2).transpose(0, 1).contiguous()  # TxNxH
-        #x = self.rnns(x)
-        x, _ = self.rnns(x)
-
+        x = self.rnns(x)
+        #x, _ = self.rnns(x)
         if not self._bidirectional:  # no need for lookahead layer in bidirectional
             x = self.lookahead(x)
         x = self.fc(x)
