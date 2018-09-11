@@ -94,7 +94,7 @@ class SlackClientHandler(logging.Handler):
     def emit(self, record):
         try:
             msg = self.format(record)
-            self.sc.api_call("chat.postMessage", channel=self.channel, text=f"{self.env}:\n{msg}")
+            self.sc.api_call("chat.postMessage", channel=self.channel, text=f"`{self.env}`\n{msg}")
         except:
             self.handleError(record)
 
