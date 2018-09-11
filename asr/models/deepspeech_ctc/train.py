@@ -136,6 +136,7 @@ def train(argv):
     parser.add_argument('--visdom-host', default="127.0.0.1", type=str, help="visdom server ip address")
     parser.add_argument('--visdom-port', default=8097, type=int, help="visdom server port")
     parser.add_argument('--tensorboard', default=False, action='store_true', help="use tensorboard logging")
+    parser.add_argument('--slack', default=False, action='store_true', help="use slackclient logging (need to set SLACK_API_TOKEN and SLACK_API_USER env_var")
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
     parser.add_argument('--log-dir', default='./logs_deepspeech_ctc', type=str, help="filename for logging the outputs")
     parser.add_argument('--model-prefix', default='deepspeech_ctc', type=str, help="model file prefix to store")

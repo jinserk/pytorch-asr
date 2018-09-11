@@ -1,4 +1,5 @@
 #!python
+import os
 import sys
 from pathlib import Path
 import logging
@@ -18,7 +19,7 @@ def init_logger(**kwargs):
     chdr.setFormatter(formatter)
     logger.addHandler(chdr)
 
-    log_dir = kwargs.pop("log_dir", ".")
+    log_dir = kwargs.pop("log_dir", "./logs")
     # file handler
     if "log_file" in kwargs:
         log_file = kwargs.pop("log_file")
@@ -30,6 +31,17 @@ def init_logger(**kwargs):
         logger.addHandler(fhdr)
 
     logger.info(f"begins logging to file: {str(log_path)}")
+
+    if "slack" in kwargs and kwargs["slack"]:
+        try:
+            env = str(Path(log_dir).name)
+            shdr = SlackClientHandler(env=env)
+            shdr.setLevel(logging.DEBUG)
+            shdr.setFormatter(formatter)
+            logger.addHandler(shdr)
+        except:
+            logger.info("error to setup slackclient")
+            raise
 
     # prepare visdom
     logger.visdom = None
@@ -57,6 +69,34 @@ def init_logger(**kwargs):
     logger.info(f"PyTorch version: {torch.__version__}")
     logger.info(f"command-line options: {' '.join(sys.argv)}")
     logger.info(f"args: {args_str}")
+
+
+class SlackClientHandler(logging.Handler):
+
+    def __init__(self, env="main"):
+        super().__init__()
+        self.env = env
+        self.slack_token = os.getenv("SLACK_API_TOKEN")
+        self.slack_user = os.getenv("SLACK_API_USER")
+        if self.slack_token is None or self.slack_user is None:
+            raise Exception
+
+        from slackclient import SlackClient
+        self.sc = SlackClient(self.slack_token)
+
+        # getting user id
+        ans = self.sc.api_call("users.list")
+        users = [u['id'] for u in ans['members'] if u['name'] == self.slack_user]
+        # open DM channel to the users
+        ans = self.sc.api_call("conversations.open", users=users)
+        self.channel = ans['channel']['id']
+
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            self.sc.api_call("chat.postMessage", channel=self.channel, text=f"{self.env}:\n{msg}")
+        except:
+            self.handleError(record)
 
 
 class VisdomLogger:
