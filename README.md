@@ -81,6 +81,11 @@ $ python train.py <model-name> --use-cuda --continue-from <model-file>
 You can use `--visdom` or `--tensorboard` option to see the loss propagation.
 Please make sure that you already have a running visdom process before you start a training with `--visdom` option.
 
+You can also use `--slack` option to redirect logs to slack DM.
+If you want to use this, first setup a slack workplace and add "Bots" app to the workplace.
+You must obtain the Bots' token and your id from the slack setting.
+Then set environment variables `SLACK_API_TOKEN` and `SLACK_API_USER` for each of them.
+
 
 ## Prediction
 
