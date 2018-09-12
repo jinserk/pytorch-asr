@@ -220,12 +220,12 @@ def _load_manifest(manifest_file):
         logger.error(f"no such manifest file {manifest_file} found. "
                      f"need to prepare data first.")
         sys.exit(1)
-    logger.info(f"loading dataset manifest {str(manifest_file)} ...")
+    logger.debug(f"loading dataset manifest {str(manifest_file)} ...")
     with open(manifest_file, "r") as f:
         manifest = f.readlines()
     entries = [tuple(x.strip().split(',')) for x in manifest]
     entry_frames = [_smp2frm(int(e[2])) for e in entries]
-    logger.info(f"{len(entries)} entries, {sum(entry_frames)} frames are loaded.")
+    logger.debug(f"{len(entries)} entries, {sum(entry_frames)} frames are loaded.")
     return entries, entry_frames
 
 

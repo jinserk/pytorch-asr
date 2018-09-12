@@ -113,7 +113,7 @@ class Trainer:
         # setup model
         self.model = model
         if self.use_cuda:
-            logger.info("using cuda")
+            logger.debug("using cuda")
             self.model.cuda()
 
         # setup loss
@@ -123,16 +123,16 @@ class Trainer:
         assert opt_type in OPTIMIZER_TYPES
         parameters = self.model.parameters()
         if opt_type == "sgd":
-            logger.info("using SGD")
+            logger.debug("using SGD")
             self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9)
             self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=5)
         elif opt_type == "sgdr":
-            logger.info("using SGDR")
+            logger.debug("using SGDR")
             self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9)
             #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
             self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
         elif opt_type == "adam":
-            logger.info("using AdamW")
+            logger.debug("using AdamW")
             self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8,
                                               weight_decay=0.0005, l2_reg=False)
             self.lr_scheduler = None
@@ -180,7 +180,7 @@ class Trainer:
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
-            logger.info(f"current lr = {self.lr_scheduler.get_lr()}")
+            logger.debug(f"current lr = {self.lr_scheduler.get_lr()}")
         if is_distributed() and data_loader.sampler is not None:
             data_loader.sampler.set_epoch(self.epoch)
 

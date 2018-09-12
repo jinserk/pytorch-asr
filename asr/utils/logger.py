@@ -36,11 +36,11 @@ def init_logger(**kwargs):
         try:
             env = str(Path(log_dir).name)
             shdr = SlackClientHandler(env=env)
-            shdr.setLevel(logging.DEBUG)
+            shdr.setLevel(logging.INFO)
             shdr.setFormatter(formatter)
             logger.addHandler(shdr)
         except:
-            logger.info("error to setup slackclient")
+            logger.error("error to setup slackclient")
             raise
 
     # prepare visdom
@@ -53,7 +53,7 @@ def init_logger(**kwargs):
         try:
             logger.visdom = VisdomLogger(host=visdom_host, port=visdom_port, env=env, log_path=log_path)
         except:
-            logger.info("error to use visdom")
+            logger.error("error to use visdom")
             raise
 
     # prepare tensorboard
@@ -63,11 +63,11 @@ def init_logger(**kwargs):
         try:
             logger.tensorboard = TensorboardLogger(env)
         except:
-            logger.info("error to use tensorboard")
+            logger.error("error to use tensorboard")
 
     # print version and args
     logger.info(f"PyTorch version: {torch.__version__}")
-    logger.info(f"command-line options: {' '.join(sys.argv)}")
+    logger.debug(f"command-line options: {' '.join(sys.argv)}")
     logger.info(f"args: {args_str}")
 
 
