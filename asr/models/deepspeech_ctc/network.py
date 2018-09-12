@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn._functions.thnn import rnnFusedPointwise as fusedBackend
 from torch.autograd import Variable
 
 from asr.utils import params as p
@@ -63,6 +64,72 @@ class TemporalRowConvolution(nn.Module):
         return nn._functions.thnn.auto.TemporalRowConvolution.apply(input_, kernel_size, stride, padding)
 
 
+class LSTMCell(nn.Module):
+    """A basic LSTM cell."""
+
+    def __init__(self, input_size, hidden_size, bias=True, use_layernorm=False):
+        """
+        Most parts are copied from torch.nn.LSTMCell.
+        """
+        super().__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.use_layernorm = use_layernorm
+        self.use_bias = bias
+        if self.use_layernorm:
+            self.use_bias = False
+        #print("LSTMCell: use_layernorm=%s" % use_layernorm)
+        self.weight_ih = nn.Parameter(torch.FloatTensor(input_size, 4 * hidden_size))
+        self.weight_hh = nn.Parameter(torch.FloatTensor(hidden_size, 4 * hidden_size))
+        if self.use_layernorm:
+            self.ln_ih = nn.LayerNorm(4 * hidden_size)
+            self.ln_hh = nn.LayerNorm(4 * hidden_size)
+        if self.use_bias:
+            self.bias_ih = Parameter(torch.FloatTensor(4 * hidden_size))
+            self.bias_hh = Parameter(torch.FloatTensor(4 * hidden_size))
+        self.state = fusedBackend.LSTMFused.apply
+        self.init_weights()
+
+    def init_weights(self):
+        """
+        Initialize parameters following the way proposed in the paper.
+        """
+        stdv = 1.0 / np.sqrt(self.hidden_size)
+        self.weight_ih.data.uniform_(-stdv, stdv)
+        nn.init.orthogonal_(self.weight_hh.data)
+        if self.use_bias:
+            self.bias_ih.data.fill_(0)
+            self.bias_hh.data.fill_(0)
+
+    def forward(self, input_, hx):
+        """
+        Args:
+            input_: A (batch, input_size) tensor containing input
+                features.
+            hx: A tuple (h_0, c_0), which contains the initial hidden
+                and cell state, where the size of both states is
+                (batch, hidden_size).
+        Returns:
+            h_1, c_1: Tensors containing the next hidden and cell state.
+        """
+        assert input_.is_cuda
+        h_0, c_0 = hx
+        igates = torch.mm(input_, self.weight_ih)
+        hgates = torch.mm(h_0, self.weight_hh)
+        if self.use_layernorm:
+            igates = self.ln_ih(igates)
+            hgates = self.ln_hh(hgates)
+            return self.state(igates, hgates, c_0)
+        elif self.use_bias:
+            return self.state(igates, hgates, c_0, self.bias_ih, self.bias_hh)
+        else:
+            return self.state(igates, hgates, c_0)
+
+    def __repr__(self):
+        s = '{name}({input_size}, {hidden_size})'
+        return s.format(name=self.__class__.__name__, **self.__dict__)
+
+"""
 class LayerNormLSTMCell(nn.LSTMCell):
 
     def __init__(self, input_size, hidden_size, bias=True):
@@ -90,11 +157,11 @@ class LayerNormLSTMCell(nn.LSTMCell):
         cy = (f * cx) + (i * g)
         hy = o * self.ln_ho(cy).tanh()
         return hy, cy
+"""
 
+class LSTM(nn.Module):
 
-class LayerNormLSTM(nn.Module):
-
-    def __init__(self, input_size, hidden_size, num_layers=1, bias=True, bidirectional=False):
+    def __init__(self, input_size, hidden_size, num_layers=1, bias=True, use_layernorm=False, bidirectional=False):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -103,15 +170,15 @@ class LayerNormLSTM(nn.Module):
 
         num_directions = 2 if bidirectional else 1
         self.hidden0 = nn.ModuleList([
-            LayerNormLSTMCell(input_size=(input_size if layer == 0 else hidden_size * num_directions),
-                              hidden_size=hidden_size, bias=bias)
+            LSTMCell(input_size=(input_size if layer == 0 else hidden_size * num_directions),
+                     hidden_size=hidden_size, bias=bias, use_layernorm=use_layernorm)
             for layer in range(num_layers)
         ])
 
         if self.bidirectional:
             self.hidden1 = nn.ModuleList([
-                LayerNormLSTMCell(input_size=(input_size if layer == 0 else hidden_size * num_directions),
-                                  hidden_size=hidden_size, bias=bias)
+                LSTMCell(input_size=(input_size if layer == 0 else hidden_size * num_directions),
+                         hidden_size=hidden_size, bias=bias, use_layernorm=use_layernorm)
                 for layer in range(num_layers)
             ])
 
@@ -223,7 +290,7 @@ class Lookahead(nn.Module):
 class DeepSpeech(nn.Module):
 
     def __init__(self, num_classes=p.NUM_CTC_LABELS, input_folding=3, rnn_type=nn.LSTM,
-                 rnn_hidden_size=512, rnn_num_layers=4, bidirectional=False, context=20):
+                 rnn_hidden_size=512, rnn_num_layers=4, bidirectional=True, context=20):
         super().__init__()
 
         # model metadata needed for serialization/deserialization
@@ -279,8 +346,8 @@ class DeepSpeech(nn.Module):
         #                    bidirectional=bidirectional, dropout=0)
 
         # using multi-layered LayerNorm LSTM
-        #self.rnns = LayerNormLSTM(input_size=W4, hidden_size=rnn_hidden_size, num_layers=4,
-        #                          bidirectional=bidirectional)
+        #self.rnns = LSTM(input_size=W4, hidden_size=rnn_hidden_size, num_layers=4,
+        #                 use_layernorm=True, bidirectional=bidirectional)
 
         self.lookahead = nn.Sequential(
             # consider adding batch norm?
