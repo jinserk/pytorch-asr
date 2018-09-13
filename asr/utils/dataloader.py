@@ -45,7 +45,8 @@ class SplitTrainDataLoader(DataLoader):
 class NonSplitTrainCollateFn(object):
 
     def __call__(self, batch):
-        longest_tensor = max(batch, key=lambda x: x[0].size(3))[0]
+        batch = sorted(batch, key=lambda x: x[0].size(3), reverse=True)
+        longest_tensor = batch[0][0]
         tensors = list()
         targets = list()
         tensor_lens = list()

@@ -6,7 +6,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn._functions.thnn import rnnFusedPointwise as fusedBackend
 from torch.autograd import Variable
 
 from asr.utils import params as p
@@ -64,6 +63,7 @@ class TemporalRowConvolution(nn.Module):
         return nn._functions.thnn.auto.TemporalRowConvolution.apply(input_, kernel_size, stride, padding)
 
 
+'''
 class LSTMCell(nn.Module):
     """A basic LSTM cell."""
 
@@ -128,9 +128,9 @@ class LSTMCell(nn.Module):
     def __repr__(self):
         s = '{name}({input_size}, {hidden_size})'
         return s.format(name=self.__class__.__name__, **self.__dict__)
+'''
 
-"""
-class LayerNormLSTMCell(nn.LSTMCell):
+class LSTMCell(nn.LSTMCell):
 
     def __init__(self, input_size, hidden_size, bias=True):
         super().__init__(input_size, hidden_size, bias)
@@ -157,7 +157,7 @@ class LayerNormLSTMCell(nn.LSTMCell):
         cy = (f * cx) + (i * g)
         hy = o * self.ln_ho(cy).tanh()
         return hy, cy
-"""
+
 
 class LSTM(nn.Module):
 
@@ -237,10 +237,12 @@ class BatchRNN(nn.Module):
     def flatten_parameters(self):
         self.rnn.flatten_parameters()
 
-    def forward(self, x):
+    def forward(self, x, seq_lens):
         if self.batch_norm is not None:
             x = self.batch_norm(x)
-        x, _ = self.rnn(x)
+        ps = nn.utils.rnn.pack_padded_sequence(x, seq_lens)
+        ps, _ = self.rnn(ps)
+        x, _ = nn.utils.rnn.pad_packed_sequence(ps)
         if self.bidirectional:
             x = x.view(x.size(0), x.size(1), 2, -1).sum(2).view(x.size(0), x.size(1), -1)  # (TxNxH*2) -> (TxNxH) by sum
         return x
@@ -334,12 +336,12 @@ class DeepSpeech(nn.Module):
         )
 
         # using BatchRNN
-        self.rnns = nn.Sequential(OrderedDict([
-            (str(layer), BatchRNN(input_size=(W4 if layer == 0 else rnn_hidden_size),
-                                  hidden_size=rnn_hidden_size, rnn_type=rnn_type,
-                                  bidirectional=bidirectional, batch_norm=True))
+        self.rnns = nn.ModuleList([
+            BatchRNN(input_size=(W4 if layer == 0 else rnn_hidden_size),
+                     hidden_size=rnn_hidden_size, rnn_type=rnn_type,
+                     bidirectional=bidirectional, batch_norm=True)
             for layer in range(rnn_num_layers)
-        ]))
+        ])
 
         # using multi-layered nn.LSTM
         #self.rnns = nn.LSTM(input_size=W4, hidden_size=rnn_hidden_size, num_layers=rnn_num_layers,
@@ -366,12 +368,13 @@ class DeepSpeech(nn.Module):
         )
         self.inference_softmax = InferenceBatchSoftmax()
 
-    def forward(self, x):
+    def forward(self, x, seq_lens):
         x = self.conv(x)
         sizes = x.size()
         x = x.view(sizes[0], sizes[1] * sizes[2], sizes[3])  # Collapse feature dimension
         x = x.transpose(1, 2).transpose(0, 1).contiguous()  # TxNxH
-        x = self.rnns(x)
+        for rnn in self.rnns:
+            x = rnn(x, seq_lens)
         #x, _ = self.rnns(x)
         if not self._bidirectional:  # no need for lookahead layer in bidirectional
             x = self.lookahead(x)

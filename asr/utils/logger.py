@@ -12,7 +12,7 @@ logger.setLevel(logging.DEBUG)
 
 def init_logger(**kwargs):
     args_str = ' '.join([f"{k}={v}" for (k, v) in kwargs.items()])
-    formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+    formatter = logging.Formatter('%(asctime)s [%(levelname)-5s] %(message)s')
     # stream handler
     chdr = logging.StreamHandler()
     chdr.setLevel(logging.DEBUG)

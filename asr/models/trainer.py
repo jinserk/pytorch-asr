@@ -314,7 +314,7 @@ class NonSplitTrainer(Trainer):
         try:
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
-            ys_hat = self.model(xs)
+            ys_hat = self.model(xs, frame_lens)
             if self.fp16:
                 ys_hat = ys_hat.float()
             ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
