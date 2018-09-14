@@ -5,18 +5,10 @@ from pathlib import Path
 import logging
 
 import torch
-import torch.distributed as dist
 
 
 logger = logging.getLogger("pytorch-asr")
 logger.setLevel(logging.DEBUG)
-
-
-def is_distributed():
-    try:
-        return (dist.get_world_size() > 1)
-    except:
-        return False
 
 
 def init_logger(**kwargs):
@@ -29,12 +21,14 @@ def init_logger(**kwargs):
     logger.addHandler(chdr)
 
     log_dir = kwargs.pop("log_dir", "./logs")
+    rank = kwargs.pop("rank", None)
+
     # file handler
     if "log_file" in kwargs:
         log_file = kwargs.pop("log_file")
         log_path = Path(log_dir, log_file).resolve()
-        if is_distributed():
-            log_path = log_path.with_suffix(f"_rank{dist.get_rank()}{log_path.suffix}")
+        if rank is not None:
+            log_path = log_path.with_suffix(f".{rank}{log_path.suffix}")
         Path.mkdir(log_path.parent, parents=True, exist_ok=True)
         fhdr = logging.FileHandler(log_path)
         fhdr.setLevel(logging.DEBUG)
@@ -46,8 +40,8 @@ def init_logger(**kwargs):
     if "slack" in kwargs and kwargs["slack"]:
         try:
             env = str(Path(log_dir).name)
-            if is_distributed():
-                env += f"_rank{dist.get_rank()}"
+            if rank is not None:
+                env += f"_rank{rank}"
             shdr = SlackClientHandler(env=env)
             shdr.setLevel(logging.INFO)
             shdr.setFormatter(formatter)

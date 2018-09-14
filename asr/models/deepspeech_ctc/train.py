@@ -42,7 +42,7 @@ def batch_train(argv):
     args = parser.parse_args(argv)
 
     init_distributed(args.use_cuda)
-    init_logger(log_file="train.log", **vars(args))
+    init_logger(log_file="train.log", rank=get_rank(), **vars(args))
     set_seed(args.seed)
 
     # prepare trainer object
@@ -146,7 +146,7 @@ def train(argv):
     args = parser.parse_args(argv)
 
     init_distributed(args.use_cuda)
-    init_logger(log_file="train.log", **vars(args))
+    init_logger(log_file="train.log", rank=get_rank(), **vars(args))
     set_seed(args.seed)
 
     # prepare trainer object

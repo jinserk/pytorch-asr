@@ -55,10 +55,10 @@ def init_distributed(use_cuda, backend="nccl", init="slurm"):
             torch.cuda.set_device(local_rank)
             print(f"set cuda device to cuda:{local_rank}")
 
-        #os.environ["MASTER_ADDR"] = "172.30.1.237"
-        #os.environ["MASTER_PORT"] = "23456"
-        #init_method = f"tcp://{master_node}:{master_port}"
-        init_method = "env://"
+        master_node = os.environ["MASTER_ADDR"]
+        master_port = os.environ["MASTER_PORT"]
+        init_method = f"tcp://{master_node}:{master_port}"
+        #init_method = "env://"
         dist.init_process_group(backend=backend, init_method=init_method, world_size=world_size, rank=rank)
         print(f"initialized as {rank}/{world_size} via {init_method}")
     except:
@@ -70,6 +70,13 @@ def is_distributed():
         return (dist.get_world_size() > 1)
     except:
         return False
+
+
+def get_rank():
+    try:
+        return dist.get_rank()
+    except:
+        return None
 
 
 def set_seed(seed=None):
@@ -103,12 +110,8 @@ class Trainer:
 
         # prepare visdom
         if logger.visdom is not None:
-            if is_distributed():
-                logger.visdom.add_plot(title=f'train_rank{dist.get_rank()}', xlabel='epoch', ylabel='loss')
-                logger.visdom.add_plot(title=f'validate_rank{dist.get_rank()}', xlabel='epoch', ylabel='LER')
-            else:
-                logger.visdom.add_plot(title=f'train', xlabel='epoch', ylabel='loss')
-                logger.visdom.add_plot(title=f'validate', xlabel='epoch', ylabel='LER')
+            logger.visdom.add_plot(title=f'train', xlabel='epoch', ylabel='loss')
+            logger.visdom.add_plot(title=f'validate', xlabel='epoch', ylabel='LER')
 
         # setup model
         self.model = model
@@ -195,17 +198,18 @@ class Trainer:
             #self.meter_confusion.add(ys_int, ys)
 
             if 0 < i < len(data_loader) and i % num_ckpt == 0:
-                title = f"train_rank{dist.get_rank()}" if is_distributed() else "train"
-                x = self.epoch + i / len(data_loader)
-                if logger.visdom is not None:
-                    logger.visdom.add_point(title=title, x=x, y=meter_loss.value()[0])
-                if logger.tensorboard is not None:
-                    logger.tensorboard.add_graph(self.model, xs)
-                    xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
-                    logger.tensorboard.add_image('xs', x, xs_img)
-                    ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
-                    logger.tensorboard.add_image('ys_hat', x, ys_hat_img)
-                    logger.tensorboard.add_scalars(title, x, { 'loss': meter_loss.value()[0], })
+                if not is_distributed() or (is_distributed() and dist.get_rank() == 0):
+                    title = "train"
+                    x = self.epoch + i / len(data_loader)
+                    if logger.visdom is not None:
+                        logger.visdom.add_point(title=title, x=x, y=meter_loss.value()[0])
+                    if logger.tensorboard is not None:
+                        logger.tensorboard.add_graph(self.model, xs)
+                        xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
+                        logger.tensorboard.add_image('xs', x, xs_img)
+                        ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
+                        logger.tensorboard.add_image('ys_hat', x, ys_hat_img)
+                        logger.tensorboard.add_scalars(title, x, { 'loss': meter_loss.value()[0], })
                 if self.checkpoint:
                     logger.info(f"training loss at epoch_{self.epoch:03d}_ckpt_{i:07d}: "
                                 f"{meter_loss.value()[0]:5.3f}")
@@ -240,12 +244,13 @@ class Trainer:
                 t.refresh()
             logger.info(f"validating at epoch {self.epoch:03d}: LER {ler:.2f} %")
 
-            title = f"validate_rank{dist.get_rank()}" if is_distributed() else "validate"
-            x = self.epoch - 1 + i / len(data_loader)
-            if logger.visdom is not None:
-                logger.visdom.add_point(title=title, x=x, y=ler)
-            if logger.tensorboard is not None:
-                logger.tensorboard.add_scalars(title, x, { 'LER': ler, })
+            if not is_distributed() or (is_distributed() and dist.get_rank() == 0):
+                title = f"validate"
+                x = self.epoch - 1 + i / len(data_loader)
+                if logger.visdom is not None:
+                    logger.visdom.add_point(title=title, x=x, y=ler)
+                if logger.tensorboard is not None:
+                    logger.tensorboard.add_scalars(title, x, { 'LER': ler, })
 
     def unit_test(self, data):
         raise NotImplementedError

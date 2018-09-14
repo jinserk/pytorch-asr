@@ -82,9 +82,6 @@ celerybeat-schedule
 # dotenv
 .env
 
-# slack config
-.slackbot
-
 # virtualenv
 .venv
 venv/
@@ -103,6 +100,9 @@ ENV/
 # mypy
 .mypy_cache/
 
+# slack config
+.slackbot
+
 # subdirs
 data/
 logs*/
@@ -115,3 +115,8 @@ temp/
 asr/kaldi/_ext
 asr/kaldi/scripts/aspire
 asr/kaldi/graph
+
+# slurm
+*.out
+*.err
+
