@@ -22,4 +22,4 @@ srun -o slurmd.%j.%t.out -e slurmd.%j.%t.err --export=ALL --network="MPI,DEVNAME
     --slack \
     --visdom \
     --visdom-host 172.26.15.44 \
-    --continue-from logs_20180906_deepspeech_ctc_h512_l4/deepspeech_ctc_epoch_024.pth.tar
+    --continue-from logs_20180906_deepspeech_ctc_h512_l4/deepspeech_ctc_epoch_027.pth.tar

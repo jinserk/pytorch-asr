@@ -41,7 +41,7 @@ def init_logger(**kwargs):
         try:
             env = str(Path(log_dir).name)
             if rank is not None:
-                env += f"_rank{rank}"
+                env += f":rank{rank}"
             shdr = SlackClientHandler(env=env)
             shdr.setLevel(logging.INFO)
             shdr.setFormatter(formatter)
@@ -58,10 +58,10 @@ def init_logger(**kwargs):
         visdom_host = kwargs.pop("visdom_host", "127.0.0.1")
         visdom_port = kwargs.pop("visdom_port", 8097)
         try:
-            logger.visdom = VisdomLogger(host=visdom_host, port=visdom_port, env=env, log_path=log_path)
+            logger.visdom = VisdomLogger(host=visdom_host, port=visdom_port, env=env,
+                                         log_path=log_path, rank=rank)
         except:
             logger.error("error to use visdom")
-            raise
 
     # prepare tensorboard
     logger.tensorboard = None
@@ -108,11 +108,12 @@ class SlackClientHandler(logging.Handler):
 
 class VisdomLogger:
 
-    def __init__(self, host='127.0.0.1', port=8097, env='main', log_path=None):
+    def __init__(self, host='127.0.0.1', port=8097, env='main', log_path=None, rank=None):
         from visdom import Visdom
         import json
         logger.info(f"using visdom on http://{host}:{port} env={env}")
         self.env = env
+        self.rank = rank
         self.viz = Visdom(server=f"http://{host}", port=port, env=env, log_to_filename=log_path)
         self.windows = dict()
         # if prev log exists
@@ -120,15 +121,16 @@ class VisdomLogger:
             self.viz.replay_log(log_path)
             wins = json.loads(self.viz.get_window_data(win=None, env=env))
             for k, v in wins.items():
-                names = [int(x['name']) for x in v['content']['data']]
-                name = str(max(names) + 1)
+                names = [int(x['name'].partition('_')[0]) for x in v['content']['data']]
+                name = max(names) + 1
+                name = str(name) if rank is None else f"{name}_{rank}"
                 self.windows[v['title']] = { 'win': v['id'], 'name': name }
 
     def add_plot(self, title, **kwargs):
         if title not in self.windows:
             self.windows[title] = {
                 'win': None,
-                'name': '1',
+                'name': '1' if self.rank is None else f'1_{self.rank}',
             }
         self.windows[title]['opts'] = { 'title': title, }
         self.windows[title]['opts'].update(kwargs)

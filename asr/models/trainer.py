@@ -198,18 +198,17 @@ class Trainer:
             #self.meter_confusion.add(ys_int, ys)
 
             if 0 < i < len(data_loader) and i % num_ckpt == 0:
-                if not is_distributed() or (is_distributed() and dist.get_rank() == 0):
-                    title = "train"
-                    x = self.epoch + i / len(data_loader)
-                    if logger.visdom is not None:
-                        logger.visdom.add_point(title=title, x=x, y=meter_loss.value()[0])
-                    if logger.tensorboard is not None:
-                        logger.tensorboard.add_graph(self.model, xs)
-                        xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
-                        logger.tensorboard.add_image('xs', x, xs_img)
-                        ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
-                        logger.tensorboard.add_image('ys_hat', x, ys_hat_img)
-                        logger.tensorboard.add_scalars(title, x, { 'loss': meter_loss.value()[0], })
+                title = "train"
+                x = self.epoch + i / len(data_loader)
+                if logger.visdom is not None:
+                    logger.visdom.add_point(title=title, x=x, y=meter_loss.value()[0])
+                if logger.tensorboard is not None:
+                    logger.tensorboard.add_graph(self.model, xs)
+                    xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
+                    logger.tensorboard.add_image('xs', x, xs_img)
+                    ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
+                    logger.tensorboard.add_image('ys_hat', x, ys_hat_img)
+                    logger.tensorboard.add_scalars(title, x, { 'loss': meter_loss.value()[0], })
                 if self.checkpoint:
                     logger.info(f"training loss at epoch_{self.epoch:03d}_ckpt_{i:07d}: "
                                 f"{meter_loss.value()[0]:5.3f}")
@@ -244,13 +243,12 @@ class Trainer:
                 t.refresh()
             logger.info(f"validating at epoch {self.epoch:03d}: LER {ler:.2f} %")
 
-            if not is_distributed() or (is_distributed() and dist.get_rank() == 0):
-                title = f"validate"
-                x = self.epoch - 1 + i / len(data_loader)
-                if logger.visdom is not None:
-                    logger.visdom.add_point(title=title, x=x, y=ler)
-                if logger.tensorboard is not None:
-                    logger.tensorboard.add_scalars(title, x, { 'LER': ler, })
+            title = f"validate"
+            x = self.epoch - 1 + i / len(data_loader)
+            if logger.visdom is not None:
+                logger.visdom.add_point(title=title, x=x, y=ler)
+            if logger.tensorboard is not None:
+                logger.tensorboard.add_scalars(title, x, { 'LER': ler, })
 
     def unit_test(self, data):
         raise NotImplementedError
