@@ -56,7 +56,8 @@ If you want to use your own language model or graphs, modify `asr/kaldi/scripts/
 ## Training
 
 Pytorch-asr is targeted to develop a framework supporting multiple acoustic models. You have to specify one of model to train or predict.
-Currently, `resnet_{ctc,ed}`, `densenet_{ctc,ed}`, and `deepspeech_{ctc,ed}` models work for training and prediction. Try these models first.
+Currently, `deepspeech_ctc` model is only maintained from the frequent updated training and prediction modules. Try the model first.
+We'll follow up the other model for the updated interface soon. Sorry for your inconvenience.
 
 If you do training for the first time, you need to preprocess the dataset.
 Currently we utilize the contents of `data` directory in Kaldi's recipe directories that are containing preprocessed corpus data.

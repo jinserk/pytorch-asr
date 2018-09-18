@@ -29,7 +29,8 @@ from asr.kaldi.latgen import LatGenCTCDecoder
 OPTIMIZER_TYPES = set([
     "sgd",
     "sgdr",
-    "adamw",
+    "adam",
+    "rmsprop",
 ])
 
 
@@ -127,17 +128,20 @@ class Trainer:
         parameters = self.model.parameters()
         if opt_type == "sgd":
             logger.debug("using SGD")
-            self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9)
+            self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9, weight_decay=5e-4)
             self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=5)
         elif opt_type == "sgdr":
             logger.debug("using SGDR")
-            self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9)
+            self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9, weight_decay=5e-4)
             #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
-            self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
+            self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=2, T_mult=2)
         elif opt_type == "adam":
-            logger.debug("using AdamW")
-            self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8,
-                                              weight_decay=0.0005, l2_reg=False)
+            logger.debug("using Adam")
+            self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0)
+            self.lr_scheduler = None
+        elif opt_type == "rmsprop":
+            logger.debug("using RMSprop")
+            self.optimizer = torch.optim.RMSprop(parameters, lr=self.init_lr, alpha=0.95, eps=1e-5, weight_decay=5e-4, centered=True)
             self.lr_scheduler = None
 
         # setup decoder for test
@@ -177,7 +181,6 @@ class Trainer:
 
     def train_epoch(self, data_loader):
         self.model.train()
-        num_ckpt = int(np.ceil(len(data_loader) / 10))
         meter_loss = tnt.meter.MovingAverageValueMeter(len(data_loader) // 100 + 1)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
@@ -189,6 +192,8 @@ class Trainer:
 
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training")
+        ckpts = iter(len(data_loader) * np.arange(0.1, 1.0, 0.1))
+        ckpt = next(ckpts)
         for i, (data) in t:
             loss_value = self.unit_train(data)
             meter_loss.add(loss_value)
@@ -197,7 +202,7 @@ class Trainer:
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
 
-            if 0 < i < len(data_loader) and i % num_ckpt == 0:
+            if i > ckpt:
                 title = "train"
                 x = self.epoch + i / len(data_loader)
                 if logger.visdom is not None:
@@ -214,6 +219,7 @@ class Trainer:
                                 f"{meter_loss.value()[0]:5.3f}")
                     if not is_distributed() or (is_distributed() and dist.get_rank() == 0):
                         self.save(self.__get_model_name(f"epoch_{self.epoch:03d}_ckpt_{i:07d}"))
+                ckpt = next(ckpts)
             #input("press key to continue")
 
         self.epoch += 1
@@ -291,7 +297,8 @@ class Trainer:
         else:
             states["model"] = self.model.state_dict()
         states["optimizer"] = self.optimizer.state_dict()
-        states["lr_scheduler"] = self.lr_scheduler.state_dict()
+        if self.lr_scheduler is not None:
+            states["lr_scheduler"] = self.lr_scheduler.state_dict()
         torch.save(states, file_path)
 
     def load(self, file_path):
@@ -306,7 +313,8 @@ class Trainer:
         self.epoch = states["epoch"]
         self.model.load_state_dict(states["model"])
         self.optimizer.load_state_dict(states["optimizer"])
-        self.lr_scheduler.load_state_dict(states["lr_scheduler"])
+        if self.lr_scheduler is not None and "lr_scheduler" in states:
+            self.lr_scheduler.load_state_dict(states["lr_scheduler"])
 
 
 class NonSplitTrainer(Trainer):
@@ -317,7 +325,7 @@ class NonSplitTrainer(Trainer):
         try:
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
-            ys_hat = self.model(xs)
+            ys_hat, frame_lens = self.model(xs, frame_lens)
             if self.fp16:
                 ys_hat = ys_hat.float()
             ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
@@ -352,7 +360,7 @@ class NonSplitTrainer(Trainer):
         xs, ys, frame_lens, label_lens, filenames, _ = data
         if self.use_cuda:
             xs = xs.cuda(non_blocking=True)
-        ys_hat = self.model(xs)
+        ys_hat, frame_lens = self.model(xs, frame_lens)
         if self.fp16:
             ys_hat = ys_hat.float()
         # convert likes to ctc labels
@@ -368,7 +376,7 @@ class NonSplitTrainer(Trainer):
         xs, ys, frame_lens, label_lens, filenames, texts = data
         if self.use_cuda:
             xs = xs.cuda(non_blocking=True)
-        ys_hat = self.model(xs)
+        ys_hat, frame_lens = self.model(xs, frame_lens)
         if self.fp16:
             ys_hat = ys_hat.float()
         #frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()

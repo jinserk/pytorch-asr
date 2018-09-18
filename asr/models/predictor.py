@@ -39,7 +39,7 @@ class NonSplitPredictor:
                 # predict phones using AM
                 if self.use_cuda:
                     xs = xs.cuda(non_blocking=True)
-                ys_hat = self.model(xs)
+                ys_hat, frame_lens = self.model(xs, frame_lens)
                 #frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
                 # decode using Kaldi's latgen decoder
                 # no need to normalize posteriors with state priors when we use CTC
