@@ -240,7 +240,7 @@ class BatchRNN(nn.Module):
     def forward(self, x, seq_lens):
         if self.batch_norm is not None:
             x = self.batch_norm(x)
-        ps = nn.utils.rnn.pack_padded_sequence(x, seq_lens)
+        ps = nn.utils.rnn.pack_padded_sequence(x, seq_lens.tolist())
         ps, _ = self.rnn(ps)
         x, _ = nn.utils.rnn.pad_packed_sequence(ps)
         if self.bidirectional:
