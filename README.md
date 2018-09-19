@@ -31,11 +31,11 @@ $ cd pytorch-asr
 $ pip install -r requirements.txt
 ```
 
-If you have installation error of `torchaudio` on CentOS machine, add the followings to your `~/.bashrc`.
+If you have an installation error of `torchaudio` on a CentOS machine, add the followings to your `~/.bashrc`.
 ```
 export CPLUS_INCLUDE_PATH=/usr/include/sox:$CPLUS_INCLUDE_PATH
 ```
-don't forget `$ source ~/.bashrc` before you try to install the requirements.
+don't forget to do `$ source ~/.bashrc` before you try to install the requirements.
 
 Modify the Kaldi path in `_path.py`:
 ```
@@ -56,7 +56,7 @@ If you want to use your own language model or graphs, modify `asr/kaldi/scripts/
 ## Training
 
 Pytorch-asr is targeted to develop a framework supporting multiple acoustic models. You have to specify one of the models to train or predict.
-Currently, `deepspeech_ctc` model is only maintained from the frequent updated training and prediction modules. Try the model first.
+Currently, the `deepspeech_ctc` model is only maintained from the frequent updated training and prediction modules. Try this model first.
 We'll follow up the other models for the updated interface soon. Sorry for your inconvenience.
 
 If you do training for the first time, you need to preprocess the dataset.
@@ -79,8 +79,9 @@ If you want to resume training from a saved model file:
 $ python train.py <model-name> --use-cuda --continue-from <model-file>
 ```
 
-You can use `--visdom` or `--tensorboard` option to see the loss propagation.
+You can use `--visdom` option to see the loss propagation.
 Please make sure that you already have a running visdom process before you start a training with `--visdom` option.
+`--tensorboard` option is outdated since TensorboardX package doesn't support the latest PyTorch.
 
 You can also use `--slack` option to redirect logs to slack DM.
 If you want to use this, first setup a slack workplace and add "Bots" app to the workplace.
