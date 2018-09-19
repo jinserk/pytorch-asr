@@ -134,7 +134,7 @@ class Trainer:
             logger.debug("using SGDR")
             self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9, weight_decay=5e-4)
             #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
-            self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=2, T_mult=2)
+            self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
         elif opt_type == "adam":
             logger.debug("using Adam")
             self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0)
@@ -189,11 +189,11 @@ class Trainer:
             logger.debug(f"current lr = {self.lr_scheduler.get_lr()}")
         if is_distributed() and data_loader.sampler is not None:
             data_loader.sampler.set_epoch(self.epoch)
+        ckpts = iter(len(data_loader) * np.arange(0.1, 1.1, 0.1))
+        ckpt = next(ckpts)
 
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training")
-        ckpts = iter(len(data_loader) * np.arange(0.1, 1.0, 0.1))
-        ckpt = next(ckpts)
         for i, (data) in t:
             loss_value = self.unit_train(data)
             meter_loss.add(loss_value)

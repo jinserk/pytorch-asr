@@ -291,8 +291,8 @@ class Lookahead(nn.Module):
 
 class DeepSpeech(nn.Module):
 
-    def __init__(self, num_classes=p.NUM_CTC_LABELS, input_folding=2, rnn_type=nn.LSTM,
-                 rnn_hidden_size=1024, rnn_num_layers=[2, 2], bidirectional=True, context=20):
+    def __init__(self, num_classes=p.NUM_CTC_LABELS, input_folding=1, rnn_type=nn.LSTM,
+                 rnn_hidden_size=512, rnn_num_layers=[2, 2], bidirectional=True, context=20):
         super().__init__()
 
         # model metadata needed for serialization/deserialization
@@ -310,12 +310,8 @@ class DeepSpeech(nn.Module):
         C2 = C1 * 2
         W3 = (W2 - 11 + 2*5) // 2 + 1   # 17
         C3 = C2 * 2
-        W4 = (W3 - 11 + 2*5) // 2 + 1   # 9
-        C4 = C3 * 2
-        W5 = (W4 - 11 + 2*5) // 2 + 1   # 5
-        C5 = C4 * 2
 
-        H0 = [C5 * W5, rnn_hidden_size * 2, rnn_hidden_size * 2]
+        H0 = [C3 * W3, rnn_hidden_size * 2, rnn_hidden_size * 2]
         #W5 = 2 * rnn_hidden_size if bidirectional else rnn_hidden_size
         H1 = rnn_hidden_size
 
@@ -334,18 +330,6 @@ class DeepSpeech(nn.Module):
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
             nn.Conv2d(C2, C3, kernel_size=(11, 11), stride=(2, 1), padding=(5, 5)),
             nn.BatchNorm2d(C3),
-            #nn.Hardtanh(0, 20, inplace=True)
-            nn.ReLU(inplace=True),
-            #Swish(inplace=True),
-            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C3, C4, kernel_size=(11, 11), stride=(2, 1), padding=(5, 5)),
-            nn.BatchNorm2d(C4),
-            #nn.Hardtanh(0, 20, inplace=True)
-            nn.ReLU(inplace=True),
-            #Swish(inplace=True),
-            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C4, C5, kernel_size=(11, 11), stride=(2, 1), padding=(5, 5)),
-            nn.BatchNorm2d(C5),
             #nn.Hardtanh(0, 20, inplace=True)
             nn.ReLU(inplace=True),
             #Swish(inplace=True),
