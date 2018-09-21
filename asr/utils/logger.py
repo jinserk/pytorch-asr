@@ -86,7 +86,7 @@ class SlackClientHandler(logging.Handler):
         self.slack_token = os.getenv("SLACK_API_TOKEN")
         self.slack_user = os.getenv("SLACK_API_USER")
         if self.slack_token is None or self.slack_user is None:
-            raise Exception
+            raise KeyError
 
         from slackclient import SlackClient
         self.sc = SlackClient(self.slack_token)

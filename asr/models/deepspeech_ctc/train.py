@@ -88,7 +88,7 @@ def batch_train(argv):
         "train15": NonSplitTrainDataLoader(datasets["train15"],
                                            sampler=(DistributedSampler(datasets["train15"])
                                                     if is_distributed() else None),
-                                           batch_size=32, num_workers=32,
+                                           batch_size=64, num_workers=32,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"],
@@ -124,7 +124,7 @@ def train(argv):
     parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
     parser.add_argument('--max-len', default=15., type=float, help="max length of utterance to use in secs")
-    parser.add_argument('--batch-size', default=32, type=int, help="number of images (and labels) to be considered in a batch")
+    parser.add_argument('--batch-size', default=64, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--num-workers', default=32, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=0.01, type=float, help="initial learning rate for Adam optimizer")
