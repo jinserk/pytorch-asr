@@ -286,7 +286,7 @@ class Trainer:
 
     def save(self, file_path, **kwargs):
         Path(file_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-        logger.info(f"saving the model to {file_path}")
+        logger.debug(f"saving the model to {file_path}")
         states = kwargs
         states["epoch"] = self.epoch
         if is_distributed():
@@ -307,7 +307,7 @@ class Trainer:
         if not file_path.exists():
             logger.error(f"no such file {file_path} exists")
             sys.exit(1)
-        logger.info(f"loading the model from {file_path}")
+        logger.debug(f"loading the model from {file_path}")
         to_device = f"cuda:{torch.cuda.current_device()}" if self.use_cuda else "cpu"
         states = torch.load(file_path, map_location=to_device)
         self.epoch = states["epoch"]
@@ -347,7 +347,8 @@ class NonSplitTrainer(Trainer):
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
             self.optimizer.step()
-            torch.cuda.synchronize()
+            if self.use_cuda:
+                torch.cuda.synchronize()
             del loss
             return loss_value
         except Exception as e:

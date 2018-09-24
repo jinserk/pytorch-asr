@@ -24,7 +24,7 @@ class NonSplitPredictor:
         # load from args
         self.model = model
         if self.use_cuda:
-            logger.info("using cuda")
+            logger.debug("using cuda")
             self.model.cuda()
 
         self.load(continue_from)
@@ -72,7 +72,7 @@ class NonSplitPredictor:
         if not file_path.exists():
             logger.error(f"no such file {file_path} exists")
             sys.exit(1)
-        logger.info(f"loading the model from {file_path}")
+        logger.debug(f"loading the model from {file_path}")
         to_device = f"cuda:{torch.cuda.current_device()}" if self.use_cuda else "cpu"
         states = torch.load(file_path, map_location=to_device)
         self.model.load_state_dict(states["model"])
