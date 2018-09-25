@@ -18,3 +18,4 @@ visdom
 tensorboardx
 tensorboard
 slackclient
+gitpython

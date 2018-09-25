@@ -5,6 +5,7 @@ from pathlib import Path
 import logging
 
 import torch
+import git
 
 
 logger = logging.getLogger("pytorch-asr")
@@ -73,9 +74,14 @@ def init_logger(**kwargs):
             logger.error("error to use tensorboard")
 
     # print version and args
-    logger.info(f"PyTorch version: {torch.__version__}")
-    logger.debug(f"command-line options: {' '.join(sys.argv)}")
-    logger.info(f"args: {args_str}")
+    logger.info(f"command-line options: {' '.join(sys.argv)}")
+    logger.debug(f"args: {args_str}")
+    logger.debug(f"pytorch version: {torch.__version__}")
+
+    repo = git.Repo(search_parent_directories=True)
+    sha = repo.head.object.hexsha
+    dttm = repo.head.object.committed_datetime
+    logger.debug(f"pytorch-asr version: {sha} ({dttm})")
 
 
 class SlackClientHandler(logging.Handler):
@@ -111,7 +117,7 @@ class VisdomLogger:
     def __init__(self, host='127.0.0.1', port=8097, env='main', log_path=None, rank=None):
         from visdom import Visdom
         import json
-        logger.info(f"using visdom on http://{host}:{port} env={env}")
+        logger.debug(f"using visdom on http://{host}:{port} env={env}")
         self.env = env
         self.rank = rank
         self.viz = Visdom(server=f"http://{host}", port=port, env=env, log_to_filename=log_path)
@@ -149,13 +155,13 @@ class VisdomLogger:
 class TensorboardLogger:
 
     def __init__(self, log_dir):
-        logger.info("using tensorboard on --logdir {log_dir}")
+        logger.debug("using tensorboard on --logdir {log_dir}")
         log_path = Path(log_dir)
         try:
             Path.mkdir(log_path, parents=True, exist_ok=True)
         except OSError as e:
             if e.errno == errno.EEXIST:
-                log.warning(f'Tensorboard log directory already exists: {log_dir}')
+                logger.warning(f'Tensorboard log directory already exists: {log_dir}')
                 for f in log_path.rglob("*"):
                     f.unlink()
             else:

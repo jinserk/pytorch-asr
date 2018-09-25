@@ -2,7 +2,6 @@ import os
 import sys
 import random
 from pathlib import Path
-import tempfile
 
 import numpy as np
 import scipy.io.wavfile
