@@ -34,14 +34,16 @@ def onehot2int(onehot, dim=1):
         return idx
 
 
-def int2onehot(idx, num_classes):
+def int2onehot(idx, num_classes, floor=0.):
+    value = 1. - floor * (num_classes - 1)
+    assert value > floor
     if not torch.is_tensor(idx):
-        onehot = torch.zeros(1, num_classes)
+        onehot = torch.full((1, num_classes), floor)
         idx = torch.LongTensor([idx])
-        onehot = onehot.scatter_(1, idx.unsqueeze(0), 1.0)
+        onehot = onehot.scatter_(1, idx.unsqueeze(0), value)
     else:
-        onehot = torch.zeros(idx.size(0), num_classes)
-        onehot = onehot.scatter_(1, idx.long().unsqueeze(1), 1.0)
+        onehot = torch.full((idx.size(0), num_classes), floor)
+        onehot = onehot.scatter_(1, idx.long().unsqueeze(1), value)
     return onehot
 
 
