@@ -225,14 +225,18 @@ class LSTM(nn.Module):
 
 class BatchRNN(nn.Module):
 
-    def __init__(self, input_size, hidden_size, rnn_type=nn.LSTM, bidirectional=False, batch_norm=False):
+    def __init__(self, input_size, hidden_size, rnn_type=nn.LSTM, bidirectional=False,
+                 batch_first=True, batch_norm=True):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.bidirectional = bidirectional
+        self.batch_first = batch_first
+
         self.batch_norm = SequenceWise(nn.BatchNorm1d(input_size)) if batch_norm else None
+
         self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size,
-                            bidirectional=bidirectional, bias=True)
+                            bidirectional=bidirectional, batch_first=batch_first, bias=True)
 
     def flatten_parameters(self):
         self.rnn.flatten_parameters()
@@ -240,11 +244,11 @@ class BatchRNN(nn.Module):
     def forward(self, x, seq_lens):
         if self.batch_norm is not None:
             x = self.batch_norm(x)
-        ps = nn.utils.rnn.pack_padded_sequence(x, seq_lens.tolist())
+        ps = nn.utils.rnn.pack_padded_sequence(x, seq_lens.tolist(), batch_first=self.batch_first)
         ps, _ = self.rnn(ps)
-        x, _ = nn.utils.rnn.pad_packed_sequence(ps)
+        x, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
         if self.bidirectional:
-            x = x.view(x.size(0), x.size(1), 2, -1).sum(2).view(x.size(0), x.size(1), -1)  # (TxNxH*2) -> (TxNxH) by sum
+            x = x.view(x.size(0), x.size(1), 2, -1).sum(2).view(x.size(0), x.size(1), -1)  # (NxTxH*2) -> (NxTxH) by sum
         return x
 
 
@@ -310,37 +314,45 @@ class DeepSpeech(nn.Module):
         C2 = C1 * 2
         W3 = (W2 - 11 + 2*5) // 2 + 1   # 17
         C3 = C2 * 2
-        W4 = (W3 - 11 + 2*5) // 2 + 1   # 9
+        W4 = (W3 - 5 + 2*2) // 2 + 1   # 9
         C4 = C3 * 2
+        W5 = (W4 - 3 + 2*1) // 2 + 1   # 5
+        C5 = C4 * 2
 
-        H0 = [C4 * W4, rnn_hidden_size * 2, rnn_hidden_size * 2]
+        H0 = [C5 * W5, rnn_hidden_size * 2, rnn_hidden_size * 2]
         #W5 = 2 * rnn_hidden_size if bidirectional else rnn_hidden_size
         H1 = rnn_hidden_size
 
         self.conv = nn.Sequential(
-            nn.Conv2d(C0, C1, kernel_size=(41, 11), stride=(2, 1), padding=(20, 5)),
+            nn.Conv2d(C0, C1, kernel_size=(41, 5), stride=(2, 1), padding=(20, 2)),
             nn.BatchNorm2d(C1),
             #nn.Hardtanh(0, 20, inplace=True),
-            nn.ReLU(inplace=True),
-            #Swish(inplace=True),
+            #nn.ReLU(inplace=True),
+            Swish(inplace=True),
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C1, C2, kernel_size=(21, 11), stride=(2, 1), padding=(10, 5)),
+            nn.Conv2d(C1, C2, kernel_size=(21, 5), stride=(2, 1), padding=(10, 2)),
             nn.BatchNorm2d(C2),
             #nn.Hardtanh(0, 20, inplace=True)
-            nn.ReLU(inplace=True),
-            #Swish(inplace=True),
+            #nn.ReLU(inplace=True),
+            Swish(inplace=True),
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C2, C3, kernel_size=(11, 11), stride=(2, 1), padding=(5, 5)),
+            nn.Conv2d(C2, C3, kernel_size=(11, 5), stride=(2, 1), padding=(5, 2)),
             nn.BatchNorm2d(C3),
             #nn.Hardtanh(0, 20, inplace=True)
-            nn.ReLU(inplace=True),
-            #Swish(inplace=True),
+            #nn.ReLU(inplace=True),
+            Swish(inplace=True),
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C3, C4, kernel_size=(11, 11), stride=(2, 1), padding=(5, 5)),
+            nn.Conv2d(C3, C4, kernel_size=(5, 5), stride=(2, 1), padding=(2, 2)),
             nn.BatchNorm2d(C4),
             #nn.Hardtanh(0, 20, inplace=True)
-            nn.ReLU(inplace=True),
-            #Swish(inplace=True),
+            #nn.ReLU(inplace=True),
+            Swish(inplace=True),
+            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
+            nn.Conv2d(C4, C5, kernel_size=(3, 3), stride=(2, 1), padding=(1, 1)),
+            nn.BatchNorm2d(C5),
+            #nn.Hardtanh(0, 20, inplace=True)
+            #nn.ReLU(inplace=True),
+            Swish(inplace=True),
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
         )
 
@@ -364,8 +376,8 @@ class DeepSpeech(nn.Module):
             # consider adding batch norm?
             Lookahead(H1, context=context),
             #nn.Hardtanh(0, 20, inplace=True)
-            nn.ReLU(inplace=True),
-            #Swish(inplace=True)
+            #nn.ReLU(inplace=True),
+            Swish(inplace=True)
         ) if not bidirectional else None
 
         fully_connected = nn.Sequential(
@@ -379,15 +391,13 @@ class DeepSpeech(nn.Module):
 
     def forward(self, x, seq_lens):
         x = self.conv(x)
-        sizes = x.size()
-        x = x.view(sizes[0], sizes[1] * sizes[2], sizes[3])  # Collapse feature dimension
-        x = x.transpose(1, 2).transpose(0, 1).contiguous()  # TxNxH
+        x = x.view(-1, x.size(1) * x.size(2), x.size(3))  # Collapse feature dimension
+        x = x.transpose(1, 2).contiguous()  # NxTxH
         for i in range(self._hidden_layers[0]):
             x = self.rnns[i](x, seq_lens)
         for g in range(1, len(self._hidden_layers)):
-            sizes = x.size()
-            x = x[:((sizes[0] // 2) * 2), :, :].view(sizes[0] // 2, 2, sizes[1], sizes[2])
-            x = x.transpose(1, 2).contiguous().view(sizes[0] // 2, sizes[1], 2 * sizes[2])
+            x = x[:, :((x.size(1) // 2) * 2), :].view(-1, x.size(1) // 2, 2, x.size(2))
+            x = x.contiguous().view(-1, x.size(1) // 2, 2 * x.size(2))
             seq_lens.div_(2)
             for i in range(self._hidden_layers[g]):
                 j = np.cumsum(self._hidden_layers)[g-1] + i
@@ -396,7 +406,6 @@ class DeepSpeech(nn.Module):
         if not self._bidirectional:  # no need for lookahead layer in bidirectional
             x = self.lookahead(x)
         x = self.fc(x)
-        x = x.transpose(0, 1)
         # identity in training mode, softmax in eval mode
         x = self.inference_softmax(x)
         return x, seq_lens

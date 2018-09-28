@@ -44,20 +44,19 @@ class NonSplitPredictor:
                 # decode using Kaldi's latgen decoder
                 # no need to normalize posteriors with state priors when we use CTC
                 # https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/43908.pdf
-                loglikes = torch.log(ys_hat)
                 if self.use_cuda:
-                    loglikes = loglikes.cpu()
-                words, alignment, w_sizes, a_sizes = self.decoder(loglikes, frame_lens)
+                    ys_hat = ys_hat.cpu()
+                words, alignment, w_sizes, a_sizes = self.decoder(ys_hat, frame_lens)
                 # print results
-                loglikes = [l[:s] for l, s in zip(loglikes, frame_lens)]
+                ys_hat = [y[:s] for y, s in zip(ys_hat, frame_lens)]
                 words = [w[:s] for w, s in zip(words, w_sizes)]
-                for results in zip(filenames, loglikes, words):
+                for results in zip(filenames, ys_hat, words):
                     self.print_result(*results)
 
-    def print_result(self, filename, loglikes, words):
+    def print_result(self, filename, ys_hat, words):
         logger.info(f"decoding wav file: {str(Path(filename).resolve())}")
         if self.verbose:
-            labels = onehot2int(loglikes).squeeze()
+            labels = onehot2int(ys_hat).squeeze()
             logger.info(f"labels: {' '.join([str(x) for x in labels.tolist()])}")
             symbols = [self.decoder.labeler.idx2phone(x) for x in remove_duplicates(labels, blank=0)]
             logger.info(f"symbols: {' '.join(symbols)}")
@@ -96,14 +95,13 @@ class SplitPredictor(NonSplitPredictor):
                 ys_hats = [nn.ConstantPad1d((0, max_len-yh.size(2)), 0)(yh) for yh in ys_hats]
                 ys_hat = torch.cat(ys_hats).transpose(1, 2)
                 # latgen decoding
-                loglikes = torch.log(ys_hat)
                 if self.use_cuda:
-                    loglikes = loglikes.cpu()
-                words, alignment, w_sizes, a_sizes = self.decoder(loglikes, frame_lens)
+                    ys_hat = ys_hat.cpu()
+                words, alignment, w_sizes, a_sizes = self.decoder(ys_hat, frame_lens)
                 # print results
-                loglikes = [l[:s] for l, s in zip(loglikes, frame_lens)]
+                ys_hat = [y[:s] for y, s in zip(ys_hat, frame_lens)]
                 words = [w[:s] for w, s in zip(words, w_sizes)]
-                for results in zip(filenames, loglikes, words):
+                for results in zip(filenames, ys_hat, words):
                     self.print_result(*results)
 
 

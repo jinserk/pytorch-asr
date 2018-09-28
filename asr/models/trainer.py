@@ -396,11 +396,11 @@ class NonSplitTrainer(Trainer):
                 zz.append(z)
             ys_hat = [int2onehot(torch.IntTensor(z), num_classes, floor=1e-3) for z in zz]
             ys_hat = torch.stack(ys_hat)
+            ys_hat = torch.log(ys_hat)
         # latgen decoding
-        loglikes = torch.log(ys_hat)
         if self.use_cuda:
-            loglikes = loglikes.cpu()
-        words, alignment, w_sizes, a_sizes = self.decoder(loglikes, frame_lens)
+            ys_hat = ys_hat.cpu()
+        words, alignment, w_sizes, a_sizes = self.decoder(ys_hat, frame_lens)
         w2i = self.decoder.labeler.word2idx
         num_words = self.decoder.labeler.get_num_words()
         words.masked_fill_(words.ge(num_words), w2i('<unk>'))
@@ -481,10 +481,9 @@ class SplitTrainer(Trainer):
         ys_hats = [nn.ConstantPad1d((0, max_len-yh.size(2)), 0)(yh) for yh in ys_hats]
         ys_hat = torch.cat(ys_hats).transpose(1, 2)
         # latgen decoding
-        loglikes = torch.log(ys_hat)
         if self.use_cuda:
-            loglikes = loglikes.cpu()
-        words, alignment, w_sizes, a_sizes = self.decoder(loglikes, frame_lens)
+            ys_hat = ys_hat.cpu()
+        words, alignment, w_sizes, a_sizes = self.decoder(ys_hat, frame_lens)
         hyps = [w[:s] for w, s in zip(words, w_sizes)]
         # convert target texts to word indices
         w2i = self.decoder.labeler.word2idx
