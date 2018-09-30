@@ -25,13 +25,13 @@ def get_num_lines(filename):
     return lines
 
 
-def onehot2int(onehot, dim=1):
+def onehot2int(onehot, dim=-1, keepdim=False):
     _, idx = onehot.topk(k=1, dim=dim)
     #idx = idx.squeeze()
     if idx.dim() == 0:
         return int(idx)
     else:
-        return idx
+        return idx if keepdim else idx.squeeze(dim=dim)
 
 
 def int2onehot(idx, num_classes, floor=0.):
@@ -42,8 +42,10 @@ def int2onehot(idx, num_classes, floor=0.):
         idx = torch.LongTensor([idx])
         onehot.scatter_(1, idx.unsqueeze(0), value)
     else:
-        onehot = idx.new_full((idx.size(0), num_classes), floor)
-        onehot.scatter_(1, idx.long().unsqueeze(1), value)
+        sizes = idx.size()
+        onehot = idx.new_full((idx.numel(), num_classes), floor)
+        onehot.scatter_(1, idx.view(-1).long().unsqueeze(1), value)
+        onehot = onehot.view(*sizes, -1)
     return onehot
 
 
@@ -132,10 +134,10 @@ class InferenceBatchSoftmax(nn.Module):
         self.softmax = nn.LogSoftmax(dim=-1)
 
     def forward(self, x):
-        if not self.training:
-            return self.softmax(x)
-        else:
+        if self.training:
             return x
+        else:
+            return self.softmax(x)
 
 
 if __name__ == "__main__":

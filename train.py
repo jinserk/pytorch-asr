@@ -15,6 +15,7 @@ models = set([
     "resnet_split_ce",
     "capsule1",
     "capsule2",
+    "las",
 ])
 
 try:
