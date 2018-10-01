@@ -40,7 +40,7 @@ class SequenceWise(nn.Module):
 class BatchRNN(nn.Module):
 
     def __init__(self, input_size, hidden_size, rnn_type=nn.LSTM, bidirectional=False,
-                 batch_first=True, batch_norm=True):
+                 bias=True, batch_first=True, batch_norm=True):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -50,7 +50,7 @@ class BatchRNN(nn.Module):
         self.batch_norm = SequenceWise(nn.BatchNorm1d(input_size)) if batch_norm else None
 
         self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size,
-                            bidirectional=bidirectional, batch_first=batch_first, bias=True)
+                            bidirectional=bidirectional, batch_first=batch_first, bias=bias)
 
     def flatten_parameters(self):
         self.rnn.flatten_parameters()
@@ -301,7 +301,7 @@ class Speller(nn.Module):
 class ListenAttendSpell(nn.Module):
 
     def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=256,
-                 num_attend_heads=1, max_seq_len=100, teacher_force_rate=0.9):
+                 state_vec_size=512, num_attend_heads=2, max_seq_len=100, teacher_force_rate=0.9):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
@@ -313,33 +313,33 @@ class ListenAttendSpell(nn.Module):
                                skip_fc=True)
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
-                             rnn_hidden_size=listen_vec_size, rnn_num_layers=1, max_seq_len=max_seq_len,
+                             rnn_hidden_size=state_vec_size, rnn_num_layers=1, max_seq_len=max_seq_len,
                              apply_attend_proj=False, num_attend_heads=num_attend_heads)
 
     def forward(self, x, x_seq_lens, y=None, y_seq_lens=None):
-        # change y to onehot tensors
-        if y is not None and y_seq_lens is not None:
-            ys = [yi for yi in torch.split(y, y_seq_lens.tolist())]
-            ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=(self.label_vec_size - 1))
-            ys = int2onehot(ys, num_classes=self.label_vec_size).float()
         # listener
         h, _ = self.listen(x, x_seq_lens)
         # speller
         if self.training:
-            y_hats, y_hats_seq_lens, _ = self.spell(h, ys, teacher_force_rate=self.tf_rate)
-            (s1, b1), (s2, b2) = y_hats_seq_lens.max(dim=0), y_seq_lens.max(dim=0)
-            yss = [yb for yb in torch.split(y, y_seq_lens.tolist())]
-            if s1 > s2:
-                yss[b2] = F.pad(yss[b2], (0, s1 - s2), value=self.label_vec_size - 1)
-                y_hats = y_hats[:, :s1, :]
-            elif s1 < s2:
-                y_hats = F.pad(y_hats.transpose(1, 2), (0, s2 - y_hats.size(1))).transpose(1, 2)
-            y = nn.utils.rnn.pad_sequence(yss, batch_first=True, padding_value=(self.label_vec_size - 1))
-            return y_hats, y_hats_seq_lens, y
+            # change y to one-hot tensors
+            ys = [yb for yb in torch.split(y, y_seq_lens.tolist())]
+            ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=(self.label_vec_size - 1))
+            yss = int2onehot(ys, num_classes=self.label_vec_size).float()
+            # do spell
+            y_hats, y_hats_seq_lens, _ = self.spell(h, yss, teacher_force_rate=self.tf_rate)
+            # match seq lens between y_hats and ys
+            s1, s2 = y_hats.size(1), ys.size(1)
+            if s1 < s2:
+                y_hats = F.pad(y_hats.transpose(1, 2), (0, s2 - s1)).transpose(1, 2)
+            elif s1 > s2:
+                ys = F.pad(ys, (0, s1 - s2), value=(self.label_vec_size - 1))
+            # return with seq lens
+            return y_hats, y_hats_seq_lens, ys
         else:
+            # do spell
             y_hats, y_hats_seq_lens, _ = self.spell(h)
+            # return with seq lens
             return y_hats, y_hats_seq_lens, None
-
 
 
 if __name__ == '__main__':
