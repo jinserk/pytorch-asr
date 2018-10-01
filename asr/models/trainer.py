@@ -91,7 +91,7 @@ def set_seed(seed=None):
 
 class Trainer:
 
-    def __init__(self, model, init_lr=1e-4, max_norm=400, use_cuda=False,
+    def __init__(self, model, init_lr=1e-2, max_norm=100, use_cuda=False,
                  fp16=False, log_dir='logs', model_prefix='model',
                  checkpoint=False, continue_from=None, opt_type="sgdr",
                  *args, **kwargs):

@@ -73,7 +73,7 @@ def batch_train(argv):
     parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
     parser.add_argument('--num-epochs', default=200, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=0.01, type=float, help="initial learning rate for Adam optimizer")
-    parser.add_argument('--max-norm', default=400, type=int, help="norm cutoff to prevent explosion of gradients")
+    parser.add_argument('--max-norm', default=0.25, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
@@ -177,7 +177,7 @@ def train(argv):
     parser.add_argument('--num-workers', default=32, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=0.01, type=float, help="initial learning rate for Adam optimizer")
-    parser.add_argument('--max-norm', default=400, type=int, help="norm cutoff to prevent explosion of gradients")
+    parser.add_argument('--max-norm', default=0.25, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")

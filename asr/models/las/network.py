@@ -200,25 +200,20 @@ class Attention(nn.Module):
 
 class SpellerRNNCell(nn.Module):
 
-    def __init__(self, input_size, hidden_size, num_layers=1):
+    def __init__(self, input_size, hidden_size, num_layers=1, bias=True):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
 
-        self.norms = nn.ModuleList([
-            SequenceWise(nn.BatchNorm1d(input_size if l == 0 else hidden_size))
-            for l in range(num_layers)
-        ])
-
         self.rnns = nn.ModuleList([
             nn.LSTMCell(input_size=(input_size if l == 0 else hidden_size),
-                        hidden_size=hidden_size, bias=False)
+                        hidden_size=hidden_size, bias=bias)
             for l in range(num_layers)
         ])
 
     def forward(self, x, hidden=None):
-        # x: NxHx, hidden: (LxNxHr, LxNxHr)
+        # x: Nx1xHx, hidden: (LxNxHr, LxNxHr)
         if hidden is None:
             hx = x.new_zeros(self.num_layers, x.size(0), self.hidden_size, requires_grad=False)
             cx = x.new_zeros(self.num_layers, x.size(0), self.hidden_size, requires_grad=False)
@@ -228,18 +223,19 @@ class SpellerRNNCell(nn.Module):
         ht = [None, ] * self.num_layers
         ct = [None, ] * self.num_layers
 
+        x = x.squeeze(dim=1)
         h, c = hx, cx
-        for l, (norm, rnn) in enumerate(zip(self.norms, self.rnns)):
-            ht[l], ct[l] = rnn(norm(x), (h[l], c[l]))
+        for l, rnn in enumerate(self.rnns):
+            ht[l], ct[l] = rnn(x, (h[l], c[l]))
             x = ht[l]
 
-        return ht[-1], (torch.stack(ht), torch.stack(ct))
+        return ht[-1].unsqueeze(dim=1), (torch.stack(ht), torch.stack(ct))
 
 
 class Speller(nn.Module):
 
     def __init__(self, listen_vec_size, label_vec_size,
-                 rnn_hidden_size=512, rnn_num_layers=2, max_seq_len=100,
+                 rnn_hidden_size=512, rnn_num_layers=1, max_seq_len=100,
                  apply_attend_proj=False, num_attend_heads=1):
         super().__init__()
 
@@ -248,12 +244,12 @@ class Speller(nn.Module):
 
         Hs, Hc, Hy = rnn_hidden_size, listen_vec_size, label_vec_size
 
-        #self.rnns = SpellerRNNCell(input_size=(Hy + Hc), hidden_size=Hs, num_layers=rnn_num_layers)
-        self.rnns = nn.ModuleList([
-             BatchRNN(input_size=((Hy + Hc) if l == 0 else Hs), hidden_size=Hs, rnn_type=nn.LSTM,
-                      bidirectional=False, batch_norm=True)
-             for l in range(rnn_num_layers)
-        ])
+        self.rnns = SpellerRNNCell(input_size=(Hy + Hc), hidden_size=Hs, num_layers=rnn_num_layers)
+        #self.rnns = nn.ModuleList([
+        #     BatchRNN(input_size=((Hy + Hc) if l == 0 else Hs), hidden_size=Hs, rnn_type=nn.LSTM,
+        #              bidirectional=False, batch_norm=True)
+        #     for l in range(rnn_num_layers)
+        #])
 
         self.attention = Attention(state_vec_size=Hs, listen_vec_size=Hc,
                                    apply_proj=apply_attend_proj, num_heads=num_attend_heads)
@@ -269,14 +265,16 @@ class Speller(nn.Module):
         sos = int2onehot(h.new_full((batch_size, 1), self.label_vec_size - 2), num_classes=self.label_vec_size).float()
         x = torch.cat([sos, h.narrow(1, 0, 1)], dim=-1)
 
+        hidden = None
         y_hats = list()
         attentions = list()
 
         max_seq_len = self.max_seq_len if not teacher_force else y.size(1)
         for i in range(max_seq_len):
-            s = x
-            for rnn in self.rnns:
-                s = rnn(s, [1] * batch_size)
+            #s = x
+            #for rnn in self.rnns:
+            #    s = rnn(s, [1] * batch_size)
+            s, hidden = self.rnns(x, hidden)
             a, c = self.attention(s, h)
             y_hat = self.chardist(torch.cat([s, c], dim=-1))
 
