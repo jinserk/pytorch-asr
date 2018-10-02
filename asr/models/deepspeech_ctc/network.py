@@ -295,7 +295,7 @@ class Lookahead(nn.Module):
 
 class DeepSpeech(nn.Module):
 
-    def __init__(self, num_classes=p.NUM_CTC_LABELS, input_folding=3, rnn_type=nn.LSTM,
+    def __init__(self, num_classes=p.NUM_CTC_LABELS, input_folding=2, rnn_type=nn.LSTM,
                  rnn_hidden_size=512, rnn_num_layers=[4], bidirectional=True, context=20):
         super().__init__()
 
@@ -314,12 +314,8 @@ class DeepSpeech(nn.Module):
         C2 = C1 * 2
         W3 = (W2 - 11 + 2*5) // 2 + 1   # 17
         C3 = C2 * 2
-        W4 = (W3 - 5 + 2*2) // 2 + 1   # 9
-        C4 = C3 * 2
-        W5 = (W4 - 3 + 2*1) // 2 + 1   # 5
-        C5 = C4 * 2
 
-        H0 = [C5 * W5, rnn_hidden_size * 2, rnn_hidden_size * 2]
+        H0 = [C3 * W3, rnn_hidden_size, rnn_hidden_size]
         #W5 = 2 * rnn_hidden_size if bidirectional else rnn_hidden_size
         H1 = rnn_hidden_size
 
@@ -338,18 +334,6 @@ class DeepSpeech(nn.Module):
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
             nn.Conv2d(C2, C3, kernel_size=(11, 5), stride=(2, 1), padding=(5, 2)),
             nn.BatchNorm2d(C3),
-            #nn.Hardtanh(0, 20, inplace=True)
-            #nn.ReLU(inplace=True),
-            Swish(inplace=True),
-            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C3, C4, kernel_size=(5, 5), stride=(2, 1), padding=(2, 2)),
-            nn.BatchNorm2d(C4),
-            #nn.Hardtanh(0, 20, inplace=True)
-            #nn.ReLU(inplace=True),
-            Swish(inplace=True),
-            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C4, C5, kernel_size=(3, 3), stride=(2, 1), padding=(1, 1)),
-            nn.BatchNorm2d(C5),
             #nn.Hardtanh(0, 20, inplace=True)
             #nn.ReLU(inplace=True),
             Swish(inplace=True),
@@ -387,7 +371,7 @@ class DeepSpeech(nn.Module):
         self.fc = nn.Sequential(
             SequenceWise(fully_connected),
         )
-        self.inference_softmax = InferenceBatchSoftmax()
+        self.softmax = nn.LogSoftmax(dim=-1)
 
     def forward(self, x, seq_lens):
         x = self.conv(x)
@@ -407,7 +391,7 @@ class DeepSpeech(nn.Module):
             x = self.lookahead(x)
         x = self.fc(x)
         # identity in training mode, softmax in eval mode
-        x = self.inference_softmax(x)
+        x = self.softmax(x)
         return x, seq_lens
 
 

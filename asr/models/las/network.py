@@ -198,6 +198,27 @@ class Attention(nn.Module):
             return a.unsqueeze(dim=0), c
 
 
+class BatchRNNCell(nn.Module):
+
+    def __init__(self, input_size, hidden_size, rnn_type=nn.LSTMCell, bias=True, batch_norm=True):
+        super().__init__()
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+
+        self.batch_norm = SequenceWise(nn.BatchNorm1d(input_size)) if batch_norm else None
+
+        self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size, bias=bias)
+
+    def flatten_parameters(self):
+        self.rnn.flatten_parameters()
+
+    def forward(self, x, hidden):
+        if self.batch_norm is not None:
+            x = self.batch_norm(x)
+        x, hidden = self.rnn(x, hidden)
+        return x
+
+
 class SpellerRNNCell(nn.Module):
 
     def __init__(self, input_size, hidden_size, num_layers=1, bias=True):
@@ -207,8 +228,8 @@ class SpellerRNNCell(nn.Module):
         self.num_layers = num_layers
 
         self.rnns = nn.ModuleList([
-            nn.LSTMCell(input_size=(input_size if l == 0 else hidden_size),
-                        hidden_size=hidden_size, bias=bias)
+            BatchRNNCell(input_size=(input_size if l == 0 else hidden_size),
+                         hidden_size=hidden_size, bias=bias)
             for l in range(num_layers)
         ])
 
@@ -301,12 +322,16 @@ class Speller(nn.Module):
 class ListenAttendSpell(nn.Module):
 
     def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=256,
-                 state_vec_size=512, num_attend_heads=2, max_seq_len=100, teacher_force_rate=0.9):
+                 state_vec_size=512, num_attend_heads=2, max_seq_len=100,
+                 tf_rate_range=(0.9, 0.1), tf_total_steps=50):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
         self.max_seq_len = max_seq_len
-        self.tf_rate = teacher_force_rate
+        self.tf_rate_range = tf_rate_range
+        self.tf_rate_total_step = tf_total_steps
+        self.tf_rate_step = 0
+        self.tf_rate = tf_rate_range[0]
 
         self.listen = Listener(listen_vec_size=listen_vec_size, input_folding=3, rnn_type=nn.LSTM,
                                rnn_hidden_size=listen_vec_size, rnn_num_layers=[4], bidirectional=True,
@@ -315,6 +340,13 @@ class ListenAttendSpell(nn.Module):
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
                              rnn_hidden_size=state_vec_size, rnn_num_layers=1, max_seq_len=max_seq_len,
                              apply_attend_proj=False, num_attend_heads=num_attend_heads)
+
+    def step_tf_rate(self):
+        if self.tf_rate_step < self.tf_rate_total_step:
+            upper, lower = self.tf_rate_range
+            self.tf_rate = upper - (upper - lower) * self.tf_rate_step / self.tf_rate_total_step
+        else:
+            self.tf_rate = self.tf_rate_range[1]
 
     def forward(self, x, x_seq_lens, y=None, y_seq_lens=None):
         # listener

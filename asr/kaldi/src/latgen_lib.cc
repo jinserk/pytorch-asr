@@ -22,8 +22,7 @@
 
 #include <sstream>
 
-#include <TH/TH.h>
-#include <ATen/ATen.h>
+#include <torch/torch.h>
 
 #include "base/kaldi-common.h"
 #include "util/common-utils.h"
@@ -33,13 +32,14 @@
 #include "base/timer.h"
 #include "lat/kaldi-lattice.h" // for {Compact}LatticeArc
 
+
 using namespace kaldi;
-using namespace at;
 
 typedef kaldi::int32 int32;
 using fst::SymbolTable;
 using fst::VectorFst;
 using fst::StdArc;
+
 
 struct LatticeDecoderOptions
 {
@@ -87,8 +87,10 @@ struct LatticeDecoderOptions
 
 }; // struct LatticeDecoderOptions
 
+
 // global instance
 LatticeDecoderOptions latgen_opts;
+
 
 struct LatticeDecoderResult
 {
@@ -98,6 +100,7 @@ struct LatticeDecoderResult
 	bool failed_ = false;
 	bool partial_ = false;
 };
+
 
 class LatticeDecoder
 {
@@ -153,14 +156,10 @@ class LatticeDecoder
 }; // class LatticeDecoder
 
 
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
-int initialize(float beam, int max_active, int min_active,
-                           float acoustic_scale, int allow_partial,
-                           char* fst_in_filename, char* words_in_filename)
+int
+initialize(float beam, int max_active, int min_active,
+           float acoustic_scale, int allow_partial,
+           char* fst_in_filename, char* words_in_filename)
 {
 	latgen_opts.acoustic_scale_ = acoustic_scale;
 	latgen_opts.allow_partial_ = allow_partial;
@@ -171,29 +170,23 @@ int initialize(float beam, int max_active, int min_active,
 	return 1;
 }
 
-int decode(THFloatTensor *loglikes, THIntTensor *frame_lens,
-           THIntTensor *words, THIntTensor *alignments,
-           THIntTensor *w_sizes, THIntTensor *a_sizes)
-{
-	LatticeDecoder decoder(latgen_opts);
 
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor>
+decode(at::Tensor loglikes, at::Tensor frame_lens)
+{
+	const auto num_batch = loglikes.size(0);
+	const auto num_frame = loglikes.size(1);
+	const auto num_class = loglikes.size(2);
+
+	// convert torch::Tensor to list of kaldi::SubMatrix
 	std::vector<Matrix<BaseFloat> > loglikes_list;
 	std::vector<LatticeDecoderResult> results;
-
-	// convert at::Tensor to list of kaldi::SubMatrix
-	int num_batch = THFloatTensor_size(loglikes, 0);
-	int num_frame = THFloatTensor_size(loglikes, 1);
-	int num_class = THFloatTensor_size(loglikes, 2);
-
-	float *l_data = THFloatTensor_data(loglikes);
-	int *l_lens = THIntTensor_data(frame_lens);
-
-	for (int i = 0; i < num_batch; i++) {
-		int s = i * num_frame * num_class;
-		loglikes_list.emplace_back(SubMatrix<BaseFloat>(l_data + s, l_lens[i], num_class, num_class));
+	for (int b = 0; b < num_batch; b++) {
+		loglikes_list.emplace_back(SubMatrix<BaseFloat>((float*)loglikes[b].data_ptr(), frame_lens[b].data<int>()[0], num_class, num_class));
 	}
 
 	// decode
+	LatticeDecoder decoder(latgen_opts);
 	decoder.decode(loglikes_list, results);
 
 	// get max length
@@ -206,28 +199,32 @@ int decode(THFloatTensor *loglikes, THIntTensor *frame_lens,
 			max_alignments = r.alignments_.size();
 	}
 
-	THIntTensor_resize2d(words, results.size(), max_words);
-	THIntTensor_resize2d(alignments, results.size(), max_alignments);
-
-	THIntTensor_resize1d(w_sizes, results.size());
-	THIntTensor_resize1d(a_sizes, results.size());
-
+	// prepare output
+	auto words = at::zeros({results.size(), max_words}, CPU(at::kInt));
+	auto words_a = words.accessor<int, 2>();
+	auto alignments = at::zeros({results.size(), max_alignments}, CPU(at::kInt));
+	auto alignments_a = alignments.accessor<int, 2>();
+	auto w_sizes = at::zeros({results.size(), }, CPU(at::kInt));
+	auto w_sizes_a = w_sizes.accessor<int, 1>();
+	auto a_sizes = at::zeros({results.size(), }, CPU(at::kInt));
+	auto a_sizes_a = a_sizes.accessor<int, 1>();
 	for (int i = 0; i < results.size(); i++) {
 		if (results[i].failed_) continue;
 		//strncpy(texts[i], results[i].text_.c_str(), results[i].text_.length());
-		int j = 0;
-		THIntTensor_set1d(w_sizes, i, results[i].words_.size());
-		for (auto w : results[i].words_)
-			THIntTensor_set2d(words, i, j++, w);
-		j = 0;
-		THIntTensor_set1d(a_sizes, i, results[i].alignments_.size());
-		for (auto a : results[i].alignments_)
-			THIntTensor_set2d(alignments, i, j++, a);
+		w_sizes_a[i] = results[i].words_.size();
+		a_sizes_a[i] = results[i].alignments_.size();
+		for (int j = 0; j < results[i].words_.size(); j++)
+			words_a[i][j] = results[i].words_[j];
+		for (int j = 0; j < results[i].alignments_.size(); j++)
+			alignments_a[i][j] = results[i].alignments_[j];
 	}
 
-	return 1;
+	return std::make_tuple(words, alignments, w_sizes, a_sizes);
 }
 
-#ifdef __cplusplus
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("initialize", &initialize, "initialize Kaldi latgen decoder");
+  m.def("decode", &decode, "decode with Kaldi latgen decoder");
 }
-#endif
+

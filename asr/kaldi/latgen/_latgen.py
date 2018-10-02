@@ -5,9 +5,9 @@ import torch
 from torch.autograd import Function
 
 from asr.utils.misc import get_num_lines
+import torch_asr._latgen_lib as latgen_lib
 
 from .._path import KALDI_ROOT
-from .._ext import latgen_lib
 
 
 GRAPH_PATH = Path(__file__).parents[1].joinpath("graph")
@@ -111,12 +111,8 @@ class LatGenDecoder(Function):
         assert frame_lens.dim() == 1 and loglikes.size(0) == frame_lens.size(0)
 
         with torch.no_grad():
-            words = torch.IntTensor().zero_()
-            alignments = torch.IntTensor().zero_()
-            w_sizes = torch.IntTensor().zero_()
-            a_sizes = torch.IntTensor().zero_()
             # actual decoding
-            latgen_lib.decode(loglikes, frame_lens, words, alignments, w_sizes, a_sizes)
+            words, alignments, w_sizes, a_sizes = latgen_lib.decode(loglikes, frame_lens)
 
         return words, alignments, w_sizes, a_sizes
 

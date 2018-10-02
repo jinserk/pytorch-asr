@@ -14,7 +14,6 @@ import apex.parallel
 from apex.fp16_utils import *
 
 import torchvision.utils as tvu
-from warpctc_pytorch import CTCLoss
 import torchnet as tnt
 import Levenshtein as Lev
 
@@ -121,7 +120,7 @@ class Trainer:
             self.model.cuda()
 
         # setup loss
-        self.loss = CTCLoss(blank=0, size_average=True, length_average=True)
+        self.loss = nn.CTCLoss(blank=0, reduction='elementwise_mean')
 
         # setup optimizer
         assert opt_type in OPTIMIZER_TYPES
@@ -176,6 +175,9 @@ class Trainer:
         for ckpt in Path(self.log_dir).rglob(f"*_epoch_{epoch:03d}_ckpt_*"):
             ckpt.unlink()
 
+    def train_loop_before_hook(self):
+        raise NotImplementedError
+
     def unit_train(self, data):
         raise NotImplementedError
 
@@ -191,7 +193,7 @@ class Trainer:
             data_loader.sampler.set_epoch(self.epoch)
         ckpts = iter(len(data_loader) * np.arange(0.1, 1.1, 0.1))
         ckpt = next(ckpts)
-
+        self.train_loop_before_hook()
         # count the number of supervised batches seen in this epoch
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training")
         for i, (data) in t:
@@ -320,6 +322,9 @@ class Trainer:
 class NonSplitTrainer(Trainer):
     """training model for overall utterance spectrogram as a single image"""
 
+    def train_loop_before_hook(self):
+        pass
+
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
         try:
@@ -415,6 +420,9 @@ class SplitTrainer(Trainer):
     """ training model for splitting utterance into multiple images
         single image stands for localized timing segment corresponding to frame output
     """
+
+    def train_loop_after_hook(self):
+        pass
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
