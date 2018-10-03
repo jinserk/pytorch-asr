@@ -20,9 +20,11 @@
 
 // modified by Jinserk Baik <jinserk.baik@gmail.com>
 
+#include <tuple>
 #include <sstream>
 
 #include <torch/torch.h>
+#include <torch/tensor.h>
 
 #include "base/kaldi-common.h"
 #include "util/common-utils.h"
@@ -171,8 +173,8 @@ initialize(float beam, int max_active, int min_active,
 }
 
 
-std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor>
-decode(at::Tensor loglikes, at::Tensor frame_lens)
+std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+decode(torch::Tensor loglikes, torch::Tensor frame_lens)
 {
 	const auto num_batch = loglikes.size(0);
 	const auto num_frame = loglikes.size(1);
@@ -181,9 +183,8 @@ decode(at::Tensor loglikes, at::Tensor frame_lens)
 	// convert torch::Tensor to list of kaldi::SubMatrix
 	std::vector<Matrix<BaseFloat> > loglikes_list;
 	std::vector<LatticeDecoderResult> results;
-	for (int b = 0; b < num_batch; b++) {
-		loglikes_list.emplace_back(SubMatrix<BaseFloat>((float*)loglikes[b].data_ptr(), frame_lens[b].data<int>()[0], num_class, num_class));
-	}
+	for (int b = 0; b < num_batch; b++)
+		loglikes_list.emplace_back(SubMatrix<BaseFloat>((float*)loglikes[b].data_ptr(), num_frame, num_class, num_class));
 
 	// decode
 	LatticeDecoder decoder(latgen_opts);
@@ -200,23 +201,20 @@ decode(at::Tensor loglikes, at::Tensor frame_lens)
 	}
 
 	// prepare output
-	auto words = at::zeros({results.size(), max_words}, CPU(at::kInt));
-	auto words_a = words.accessor<int, 2>();
-	auto alignments = at::zeros({results.size(), max_alignments}, CPU(at::kInt));
-	auto alignments_a = alignments.accessor<int, 2>();
-	auto w_sizes = at::zeros({results.size(), }, CPU(at::kInt));
-	auto w_sizes_a = w_sizes.accessor<int, 1>();
-	auto a_sizes = at::zeros({results.size(), }, CPU(at::kInt));
-	auto a_sizes_a = a_sizes.accessor<int, 1>();
+	auto opt = loglikes.options().dtype(at::kInt);
+	auto words = torch::zeros({results.size(), max_words}, opt);
+	auto alignments = torch::zeros({results.size(), max_alignments}, opt);
+	auto w_sizes = torch::zeros({results.size(), }, opt);
+	auto a_sizes = torch::zeros({results.size(), }, opt);
 	for (int i = 0; i < results.size(); i++) {
 		if (results[i].failed_) continue;
 		//strncpy(texts[i], results[i].text_.c_str(), results[i].text_.length());
-		w_sizes_a[i] = results[i].words_.size();
-		a_sizes_a[i] = results[i].alignments_.size();
+		w_sizes[i] = (int)results[i].words_.size();
+		a_sizes[i] = (int)results[i].alignments_.size();
 		for (int j = 0; j < results[i].words_.size(); j++)
-			words_a[i][j] = results[i].words_[j];
+			words[i][j] = (int)results[i].words_[j];
 		for (int j = 0; j < results[i].alignments_.size(); j++)
-			alignments_a[i][j] = results[i].alignments_[j];
+			alignments[i][j] = (int)results[i].alignments_[j];
 	}
 
 	return std::make_tuple(words, alignments, w_sizes, a_sizes);
