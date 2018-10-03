@@ -18,8 +18,9 @@ export MASTER_PORT="23456"
 srun -o slurmd.%j.%t.out -e slurmd.%j.%t.err --export=ALL --network="MPI,DEVNAME=bond0" \
   python batch_train.py deepspeech_ctc \
     --use-cuda \
-    --log-dir logs_20180906_deepspeech_ctc_h512_l4 \
     --slack \
     --visdom \
     --visdom-host 172.26.15.44 \
-    --continue-from logs_20180906_deepspeech_ctc_h512_l4/deepspeech_ctc_epoch_027.pth.tar
+    --checkpoint \
+    --log-dir logs_20181003_deepspeech_ctc_fold2
+    #--continue-from logs_20180906_deepspeech_ctc_h512_l4/deepspeech_ctc_epoch_027.pth.tar

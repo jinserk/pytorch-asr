@@ -328,6 +328,7 @@ class NonSplitTrainer(Trainer):
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
         try:
+            batch_size = xs.size(0)
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
             ys_hat, frame_lens = self.model(xs, frame_lens)
@@ -338,6 +339,7 @@ class NonSplitTrainer(Trainer):
             #torch.set_printoptions(threshold=5000000)
             #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
             #print(onehot2int(ys_hat).squeeze(), ys)
+            frame_lens = frame_lens.new_full((batch_size, ), fill_value=ys_hat.size(0))  # for CUDNN ctc_loss backend
             loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             loss_value = loss.item()
             inf = float("inf")

@@ -52,7 +52,7 @@ $ python setup.py install
 This takes a while to download the Kaldi's official ASpIRE chain model and its post-processing.
 If you want to use your own language model or graphs, modify `asr/kaldi/scripts/mkgraph.sh` according to your settings.
 **The binding install method has been changed to use PyTorch's CppExtension, instead of ffi.
-This will install a package named `torch_asr.latgen_lib`.**
+This will install a package named `torch_asr._latgen_lib`.**
 
 
 ## Training

@@ -22,7 +22,7 @@ def batch_train(argv):
     # for training
     parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
     parser.add_argument('--num-epochs', default=200, type=int, help="number of epochs to run")
-    parser.add_argument('--init-lr', default=0.01, type=float, help="initial learning rate for Adam optimizer")
+    parser.add_argument('--init-lr', default=1e-2, type=float, help="initial learning rate for Adam optimizer")
     parser.add_argument('--max-norm', default=0.5, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
@@ -100,10 +100,11 @@ def batch_train(argv):
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
-        if i < 5: # 5
-            trainer.train_epoch(dataloaders["train3"])
-            trainer.validate(dataloaders["dev"])
-        elif i < 15: # 5+10
+        #if i < 5: # 5
+        #    trainer.train_epoch(dataloaders["train3"])
+        #    trainer.validate(dataloaders["dev"])
+        #elif i < 15: # 5+10
+        if i < 15: # 5+10
             trainer.train_epoch(dataloaders["train5"])
             trainer.validate(dataloaders["dev"])
         elif i < 35: # 5+10+20
@@ -126,7 +127,7 @@ def train(argv):
     parser.add_argument('--batch-size', default=64, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--num-workers', default=32, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
-    parser.add_argument('--init-lr', default=0.01, type=float, help="initial learning rate for Adam optimizer")
+    parser.add_argument('--init-lr', default=1e-2, type=float, help="initial learning rate for Adam optimizer")
     parser.add_argument('--max-norm', default=0.5, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
