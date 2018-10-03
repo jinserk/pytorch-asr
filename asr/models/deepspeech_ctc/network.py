@@ -391,7 +391,7 @@ class DeepSpeech(nn.Module):
             x = self.lookahead(x)
         x = self.fc(x)
         # identity in training mode, softmax in eval mode
-        x.add_(torch.mean(x)*1e-3)  # avoid to -inf after LogSoftmax
+        x.add_(1e-10)  # avoid to -inf after LogSoftmax
         x = self.softmax(x)
         return x, seq_lens
 
