@@ -332,8 +332,6 @@ class NonSplitTrainer(Trainer):
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
             ys_hat, frame_lens = self.model(xs, frame_lens)
-            if torch.isnan(ys_hat).sum():
-                raise RuntimeError
             if self.fp16:
                 ys_hat = ys_hat.float()
             ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
@@ -434,8 +432,6 @@ class SplitTrainer(Trainer):
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
             ys_hat = self.model(xs)
-            if torch.isnan(ys_hat).sum():
-                raise RuntimeError
             if self.fp16:
                 ys_hat = ys_hat.float()
             ys_hat = ys_hat.unsqueeze(dim=0).transpose(1, 2)
