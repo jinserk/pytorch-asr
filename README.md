@@ -2,13 +2,13 @@
 
 This repository maintains an experimental code for speech recognition using [PyTorch](https://github.com/pytorch/pytorch) and [Kaldi](https://github.com/kaldi-asr/kaldi).
 The Kaldi latgen decoder is integrated with PyTorch binding for CTC based acoustic model training.
-The code was tested with Python 3.7 and PyTorch 0.4.1+.
+The code was tested with Python 3.7 and PyTorch 1.0.0rc1. We have a lot of f-strings so you must use Python 3.6+.
 
 ## Installation
 
 **Prerequisites:**
 * Python 3.6+
-* [PyTorch 0.4.1+](https://github.com/pytorch/pytorch/pytorch/tree/v0.4.1)
+* [PyTorch 1.0.0+](https://github.com/pytorch/pytorch/pytorch.git)
 * [Kaldi 5.3+](https://github.com/kaldi-asr/kaldi.git)
 * [TNT](https://github.com/pytorch/tnt.git)
 
