@@ -38,7 +38,7 @@ def int2onehot(idx, num_classes, floor=0.):
     value = 1. - floor * (num_classes - 1)
     assert value > floor
     if not torch.is_tensor(idx):
-        onehot = idx.new_full((1, num_classes), floor, dtype=torch.float)
+        onehot = torch.full((1, num_classes), floor, dtype=torch.float)
         idx = torch.LongTensor([idx])
         onehot.scatter_(1, idx.unsqueeze(0), value)
     else:
@@ -47,6 +47,16 @@ def int2onehot(idx, num_classes, floor=0.):
         onehot.scatter_(1, idx.view(-1).long().unsqueeze(1), value)
         onehot = onehot.view(*sizes, -1)
     return onehot
+
+
+def insert_blanks(x, seq_len, blank=0):
+    """ tensor: NxTxH in log scale """
+    r = x.new_full((x.size(0), x.size(1) * 2 + 1, x.size(2)), fill_value=np.log(1e-3))
+    blk = torch.log(int2onehot(blank, x.size(-1), floor=1e-3))
+    for b, l in enumerate(seq_len):
+        r[b, 1:2*l+1:2, :].copy_(x[b, :l, :], non_blocking=False)
+        r[b, ::2, :].copy_(blk, non_blocking=False)
+    return r
 
 
 def remove_duplicates(labels, blank=-1):

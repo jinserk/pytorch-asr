@@ -145,6 +145,7 @@ class Trainer:
 
         # setup decoder for test
         self.decoder = LatGenCTCDecoder()
+        self.labeler = self.decoder.labeler
 
         # load from pre-trained model if needed
         if continue_from is not None:
@@ -286,6 +287,16 @@ class Trainer:
             n += Lev.distance(''.join(r), ''.join(h))
         return n
 
+    def target_to_loglikes(self, ys, label_lens):
+        max_len = max(label_lens.tolist())
+        num_classes = self.labeler.get_num_labels()
+        ys_hat = [torch.cat((torch.zeros(1).int(), ys[s:s+l], torch.zeros(max_len-l).int()))
+                  for s, l in zip([0]+label_lens[:-1].cumsum(0).tolist(), label_lens.tolist())]
+        ys_hat = [int2onehot(torch.IntTensor(z), num_classes, floor=1e-3) for z in ys_hat]
+        ys_hat = torch.stack(ys_hat)
+        ys_hat = torch.log(ys_hat)
+        return ys_hat
+
     def save(self, file_path, **kwargs):
         Path(file_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
         logger.debug(f"saving the model to {file_path}")
@@ -390,26 +401,13 @@ class NonSplitTrainer(Trainer):
                 ys_hat = ys_hat.float()
             #frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
         else:
-            max_len = max(label_lens.tolist())
-            num_classes = self.decoder.labeler.get_num_labels()
-            ys_hat = [torch.cat((torch.zeros(1).int(), ys[s:s+l], torch.zeros(max_len-l).int()))
-                      for s, l in zip([0]+label_lens[:-1].cumsum(0).tolist(), label_lens.tolist())]
-            zz = []
-            for y in ys_hat:
-                z = []
-                for i in y:
-                    z.extend([0, i])
-                z.append(0)
-                zz.append(z)
-            ys_hat = [int2onehot(torch.IntTensor(z), num_classes, floor=1e-3) for z in zz]
-            ys_hat = torch.stack(ys_hat)
-            ys_hat = torch.log(ys_hat)
+            ys_hat = self.target_to_loglikes(ys, label_lens)
         # latgen decoding
         if self.use_cuda:
             ys_hat = ys_hat.cpu()
         words, alignment, w_sizes, a_sizes = self.decoder(ys_hat, frame_lens)
-        w2i = self.decoder.labeler.word2idx
-        num_words = self.decoder.labeler.get_num_words()
+        w2i = self.labeler.word2idx
+        num_words = self.labeler.get_num_words()
         words.masked_fill_(words.ge(num_words), w2i('<unk>'))
         words.masked_fill_(words.lt(0), w2i('<unk>'))
         hyps = [w[:s] for w, s in zip(words, w_sizes)]
@@ -477,26 +475,32 @@ class SplitTrainer(Trainer):
         refs = [ys[s:l] for s, l in zip(pos[:-1], pos[1:])]
         return hyps, refs
 
-    def unit_test(self, data):
+    def unit_test(self, data, target_test=False):
         xs, ys, frame_lens, label_lens, filenames, texts = data
-        if self.use_cuda:
-            xs = xs.cuda(non_blocking=True)
-        ys_hat = self.model(xs)
-        if self.fp16:
-            ys_hat = ys_hat.float()
-        ys_hat = ys_hat.unsqueeze(dim=0).transpose(1, 2)
-        pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
-        ys_hats = [ys_hat.narrow(2, p, l).clone() for p, l in zip(pos[:-1], frame_lens)]
-        max_len = torch.max(frame_lens)
-        ys_hats = [nn.ConstantPad1d((0, max_len-yh.size(2)), 0)(yh) for yh in ys_hats]
-        ys_hat = torch.cat(ys_hats).transpose(1, 2)
+        if not target_test:
+            if self.use_cuda:
+                xs = xs.cuda(non_blocking=True)
+            ys_hat = self.model(xs)
+            if self.fp16:
+                ys_hat = ys_hat.float()
+            ys_hat = ys_hat.unsqueeze(dim=0).transpose(1, 2)
+            pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(frame_lens, dim=0)))
+            ys_hats = [ys_hat.narrow(2, p, l).clone() for p, l in zip(pos[:-1], frame_lens)]
+            max_len = torch.max(frame_lens)
+            ys_hats = [nn.ConstantPad1d((0, max_len-yh.size(2)), 0)(yh) for yh in ys_hats]
+            ys_hat = torch.cat(ys_hats).transpose(1, 2)
+        else:
+            ys_hat = self.target_to_loglikes(ys, label_lens)
         # latgen decoding
         if self.use_cuda:
             ys_hat = ys_hat.cpu()
         words, alignment, w_sizes, a_sizes = self.decoder(ys_hat, frame_lens)
+        w2i = self.labeler.word2idx
+        num_words = self.labeler.get_num_words()
+        words.masked_fill_(words.ge(num_words), w2i('<unk>'))
+        words.masked_fill_(words.lt(0), w2i('<unk>'))
         hyps = [w[:s] for w, s in zip(words, w_sizes)]
         # convert target texts to word indices
-        w2i = self.decoder.labeler.word2idx
         refs = [[w2i(w.strip()) for w in t.strip().split()] for t in texts]
         return hyps, refs
 
