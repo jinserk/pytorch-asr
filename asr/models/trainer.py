@@ -145,6 +145,7 @@ class Trainer:
 
         # setup decoder for test
         self.decoder = LatGenCTCDecoder()
+        self.labeler = self.decoder.labeler
 
         # load from pre-trained model if needed
         if continue_from is not None:
@@ -391,25 +392,18 @@ class NonSplitTrainer(Trainer):
             #frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
         else:
             max_len = max(label_lens.tolist())
-            num_classes = self.decoder.labeler.get_num_labels()
+            num_classes = self.labeler.get_num_labels()
             ys_hat = [torch.cat((torch.zeros(1).int(), ys[s:s+l], torch.zeros(max_len-l).int()))
                       for s, l in zip([0]+label_lens[:-1].cumsum(0).tolist(), label_lens.tolist())]
-            zz = []
-            for y in ys_hat:
-                z = []
-                for i in y:
-                    z.extend([0, i])
-                z.append(0)
-                zz.append(z)
-            ys_hat = [int2onehot(torch.IntTensor(z), num_classes, floor=1e-3) for z in zz]
+            ys_hat = [int2onehot(torch.IntTensor(z), num_classes, floor=1e-3) for z in ys_hat]
             ys_hat = torch.stack(ys_hat)
             ys_hat = torch.log(ys_hat)
         # latgen decoding
         if self.use_cuda:
             ys_hat = ys_hat.cpu()
         words, alignment, w_sizes, a_sizes = self.decoder(ys_hat, frame_lens)
-        w2i = self.decoder.labeler.word2idx
-        num_words = self.decoder.labeler.get_num_words()
+        w2i = self.labeler.word2idx
+        num_words = self.labeler.get_num_words()
         words.masked_fill_(words.ge(num_words), w2i('<unk>'))
         words.masked_fill_(words.lt(0), w2i('<unk>'))
         hyps = [w[:s] for w, s in zip(words, w_sizes)]
@@ -496,7 +490,7 @@ class SplitTrainer(Trainer):
         words, alignment, w_sizes, a_sizes = self.decoder(ys_hat, frame_lens)
         hyps = [w[:s] for w, s in zip(words, w_sizes)]
         # convert target texts to word indices
-        w2i = self.decoder.labeler.word2idx
+        w2i = self.labeler.word2idx
         refs = [[w2i(w.strip()) for w in t.strip().split()] for t in texts]
         return hyps, refs
 

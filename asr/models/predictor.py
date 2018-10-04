@@ -58,7 +58,9 @@ class NonSplitPredictor:
         if self.verbose:
             labels = onehot2int(ys_hat).squeeze()
             logger.info(f"labels: {' '.join([str(x) for x in labels.tolist()])}")
-            symbols = [self.decoder.labeler.idx2phone(x) for x in remove_duplicates(labels, blank=0)]
+            rd = [x.item() for x in remove_duplicates(labels, blank=0)]
+            logger.info(f"duplicated_removed: {' '.join([str(x) for x in rd])}")
+            symbols = [self.decoder.labeler.idx2phone(x) for x in rd]
             logger.info(f"symbols: {' '.join(symbols)}")
         words = words.squeeze()
         text = ' '.join([self.decoder.labeler.idx2word(i) for i in words]) \
