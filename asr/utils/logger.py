@@ -116,7 +116,6 @@ class VisdomLogger:
 
     def __init__(self, host='127.0.0.1', port=8097, env='main', log_path=None, rank=None):
         from visdom import Visdom
-        import json
         logger.debug(f"using visdom on http://{host}:{port} env={env}")
         self.env = env
         self.rank = rank
@@ -125,20 +124,31 @@ class VisdomLogger:
         # if prev log exists
         if log_path.exists():
             self.viz.replay_log(log_path)
-            wins = json.loads(self.viz.get_window_data(win=None, env=env))
-            for k, v in wins.items():
-                names = [int(x['name'].partition('_')[0]) for x in v['content']['data']]
-                name = max(names) + 1
-                name = str(name) if rank is None else f"{name}_{rank}"
-                self.windows[v['title']] = { 'win': v['id'], 'name': name }
+            import json
+            win_data = json.loads(self.viz.get_window_data(win=None, env=env))
+            for win, v in win_data.items():
+                title, name = self._new_window_info(v)
+                self.windows[title] = { 'win': win, 'name': name, 'opts': { 'title': title, }, }
+
+    def _new_window_info(self, values):
+        title = values['title']
+        names = [int(x['name'].partition('_')[0]) for x in values['content']['data']]
+        name = max(names) + 1
+        name = str(name) if self.rank is None else f"{name}_{self.rank}"
+        return title, name
 
     def add_plot(self, title, **kwargs):
         if title not in self.windows:
-            self.windows[title] = {
-                'win': None,
-                'name': '1' if self.rank is None else f'1_{self.rank}',
-            }
-        self.windows[title]['opts'] = { 'title': title, }
+            import json
+            win_data = json.loads(self.viz.get_window_data(win=None, env=self.env))
+            wins = [w for w, v in win_data.items() if v['title'] == title]
+            if wins:
+                win = wins[0]
+                _, name = self._new_window_info(win_data[win])
+                self.windows[title] = { 'win': win, 'name': name, 'opts': { 'title': title, }, }
+            else:
+                name = '1' if self.rank is None else f'1_{self.rank}'
+                self.windows[title] = { 'win': None, 'name': name, 'opts': { 'title': title, }, }
         self.windows[title]['opts'].update(kwargs)
 
     def add_point(self, title, x, y):
