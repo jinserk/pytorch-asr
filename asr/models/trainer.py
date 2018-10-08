@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.distributed as dist
 
 import apex.parallel
-from apex.fp16_utils import *
+from apex import amp
 
 import torchvision.utils as tvu
 import torchnet as tnt
@@ -90,13 +90,14 @@ def set_seed(seed=None):
 
 class Trainer:
 
-    def __init__(self, model, init_lr=1e-2, max_norm=100, use_cuda=False,
+    def __init__(self, model, amp_handle=None, init_lr=1e-2, max_norm=100, use_cuda=False,
                  fp16=False, log_dir='logs', model_prefix='model',
                  checkpoint=False, continue_from=None, opt_type="sgdr",
                  *args, **kwargs):
         if fp16:
             if not use_cuda:
                 raise RuntimeError
+        self.amp_handle = amp_handle
 
         # training parameters
         self.init_lr = init_lr
@@ -136,11 +137,11 @@ class Trainer:
             self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
         elif opt_type == "adam":
             logger.debug("using Adam")
-            self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0)
+            self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=5e-4)
             self.lr_scheduler = None
         elif opt_type == "rmsprop":
             logger.debug("using RMSprop")
-            self.optimizer = torch.optim.RMSprop(parameters, lr=self.init_lr, alpha=0.95, eps=1e-5, weight_decay=5e-4, centered=True)
+            self.optimizer = torch.optim.RMSprop(parameters, lr=self.init_lr, alpha=0.95, eps=1e-8, weight_decay=5e-4, centered=True)
             self.lr_scheduler = None
 
         # setup decoder for test
@@ -153,8 +154,9 @@ class Trainer:
 
         # FP16 and distributed after load
         if self.fp16:
-            self.model = network_to_half(self.model)
-            self.optimizer = FP16_Optimizer(self.optimizer, static_loss_scale=128.)
+            #self.model = network_to_half(self.model)
+            #self.optimizer = FP16_Optimizer(self.optimizer, static_loss_scale=128.)
+            self.optimizer = self.amp_handle.wrap_optimizer(self.optimizer)
 
         if is_distributed():
             if self.use_cuda:
@@ -359,8 +361,10 @@ class NonSplitTrainer(Trainer):
                 loss_value = 0
             self.optimizer.zero_grad()
             if self.fp16:
-                self.optimizer.backward(loss)
-                self.optimizer.clip_master_grads(self.max_norm)
+                #self.optimizer.backward(loss)
+                #self.optimizer.clip_master_grads(self.max_norm)
+                with self.optimizer.scale_loss(loss) as scaled_loss:
+                    scaled_loss.backward()
             else:
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
@@ -446,8 +450,10 @@ class SplitTrainer(Trainer):
                 loss_value = 0
             self.optimizer.zero_grad()
             if self.fp16:
-                self.optimizer.backward(loss)
-                self.optimizer.clip_master_grads(self.max_norm)
+                #self.optimizer.backward(loss)
+                #self.optimizer.clip_master_grads(self.max_norm)
+                with self.optimizer.scale_loss(loss) as scaled_loss:
+                    scaled_loss.backward()
             else:
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
