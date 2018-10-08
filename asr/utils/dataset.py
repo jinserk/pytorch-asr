@@ -303,7 +303,7 @@ class NonSplitTrainDataset(TrainDataset):
                  noise=True, noise_range=p.NOISE_RANGE,
                  offset=True, padding=True,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
-                 stride=2,
+                 stride=3,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transformer is None:
@@ -327,7 +327,7 @@ class NonSplitPredictDataset(PredictDataset):
                  noise=True, noise_range=(-20, -20),
                  padding=False,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
-                 stride=2,
+                 stride=3,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transformer is None:
@@ -352,7 +352,7 @@ class SplitTrainDataset(TrainDataset):
                  noise=True, noise_range=p.NOISE_RANGE,
                  offset=True, padding=True,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
-                 unit_frames=p.WIDTH, stride=2,
+                 unit_frames=p.WIDTH, stride=3,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transformer is None:
@@ -376,7 +376,7 @@ class SplitPredictDataset(PredictDataset):
                  noise=True, noise_range=(-20, -20),
                  padding=False,
                  window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
-                 unit_frames=p.WIDTH, stride=2,
+                 unit_frames=p.WIDTH, stride=3,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transformer is None:
