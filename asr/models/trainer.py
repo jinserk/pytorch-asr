@@ -107,6 +107,7 @@ class Trainer:
         self.log_dir = log_dir
         self.model_prefix = model_prefix
         self.checkpoint = checkpoint
+        self.opt_type = opt_type
         self.epoch = 0
 
         # prepare visdom
@@ -304,6 +305,7 @@ class Trainer:
         logger.debug(f"saving the model to {file_path}")
         states = kwargs
         states["epoch"] = self.epoch
+        states["opt_type"] = self.opt_type
         if is_distributed():
             model_state_dict = self.model.state_dict()
             strip_prefix = 9 if self.fp16 else 7
@@ -327,6 +329,7 @@ class Trainer:
         states = torch.load(file_path, map_location=to_device)
         self.epoch = states["epoch"]
         self.model.load_state_dict(states["model"])
+        if self.opt_type == states["opt_type"]:
         self.optimizer.load_state_dict(states["optimizer"])
         if self.lr_scheduler is not None and "lr_scheduler" in states:
             self.lr_scheduler.load_state_dict(states["lr_scheduler"])
