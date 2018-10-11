@@ -24,7 +24,7 @@ def batch_train(argv):
     # for training
     parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
     parser.add_argument('--num-epochs', default=200, type=int, help="number of epochs to run")
-    parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")
+    parser.add_argument('--init-lr', default=1e-2, type=float, help="initial learning rate for the optimizer")
     parser.add_argument('--max-norm', default=0.1, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
@@ -39,7 +39,7 @@ def batch_train(argv):
     parser.add_argument('--model-prefix', default='deepspeech_ctc', type=str, help="model file prefix to store")
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
-    parser.add_argument('--opt-type', default="adam", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
+    parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
     args = parser.parse_args(argv)
 
     init_distributed(args.use_cuda)
@@ -63,6 +63,7 @@ def batch_train(argv):
     ]
 
     datasets = {
+        "train3" : ConcatDataset([AudioSubset(d, max_len=3) for d in train_datasets]),
         "train5" : ConcatDataset([AudioSubset(d, max_len=5) for d in train_datasets]),
         "train10": ConcatDataset([AudioSubset(d, max_len=10) for d in train_datasets]),
         "train15": ConcatDataset([AudioSubset(d, max_len=15) for d in train_datasets]),
@@ -71,6 +72,12 @@ def batch_train(argv):
     }
 
     dataloaders = {
+        "train3" : NonSplitTrainDataLoader(datasets["train3"],
+                                           sampler=(DistributedSampler(datasets["train3"])
+                                                    if is_distributed() else None),
+                                           batch_size=64, num_workers=32,
+                                           shuffle=(not is_distributed()),
+                                           pin_memory=args.use_cuda),
         "train5" : NonSplitTrainDataLoader(datasets["train5"],
                                            sampler=(DistributedSampler(datasets["train5"])
                                                     if is_distributed() else None),
@@ -99,10 +106,13 @@ def batch_train(argv):
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
-        if i < 10:
+        if i < 5:
+            trainer.train_epoch(dataloaders["train3"])
+            trainer.validate(dataloaders["dev"])
+        if i < 15:
             trainer.train_epoch(dataloaders["train5"])
             trainer.validate(dataloaders["dev"])
-        elif i < 30:
+        elif i < 35:
             trainer.train_epoch(dataloaders["train10"])
             trainer.validate(dataloaders["dev"])
         else:
@@ -122,7 +132,7 @@ def train(argv):
     parser.add_argument('--batch-size', default=64, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--num-workers', default=32, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
-    parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")
+    parser.add_argument('--init-lr', default=1e-2, type=float, help="initial learning rate for the optimizer")
     parser.add_argument('--max-norm', default=0.1, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")

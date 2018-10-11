@@ -27,10 +27,11 @@ def predict(argv):
         logger.error("model name is missing: add '--continue-from <model-name>' in options")
         sys.exit(1)
 
-    model = DeepSpeech(num_classes=p.NUM_CTC_LABELS)
+    input_folding = 2
+    model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
     predictor = NonSplitPredictor(model, **vars(args))
 
-    dataset = NonSplitPredictDataset(wav_files=args.wav_files)
+    dataset = NonSplitPredictDataset(wav_files=args.wav_files, stride=input_folding)
     dataloader = NonSplitPredictDataLoader(dataset=dataset, batch_size=args.batch_size,
                                            pin_memory=args.use_cuda)
 

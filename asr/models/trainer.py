@@ -127,11 +127,7 @@ class Trainer:
         # setup optimizer
         assert opt_type in OPTIMIZER_TYPES
         parameters = self.model.parameters()
-        if opt_type == "sgd":
-            logger.debug("using SGD")
-            self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9, weight_decay=5e-4)
-            self.lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=5)
-        elif opt_type == "sgdr":
+        if opt_type == "sgdr":
             logger.debug("using SGDR")
             self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9, weight_decay=5e-4)
             #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
@@ -190,9 +186,9 @@ class Trainer:
         meter_loss = tnt.meter.MovingAverageValueMeter(len(data_loader) // 100 + 1)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
+        logger.debug(f"current lr = {self.optimizer.param_groups[0]['lr']}")
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
-            logger.debug(f"current lr = {self.lr_scheduler.get_lr()}")
         if is_distributed() and data_loader.sampler is not None:
             data_loader.sampler.set_epoch(self.epoch)
         ckpts = iter(len(data_loader) * np.arange(0.1, 1.1, 0.1))
@@ -329,10 +325,12 @@ class Trainer:
         states = torch.load(file_path, map_location=to_device)
         self.epoch = states["epoch"]
         self.model.load_state_dict(states["model"])
-        if self.opt_type == states["opt_type"]:
-        self.optimizer.load_state_dict(states["optimizer"])
+        if "opt_type" in states and self.opt_type == states["opt_type"]:
+            self.optimizer.load_state_dict(states["optimizer"])
         if self.lr_scheduler is not None and "lr_scheduler" in states:
             self.lr_scheduler.load_state_dict(states["lr_scheduler"])
+        #for _ in range(self.epoch-1):
+        #    self.lr_scheduler.step()
 
 
 class NonSplitTrainer(Trainer):
@@ -358,10 +356,6 @@ class NonSplitTrainer(Trainer):
             frame_lens = frame_lens.new_full((batch_size, ), fill_value=ys_hat.size(0))  # for CUDNN ctc_loss backend
             loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             loss_value = loss.item()
-            inf = float("inf")
-            if loss_value == inf or loss_value == -inf:
-                logger.warning("received an inf loss, setting loss value to 0")
-                loss_value = 0
             self.optimizer.zero_grad()
             if self.fp16:
                 #self.optimizer.backward(loss)
@@ -447,10 +441,6 @@ class SplitTrainer(Trainer):
             ys_hat = torch.cat(ys_hats).transpose(1, 2).transpose(0, 1)
             loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             loss_value = loss.item()
-            inf = float("inf")
-            if loss_value == inf or loss_value == -inf:
-                logger.warning("received an inf loss, setting loss value to 0")
-                loss_value = 0
             self.optimizer.zero_grad()
             if self.fp16:
                 #self.optimizer.backward(loss)
