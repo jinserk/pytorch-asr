@@ -164,7 +164,7 @@ class VisdomLogger:
             if handle is None:
                 handle, name, opts = self._new_window(title, X, Y, name, opts)
             else:
-                name = f"{name + 1}_{self.rank}" if self.rank is not None else f"{name}"
+                name = f"{name + 1}_{self.rank}" if self.rank is not None else f"{name + 1}"
                 self.viz.line(Y=Y, X=X, update='append', win=handle, name=name, opts=opts)
             self.windows[title] = { 'handle': handle, 'name': name, 'opts': opts, }
         else:
