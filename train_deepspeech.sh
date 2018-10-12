@@ -2,7 +2,7 @@
 
 #SBATCH -q debug
 #SBATCH --nodes=2
-#SBATCH --ntasks-per-node=2
+#SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:gtx1070:1
 #SBATCH --job-name=jbaik
 #SBATCH --output=slurmctld.%j.out
