@@ -176,6 +176,14 @@ class Trainer:
     def unit_train(self, data):
         raise NotImplementedError
 
+    def average_gradients(self):
+        if not is_distributed():
+            return
+        size = float(dist.get_world_size())
+        for param in self.model.parameters():
+            dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM)
+            param.grad.data /= size
+
     def train_epoch(self, data_loader):
         self.model.train()
         meter_loss = tnt.meter.MovingAverageValueMeter(len(data_loader) // 100 + 1)
@@ -362,6 +370,7 @@ class NonSplitTrainer(Trainer):
             else:
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
+            self.average_gradients()
             self.optimizer.step()
             if self.use_cuda:
                 torch.cuda.synchronize()
@@ -447,6 +456,7 @@ class SplitTrainer(Trainer):
             else:
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
+            self.average_gradients()
             self.optimizer.step()
             del loss
         except Exception as e:
