@@ -52,8 +52,9 @@ def init_distributed(use_cuda, backend="nccl", init="slurm"):
             local_rank = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
 
         if use_cuda:
-            torch.cuda.set_device(local_rank)
-            print(f"set cuda device to cuda:{local_rank}")
+            device = local_rank % torch.cuda.device_count()
+            torch.cuda.set_device(device)
+            print(f"set cuda device to cuda:{device}")
 
         master_node = os.environ["MASTER_ADDR"]
         master_port = os.environ["MASTER_PORT"]
