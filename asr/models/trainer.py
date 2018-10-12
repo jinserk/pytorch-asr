@@ -186,9 +186,9 @@ class Trainer:
         meter_loss = tnt.meter.MovingAverageValueMeter(len(data_loader) // 100 + 1)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
-        logger.debug(f"current lr = {self.optimizer.param_groups[0]['lr']}")
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
+        logger.debug(f"current lr = {self.optimizer.param_groups[0]['lr']}")
         if is_distributed() and data_loader.sampler is not None:
             data_loader.sampler.set_epoch(self.epoch)
         ckpts = iter(len(data_loader) * np.arange(0.1, 1.1, 0.1))

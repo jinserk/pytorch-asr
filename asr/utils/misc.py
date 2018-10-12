@@ -62,9 +62,10 @@ def insert_blanks(x, seq_len, blank=0):
 def remove_duplicates(labels, blank=-1):
     p = -1
     for x in labels:
-        if x != blank and x != p:
+        if x != p:
             p = x
-            yield x
+            if x != blank:
+                yield x
 
 
 def edit_distance(r, h):
