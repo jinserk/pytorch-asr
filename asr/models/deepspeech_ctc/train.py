@@ -107,11 +107,14 @@ def batch_train(argv):
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
         if i < 1:
+            trainer.train_epoch(dataloaders["train3"])
+            trainer.validate(dataloaders["dev"])
+        elif i < (1 + 2 + 4):
             trainer.train_epoch(dataloaders["train5"])
             trainer.validate(dataloaders["dev"])
-        elif i < 1 + 2:
-            trainer.train_epoch(dataloaders["train10"])
-            trainer.validate(dataloaders["dev"])
+        #elif i < (1 + 2 + 4 + 8):
+        #    trainer.train_epoch(dataloaders["train10"])
+        #    trainer.validate(dataloaders["dev"])
         else:
             trainer.train_epoch(dataloaders["train15"])
             trainer.validate(dataloaders["dev"])

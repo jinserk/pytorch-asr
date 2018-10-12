@@ -22,5 +22,5 @@ srun -o slurmd.%j.%t.out -e slurmd.%j.%t.err --export=ALL --network="MPI,DEVNAME
     --visdom \
     --visdom-host 172.26.15.44 \
     --checkpoint \
-    --log-dir logs_20181012_deepspeech_ctc_skipconn
-    #--continue-from logs_20181011_deepspeech_ctc_skipconn/deepspeech_ctc_epoch_001.pth.tar
+    --log-dir logs_20181011_deepspeech_ctc_skipconn \
+    --continue-from logs_20181011_deepspeech_ctc_skipconn/deepspeech_ctc_epoch_003.pth.tar

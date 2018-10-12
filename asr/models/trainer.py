@@ -110,11 +110,6 @@ class Trainer:
         self.opt_type = opt_type
         self.epoch = 0
 
-        # prepare visdom
-        if logger.visdom is not None:
-            logger.visdom.add_plot(title=f'train', xlabel='epoch', ylabel='loss')
-            logger.visdom.add_plot(title=f'validate', xlabel='epoch', ylabel='LER')
-
         # setup model
         self.model = model
         if self.use_cuda:
@@ -208,7 +203,8 @@ class Trainer:
                 title = "train"
                 x = self.epoch + i / len(data_loader)
                 if logger.visdom is not None:
-                    logger.visdom.add_point(title=title, x=x, y=meter_loss.value()[0])
+                    opts = { 'xlabel': 'epoch', 'ylabel': 'loss', }
+                    logger.visdom.add_point(title=title, x=x, y=meter_loss.value()[0], **opts)
                 if logger.tensorboard is not None:
                     logger.tensorboard.add_graph(self.model, xs)
                     xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
@@ -254,7 +250,8 @@ class Trainer:
             title = f"validate"
             x = self.epoch - 1 + i / len(data_loader)
             if logger.visdom is not None:
-                logger.visdom.add_point(title=title, x=x, y=ler)
+                opts = { 'xlabel': 'epoch', 'ylabel': 'LER', }
+                logger.visdom.add_point(title=title, x=x, y=ler, **opts)
             if logger.tensorboard is not None:
                 logger.tensorboard.add_scalars(title, x, { 'LER': ler, })
 
@@ -327,8 +324,8 @@ class Trainer:
         self.model.load_state_dict(states["model"])
         if "opt_type" in states and self.opt_type == states["opt_type"]:
             self.optimizer.load_state_dict(states["optimizer"])
-        #if self.lr_scheduler is not None and "lr_scheduler" in states:
-        #    self.lr_scheduler.load_state_dict(states["lr_scheduler"])
+        if self.lr_scheduler is not None and "lr_scheduler" in states:
+            self.lr_scheduler.load_state_dict(states["lr_scheduler"])
         #for _ in range(self.epoch-1):
         #    self.lr_scheduler.step()
 

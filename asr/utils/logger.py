@@ -122,44 +122,57 @@ class VisdomLogger:
         self.viz = Visdom(server=f"http://{host}", port=port, env=env, log_to_filename=log_path)
         self.windows = dict()
         # if prev log exists
-        if log_path.exists():
+        if log_path is not None and log_path.exists():
             self.viz.replay_log(log_path)
-            import json
-            win_data = json.loads(self.viz.get_window_data(win=None, env=env))
-            for win, v in win_data.items():
-                title, name = self._new_window_info(v)
-                self.windows[title] = { 'win': win, 'name': name, 'opts': { 'title': title, }, }
 
-    def _new_window_info(self, values):
-        title = values['title']
-        names = [int(x['name'].partition('_')[0]) for x in values['content']['data']]
-        name = max(names) + 1
-        name = str(name) if self.rank is None else f"{name}_{self.rank}"
-        return title, name
+    def _get_win(self, title):
+        import json
+        win_data = json.loads(self.viz.get_window_data(win=None, env=self.env))
+        wins = [(w, v) for w, v in win_data.items() if v['title'] == title]
+        if wins:
+            handle, value = sorted(wins, key=lambda x: x[0])[0]
+            names = [int(x['name'].partition('_')[0]) for x in value['content']['data']]
+            return handle, max(names)
+        else:
+            return None, 1
 
-    def add_plot(self, title, **kwargs):
-        if title not in self.windows:
-            import json
-            win_data = json.loads(self.viz.get_window_data(win=None, env=self.env))
-            wins = [w for w, v in win_data.items() if v['title'] == title]
-            if wins:
-                win = wins[0]
-                _, name = self._new_window_info(win_data[win])
-                self.windows[title] = { 'win': win, 'name': name, 'opts': { 'title': title, }, }
+    def _new_window(self, title, X, Y, name, opts):
+        if self.rank is not None and self.rank > 0:
+            # wait and fetch the window handle until rank=0 client generates new window
+            import time
+            for _ in range(100):
+                handle, name = self._get_win(title)
+                if handle is not None:
+                    break
+                time.sleep(0.5)
             else:
-                name = '1' if self.rank is None else f'1_{self.rank}'
-                self.windows[title] = { 'win': None, 'name': name, 'opts': { 'title': title, }, }
-        self.windows[title]['opts'].update(kwargs)
+                logger.error("could't get a proper window handle from the visdom server")
+                raise RuntimeError
+            name = f"{name}_{self.rank}"
+            self.viz.line(Y=Y, X=X, update='append', win=handle, name=name, opts=opts)
+        else:
+            name = f"{name}_{self.rank}" if self.rank is not None else f"{name}"
+            handle = self.viz.line(Y=Y, X=X, name=name, opts=opts)
+        return handle, name, opts
 
-    def add_point(self, title, x, y):
+    def add_point(self, title, x, y, **kwargs):
         X, Y = torch.FloatTensor([x,]), torch.FloatTensor([y,])
         if title not in self.windows:
-            self.add_plot(title)
-        if self.windows[title]['win'] is None:
-            w = self.viz.line(Y=Y, X=X, opts=self.windows[title]['opts'], name=self.windows[title]['name'])
-            self.windows[title]['win'] = w
+            handle, name = self._get_win(title)
+            opts = { 'title': title, }
+            opts.update(kwargs)
+            if handle is None:
+                handle, name, opts = self._new_window(title, X, Y, name, opts)
+            else:
+                name = f"{name + 1}_{self.rank}" if self.rank is not None else f"{name}"
+                self.viz.line(Y=Y, X=X, update='append', win=handle, name=name, opts=opts)
+            self.windows[title] = { 'handle': handle, 'name': name, 'opts': opts, }
         else:
-            self.viz.line(Y=Y, X=X, update='append', win=self.windows[title]['win'], name=self.windows[title]['name'])
+            handle = self.windows[title]['handle']
+            name = self.windows[title]['name']
+            opts = kwargs
+            self.viz.line(Y=Y, X=X, update='append', win=handle, name=name, opts=opts)
+            self.windows[title]['opts'].update(opts)
 
 
 class TensorboardLogger:
