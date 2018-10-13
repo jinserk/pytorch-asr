@@ -378,7 +378,6 @@ class NonSplitTrainer(Trainer):
             del loss
             return loss_value
         except Exception as e:
-            raise
             print(e)
             print(filenames, frame_lens, label_lens)
             return 0

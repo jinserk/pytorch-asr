@@ -147,7 +147,7 @@ def train(argv):
     parser.add_argument('--model-prefix', default='deepspeech_ctc', type=str, help="model file prefix to store")
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
-    parser.add_argument('--opt-type', default="adam", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
+    parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
     args = parser.parse_args(argv)
 
     init_distributed(args.use_cuda)
@@ -158,7 +158,7 @@ def train(argv):
     amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False) if args.fp16 else None
 
     # prepare trainer object
-    input_folding = 2
+    input_folding = 3
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
     trainer = NonSplitTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
