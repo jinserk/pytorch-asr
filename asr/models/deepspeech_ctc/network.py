@@ -238,6 +238,8 @@ class BatchRNN(nn.Module):
         self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size,
                             bidirectional=bidirectional, batch_first=batch_first, bias=True)
 
+        self.nonlinear = nn.Hardtanh(-5, 5, inplace=True)
+
     def flatten_parameters(self):
         self.rnn.flatten_parameters()
 
@@ -251,7 +253,7 @@ class BatchRNN(nn.Module):
             # (NxTxH*2) -> (NxTxH) by sum
             y = y.view(y.size(0), y.size(1), 2, -1).sum(2).view(y.size(0), y.size(1), -1)
         # residual connection
-        y = y + x
+        y = self.nonlinear(y)
         return y
 
 
@@ -325,27 +327,29 @@ class DeepSpeech(nn.Module):
         self.conv = nn.Sequential(
             nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(2, 1), padding=(20, 3)),
             nn.BatchNorm2d(C1),
-            #nn.Hardtanh(0, 20, inplace=True),
+            nn.Hardtanh(-5, 5, inplace=True),
             #nn.ReLU(inplace=True),
-            Swish(inplace=True),
+            #Swish(inplace=True),
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
             nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(2, 1), padding=(10, 3)),
             nn.BatchNorm2d(C2),
-            #nn.Hardtanh(0, 20, inplace=True)
+            nn.Hardtanh(-5, 5, inplace=True),
             #nn.ReLU(inplace=True),
-            Swish(inplace=True),
+            #Swish(inplace=True),
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
             nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(2, 1), padding=(5, 3)),
             nn.BatchNorm2d(C3),
-            #nn.Hardtanh(0, 20, inplace=True)
+            nn.Hardtanh(-5, 5, inplace=True),
             #nn.ReLU(inplace=True),
-            Swish(inplace=True),
+            #Swish(inplace=True),
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
         )
 
         self.fc1 = SequenceWise(nn.Sequential(
             nn.Linear(H0, rnn_hidden_size, bias=True),
-            Swish(inplace=True)
+            nn.Dropout(0.2, inplace=True),
+            nn.Hardtanh(-5, 5, inplace=True),
+            #Swish(inplace=True),
         ))
 
         # using BatchRNN
@@ -366,17 +370,36 @@ class DeepSpeech(nn.Module):
         self.lookahead = nn.Sequential(
             # consider adding batch norm?
             Lookahead(H1, context=context),
-            #nn.Hardtanh(0, 20, inplace=True)
+            nn.Hardtanh(-5, 5, inplace=True)
             #nn.ReLU(inplace=True),
-            Swish(inplace=True)
+            #Swish(inplace=True),
         ) if not bidirectional else None
 
         self.fc2 = SequenceWise(nn.Sequential(
             nn.BatchNorm1d(H1),
             nn.Linear(H1, num_classes, bias=False),
-            #nn.Hardtanh(min_val=-70, max_val=70, inplace=True)  # to avoid inf/nan after LogSoftmax
+            nn.Dropout(0.2, inplace=True),
+            nn.Hardtanh(-5, 5, inplace=True),  # max confidence of 99.2%
         ))
         self.softmax = nn.LogSoftmax(dim=-1)
+
+        #self.init_weights()
+
+    #def init_weights(self):
+    #    for m in self.modules():
+    #        if isinstance(m, nn.Conv2d):
+    #            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+    #        elif isinstance(m, nn.BatchNorm2d):
+    #            nn.init.constant_(m.weight, 1.0)
+    #            nn.init.constant_(m.bias, 0.0)
+    #        elif isinstance(m, nn.Linear):
+    #            size = m.weight.size()
+    #            fan_out = size[0]   # number of rows
+    #            fan_in = size[1]    # number of columns
+    #            variance = np.sqrt(2.0/(fan_in + fan_out))
+    #            nn.init.normal_(m.weight, 0.0, variance)
+    #            if m.bias is not None:
+    #                nn.init.constant_(m.bias, 0.0)
 
     def forward(self, x, seq_lens):
         x = self.conv(x)
@@ -392,15 +415,18 @@ class DeepSpeech(nn.Module):
         #    for i in range(self._hidden_layers[g]):
         #        j = np.cumsum(self._hidden_layers)[g-1] + i
         #        x = self.rnns[j](x, seq_lens)
+        y = x.clone()
         for i in range(self._hidden_layers):
-            x = self.rnns[i](x, seq_lens)
+            y = self.rnns[i](y, seq_lens)
         #x, _ = self.rnns(x)
         if not self._bidirectional:  # no need for lookahead layer in bidirectional
-            x = self.lookahead(x)
-        x = 0.5 * self.fc2(x)  # to avoid inf/nan after LogSoftmax
+            y = self.lookahead(y)
+        # skip connection
+        y = y + x
+        y = self.fc2(y)
         # identity in training mode, softmax in eval mode
-        x = self.softmax(x)
-        return x, seq_lens
+        y = self.softmax(y)
+        return y, seq_lens
 
 
 if __name__ == '__main__':
