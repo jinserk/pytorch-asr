@@ -33,6 +33,10 @@ OPTIMIZER_TYPES = set([
 ])
 
 
+torch.backends.cudnn.enabled = True
+torch.backends.cudnn.deterministic = False
+
+
 def init_distributed(use_cuda, backend="nccl", init="slurm"):
     try:
         mp.set_start_method('spawn') # spawn, forkserver, and fork
@@ -380,6 +384,7 @@ class NonSplitTrainer(Trainer):
         except Exception as e:
             print(e)
             print(filenames, frame_lens, label_lens)
+            raise
             return 0
 
     def unit_validate(self, data):

@@ -208,8 +208,8 @@ def test(argv):
     parser.add_argument('--data-path', default='data/swbd', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
     parser.add_argument('--max-len', default=20., type=float, help="max length of utterance to use in secs")
-    parser.add_argument('--num-workers', default=0, type=int, help="number of dataloader workers")
-    parser.add_argument('--batch-size', default=4, type=int, help="number of images (and labels) to be considered in a batch")
+    parser.add_argument('--num-workers', default=8, type=int, help="number of dataloader workers")
+    parser.add_argument('--batch-size', default=16, type=int, help="number of images (and labels) to be considered in a batch")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")

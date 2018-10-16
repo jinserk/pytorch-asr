@@ -38,31 +38,6 @@ class SequenceWise(nn.Module):
         return tmpstr
 
 
-class TemporalRowConvolution(nn.Module):
-
-    def __init__(self, input_size, kernel_size, stride=1, padding=0, feat_first=False, bias=False):
-        super().__init__()
-        self.input_size = input_size
-        self.kernel_size = _single(kernel_size)
-        self.stride = _single(stride)
-        self.padding = _single(padding)
-        self.weight = nn.Parameter(torch.Tensor(input_size, 1, *kernal_size))
-        if bias:
-            self.bias = nn.Parameter(torch.Tensor(input_size))
-        else:
-            self.register_parameter('bias', None)
-        self.feat_first = feat_first
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        stdv = 1. / math.sqrt(self.kernel_size * self.input_size)
-        self.weight.data.uniform_(-stdv, stdv)
-        if self.bias is not None:
-            self.bias.data.uniform_(-stdv, stdv)
-
-    def forward(self, input_):
-        return nn._functions.thnn.auto.TemporalRowConvolution.apply(input_, kernel_size, stride, padding)
-
 '''
 class LSTMCell(nn.Module):
     """A basic LSTM cell."""
@@ -226,77 +201,31 @@ class LSTM(nn.Module):
 class BatchRNN(nn.Module):
 
     def __init__(self, input_size, hidden_size, rnn_type=nn.LSTM, bidirectional=False,
-                 batch_first=True, batch_norm=True):
+                 batch_first=True, layer_norm=True):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.bidirectional = bidirectional
         self.batch_first = batch_first
 
-        self.batch_norm = SequenceWise(nn.BatchNorm1d(input_size)) if batch_norm else None
+        self.layer_norm = SequenceWise(nn.LayerNorm(input_size)) if layer_norm else None
 
         self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size,
                             bidirectional=bidirectional, batch_first=batch_first, bias=True)
-
-        self.nonlinear = nn.Hardtanh(-10, 10, inplace=True)
 
     def flatten_parameters(self):
         self.rnn.flatten_parameters()
 
     def forward(self, x, seq_lens):
-        s = x.clone()
-        if self.batch_norm is not None:
-            x = self.batch_norm(x)
+        if self.layer_norm is not None:
+            x = self.layer_norm(x)
         ps = nn.utils.rnn.pack_padded_sequence(x, seq_lens.tolist(), batch_first=self.batch_first)
         ps, _ = self.rnn(ps)
         x, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
         if self.bidirectional:
             # (NxTxH*2) -> (NxTxH) by sum
             x = x.view(x.size(0), x.size(1), 2, -1).sum(2).view(x.size(0), x.size(1), -1)
-        x = x + s
-        x = self.nonlinear(x)
         return x
-
-
-class Lookahead(nn.Module):
-    # Wang et al 2016 - Lookahead Convolution Layer for Unidirectional Recurrent Neural Networks
-    # input shape - sequence, batch, feature - TxNxH
-    # output shape - same as input
-
-    def __init__(self, n_features, context):
-        # should we handle batch_first=True?
-        super().__init__()
-        self.n_features = n_features
-        self.weight = nn.Parameter(torch.Tensor(n_features, context + 1))
-        assert context > 0
-        self.context = context
-        self.register_parameter('bias', None)
-        self.init_parameters()
-
-    def init_parameters(self):  # what's a better way initialiase this layer?
-        stdv = 1. / math.sqrt(self.weight.size(1))
-        self.weight.data.uniform_(-stdv, stdv)
-
-    def forward(self, input):
-        seq_len = input.size(0)
-        # pad the 0th dimension (T/sequence) with zeroes whose number = context
-        # Once pytorch's padding functions have settled, should move to those.
-        padding = torch.zeros(self.context, *(input.size()[1:])).type_as(input.data)
-        x = torch.cat((input, Variable(padding)), 0)
-
-        # add lookahead windows (with context+1 width) as a fourth dimension
-        # for each seq-batch-feature combination
-        x = [x[i:i + self.context + 1] for i in range(seq_len)]  # TxLxNxH - sequence, context, batch, feature
-        x = torch.stack(x)
-        x = x.permute(0, 2, 3, 1)  # TxNxHxL - sequence, batch, feature, context
-
-        x = torch.mul(x, self.weight).sum(dim=3)
-        return x
-
-    def __repr__(self):
-        return self.__class__.__name__ + '(' \
-               + 'n_features=' + str(self.n_features) \
-               + ', context=' + str(self.context) + ')'
 
 
 class DeepSpeech(nn.Module):
@@ -357,7 +286,7 @@ class DeepSpeech(nn.Module):
         # using BatchRNN
         self.rnns = nn.ModuleList([
             BatchRNN(input_size=rnn_hidden_size, hidden_size=rnn_hidden_size,
-                     rnn_type=rnn_type, bidirectional=bidirectional, batch_norm=True)
+                     rnn_type=rnn_type, bidirectional=bidirectional, layer_norm=True)
             for _ in range(rnn_num_layers)
         ])
 
@@ -382,11 +311,11 @@ class DeepSpeech(nn.Module):
         x = self.conv(x)
         x = x.view(-1, x.size(1) * x.size(2), x.size(3))  # Collapse feature dimension
         x = x.transpose(1, 2).contiguous()  # NxTxH
-        x = self.fc1(x)
-        for i in range(self._hidden_layers):
+        h = self.fc1(x)
+        x = self.rnns[0](h, seq_lens)
+        for i in range(1, self._hidden_layers):
+            x = x + h
             x = self.rnns[i](x, seq_lens)
-        if not self._bidirectional:  # no need for lookahead layer in bidirectional
-            x = self.lookahead(x)
         x = self.fc2(x)
         x = self.softmax(x)
         return x, seq_lens
