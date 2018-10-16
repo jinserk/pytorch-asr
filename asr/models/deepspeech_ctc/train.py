@@ -106,15 +106,15 @@ def batch_train(argv):
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
-        if i < 1:
+        if i < 5:
             trainer.train_epoch(dataloaders["train3"])
             trainer.validate(dataloaders["dev"])
-        elif i < (1 + 2 + 4):
+        elif i < (5 + 10):
             trainer.train_epoch(dataloaders["train5"])
             trainer.validate(dataloaders["dev"])
-        #elif i < (1 + 2 + 4 + 8):
-        #    trainer.train_epoch(dataloaders["train10"])
-        #    trainer.validate(dataloaders["dev"])
+        elif i < (5 + 10 + 20):
+            trainer.train_epoch(dataloaders["train10"])
+            trainer.validate(dataloaders["dev"])
         else:
             trainer.train_epoch(dataloaders["train15"])
             trainer.validate(dataloaders["dev"])
@@ -158,7 +158,7 @@ def train(argv):
     amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False) if args.fp16 else None
 
     # prepare trainer object
-    input_folding = 3
+    input_folding = 2
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
     trainer = NonSplitTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
