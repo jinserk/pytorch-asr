@@ -2,11 +2,11 @@
 
 import sys
 import importlib
+from pathlib import Path
 
 datasets = set([
-    "aspire",
-    "swbd",
-    "tedlium",
+    x.stem for x in Path('asr/datasets').glob("*.py")
+    if x.is_file() and x.name[0] not in ['_', '.']
 ])
 
 try:

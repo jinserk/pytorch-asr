@@ -3,6 +3,7 @@ from scipy.signal import tukey
 
 # global constants
 MODEL_SUFFIX = "pth.tar"
+NCOLS = 100
 
 # feature frames params
 SAMPLE_RATE = 8000

@@ -2,18 +2,11 @@
 
 import sys
 import importlib
+from pathlib import Path
 
 models = set([
-    "convnet",
-    "densenet",
-    "densenet_ctc",
-    "deepspeech_ctc",
-    "deepspeech_ce",
-    "resnet_ctc",
-    "resnet_ce",
-    "resnet_split",
-    "resnet_split_ce",
-    "capsule1",
+    x.name for x in Path('asr/models').iterdir()
+    if x.is_dir() and x.name[0] not in ['_', '.']
 ])
 
 try:

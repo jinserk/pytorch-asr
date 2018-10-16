@@ -199,7 +199,7 @@ class Trainer:
         ckpt = next(ckpts)
         self.train_loop_before_hook()
         # count the number of supervised batches seen in this epoch
-        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training")
+        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training", ncols=p.NCOLS)
         for i, (data) in t:
             loss_value = self.unit_train(data)
             meter_loss.add(loss_value)
@@ -245,7 +245,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             N, D = 0, 0
-            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating")
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating", ncols=p.NCOLS)
             for i, (data) in t:
                 hyps, refs = self.unit_validate(data)
                 # calculate ler
@@ -272,7 +272,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             N, D = 0, 0
-            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing")
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing", ncols=p.NCOLS)
             for i, (data) in t:
                 hyps, refs = self.unit_test(data)
                 # calculate wer
@@ -359,7 +359,7 @@ class NonSplitTrainer(Trainer):
             #torch.set_printoptions(threshold=5000000)
             #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
             #print(onehot2int(ys_hat).squeeze(), ys)
-            frame_lens = frame_lens.new_full((batch_size, ), fill_value=ys_hat.size(0))  # for CUDNN ctc_loss backend
+            #frame_lens = frame_lens.new_full((batch_size, ), fill_value=ys_hat.size(0))  # for CUDNN ctc_loss backend -> not working well
             loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             loss_value = loss.item()
             self.optimizer.zero_grad()

@@ -35,8 +35,8 @@ def batch_train(argv):
     parser.add_argument('--tensorboard', default=False, action='store_true', help="use tensorboard logging")
     parser.add_argument('--slack', default=False, action='store_true', help="use slackclient logging (need to set SLACK_API_TOKEN and SLACK_API_USER env_var")
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
-    parser.add_argument('--log-dir', default='./logs_deepspeech_ctc', type=str, help="filename for logging the outputs")
-    parser.add_argument('--model-prefix', default='deepspeech_ctc', type=str, help="model file prefix to store")
+    parser.add_argument('--log-dir', default='./logs_deepspeech_var', type=str, help="filename for logging the outputs")
+    parser.add_argument('--model-prefix', default='deepspeech_var', type=str, help="model file prefix to store")
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
@@ -50,7 +50,7 @@ def batch_train(argv):
     amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False) if args.fp16 else None
 
     # prepare trainer object
-    input_folding = 2
+    input_folding = 3
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
     trainer = NonSplitTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
@@ -106,15 +106,15 @@ def batch_train(argv):
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
-        if i < 5:
+        if i < 1:
             trainer.train_epoch(dataloaders["train3"])
             trainer.validate(dataloaders["dev"])
-        elif i < (5 + 10):
+        elif i < (1 + 2 + 4):
             trainer.train_epoch(dataloaders["train5"])
             trainer.validate(dataloaders["dev"])
-        elif i < (5 + 10 + 20):
-            trainer.train_epoch(dataloaders["train10"])
-            trainer.validate(dataloaders["dev"])
+        #elif i < (1 + 2 + 4 + 8):
+        #    trainer.train_epoch(dataloaders["train10"])
+        #    trainer.validate(dataloaders["dev"])
         else:
             trainer.train_epoch(dataloaders["train15"])
             trainer.validate(dataloaders["dev"])
@@ -143,8 +143,8 @@ def train(argv):
     parser.add_argument('--tensorboard', default=False, action='store_true', help="use tensorboard logging")
     parser.add_argument('--slack', default=False, action='store_true', help="use slackclient logging (need to set SLACK_API_TOKEN and SLACK_API_USER env_var")
     parser.add_argument('--seed', default=None, type=int, help="seed for controlling randomness in this example")
-    parser.add_argument('--log-dir', default='./logs_deepspeech_ctc', type=str, help="filename for logging the outputs")
-    parser.add_argument('--model-prefix', default='deepspeech_ctc', type=str, help="model file prefix to store")
+    parser.add_argument('--log-dir', default='./logs_deepspeech_var', type=str, help="filename for logging the outputs")
+    parser.add_argument('--model-prefix', default='deepspeech_var', type=str, help="model file prefix to store")
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
@@ -158,7 +158,7 @@ def train(argv):
     amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False) if args.fp16 else None
 
     # prepare trainer object
-    input_folding = 2
+    input_folding = 3
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
     trainer = NonSplitTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
@@ -213,7 +213,7 @@ def test(argv):
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
-    parser.add_argument('--log-dir', default='./logs_deepspeech_ctc', type=str, help="filename for logging the outputs")
+    parser.add_argument('--log-dir', default='./logs_deepspeech_var', type=str, help="filename for logging the outputs")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     args = parser.parse_args(argv)
 
@@ -224,7 +224,7 @@ def test(argv):
     # check fp16
     amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False) if args.fp16 else None
 
-    input_folding = 2
+    input_folding = 3
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
     trainer = NonSplitTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
