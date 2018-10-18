@@ -215,6 +215,7 @@ def test(argv):
     parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
     parser.add_argument('--log-dir', default='./logs_deepspeech_ctc', type=str, help="filename for logging the outputs")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
+    parser.add_argument('--validate', default=False, action='store_true', help="test LER instead of WER")
     args = parser.parse_args(argv)
 
     init_logger(log_file="test.log", **vars(args))
@@ -235,7 +236,10 @@ def test(argv):
     dataloader = NonSplitTrainDataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,
                                          shuffle=True, pin_memory=args.use_cuda)
 
-    trainer.validate(dataloader)
+    if args.validate:
+        trainer.validate(dataloader)
+    else:
+        trainer.test(dataloader)
 
 
 if __name__ == "__main__":

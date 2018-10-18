@@ -29,6 +29,7 @@ OPTIMIZER_TYPES = set([
     "sgd",
     "sgdr",
     "adam",
+    "adamwr",
     "rmsprop",
 ])
 
@@ -97,7 +98,7 @@ class Trainer:
 
     def __init__(self, model, amp_handle=None, init_lr=1e-2, max_norm=100, use_cuda=False,
                  fp16=False, log_dir='logs', model_prefix='model',
-                 checkpoint=False, continue_from=None, opt_type="sgdr",
+                 checkpoint=False, continue_from=None, opt_type=None,
                  *args, **kwargs):
         if fp16:
             if not use_cuda:
@@ -122,24 +123,33 @@ class Trainer:
             self.model.cuda()
 
         # setup loss
-        self.loss = nn.CTCLoss(blank=0, reduction='elementwise_mean')
+        self.loss = nn.CTCLoss(blank=0, reduction='none')
 
         # setup optimizer
-        assert opt_type in OPTIMIZER_TYPES
-        parameters = self.model.parameters()
-        if opt_type == "sgdr":
-            logger.debug("using SGDR")
-            self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9, weight_decay=5e-4)
-            #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
-            self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
-        elif opt_type == "adam":
-            logger.debug("using Adam")
-            self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=5e-4)
+        if opt_type is None:
+            # for test only
+            self.optimizer = None
             self.lr_scheduler = None
-        elif opt_type == "rmsprop":
-            logger.debug("using RMSprop")
-            self.optimizer = torch.optim.RMSprop(parameters, lr=self.init_lr, alpha=0.95, eps=1e-8, weight_decay=5e-4, centered=True)
-            self.lr_scheduler = None
+        else:
+            assert opt_type in OPTIMIZER_TYPES
+            parameters = self.model.parameters()
+            if opt_type == "sgdr":
+                logger.debug("using SGDR")
+                self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9, weight_decay=5e-4)
+                #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
+                self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
+            elif opt_type == "adamwr":
+                logger.debug("using AdamWR")
+                self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=5e-4)
+                self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
+            elif opt_type == "adam":
+                logger.debug("using Adam")
+                self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=5e-4)
+                self.lr_scheduler = None
+            elif opt_type == "rmsprop":
+                logger.debug("using RMSprop")
+                self.optimizer = torch.optim.RMSprop(parameters, lr=self.init_lr, alpha=0.95, eps=1e-8, weight_decay=5e-4, centered=True)
+                self.lr_scheduler = None
 
         # setup decoder for test
         self.decoder = LatGenCTCDecoder()
@@ -364,7 +374,14 @@ class NonSplitTrainer(Trainer):
             #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
             #print(onehot2int(ys_hat).squeeze(), ys)
             #frame_lens = frame_lens.new_full((batch_size, ), fill_value=ys_hat.size(0))  # for CUDNN ctc_loss backend -> not working well
-            loss = self.loss(ys_hat, ys, frame_lens, label_lens)
+            d = frame_lens.float()
+            if self.use_cuda:
+                d = d.cuda()
+            loss = (self.loss(ys_hat, ys, frame_lens, label_lens) / d).mean()
+            #loss = self.loss(ys_hat, ys, frame_lens, label_lens).div_(d)
+            if torch.isnan(loss) or loss.item() == float("inf") or loss.item() == -float("inf"):
+                logger.warning("received an inf loss, setting loss value to 0")
+                loss.data = torch.tensor(0.).cuda() if self.use_cuda else torch.tensor(0.)
             loss_value = loss.item()
             self.optimizer.zero_grad()
             if self.fp16:
@@ -375,7 +392,8 @@ class NonSplitTrainer(Trainer):
             else:
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
-            self.average_gradients()
+            if is_distributed():
+                self.average_gradients()
             self.optimizer.step()
             if self.use_cuda:
                 torch.cuda.synchronize()
@@ -385,7 +403,7 @@ class NonSplitTrainer(Trainer):
             print(e)
             print(filenames, frame_lens, label_lens)
             raise
-            return 0
+            #return 0
 
     def unit_validate(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
@@ -395,7 +413,6 @@ class NonSplitTrainer(Trainer):
         if self.fp16:
             ys_hat = ys_hat.float()
         # convert likes to ctc labels
-        #frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
         hyps = [onehot2int(yh[:s]).squeeze() for yh, s in zip(ys_hat, frame_lens)]
         hyps = [remove_duplicates(h, blank=0) for h in hyps]
         # slice the targets
@@ -411,7 +428,6 @@ class NonSplitTrainer(Trainer):
             ys_hat, frame_lens = self.model(xs, frame_lens)
             if self.fp16:
                 ys_hat = ys_hat.float()
-            #frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
         else:
             ys_hat = self.target_to_loglikes(ys, label_lens)
         # latgen decoding
@@ -461,7 +477,8 @@ class SplitTrainer(Trainer):
             else:
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
-            self.average_gradients()
+            if is_distributed():
+                self.average_gradients()
             self.optimizer.step()
             del loss
         except Exception as e:
