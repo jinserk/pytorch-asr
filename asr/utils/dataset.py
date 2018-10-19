@@ -225,7 +225,7 @@ def _load_manifest(manifest_file):
     entries = [tuple(x.strip().split(',')) for x in manifest]
     entry_frames = [_smp2frm(int(e[2])) for e in entries]
     logger.debug(f"{len(entries)} entries, {sum(entry_frames)} frames are loaded.")
-    return entries, entry_frames
+    return entries
 
 
 def _text_to_labels(labeler, text, sil_prop=(0.2, 0.8)):
@@ -256,14 +256,14 @@ class TrainDataset(Dataset):
         self.labeler = labeler
         self.manifest_file = Path(manifest_file).resolve()
         super().__init__(*args, **kwargs)
-        self.entries, self.entry_frames = _load_manifest(self.manifest_file)
+        self.entries = _load_manifest(self.manifest_file)
 
     def __getitem__(self, index):
         uttid, wav_file, samples, txt_file = self.entries[index]
         # read and transform wav file
         if self.transformer is not None:
             tensors = self.transformer(wav_file)
-        # read txt file
+        # dynamic target generation for sil
         with open(txt_file, 'r') as f:
             text = f.read()
         targets = _text_to_labels(self.labeler, text)

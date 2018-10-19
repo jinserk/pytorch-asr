@@ -123,7 +123,7 @@ class Trainer:
             self.model.cuda()
 
         # setup loss
-        self.loss = nn.CTCLoss(blank=0, reduction='none')
+        self.loss = nn.CTCLoss(blank=0, reduction='sum')
 
         # setup optimizer
         if opt_type is None:
@@ -216,7 +216,8 @@ class Trainer:
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training", ncols=p.NCOLS)
         for i, (data) in t:
             loss_value = self.unit_train(data)
-            meter_loss.add(loss_value)
+            if loss_value is not None:
+                meter_loss.add(loss_value)
             t.set_description(f"training (loss: {meter_loss.value()[0]:.3f})")
             t.refresh()
             #self.meter_accuracy.add(ys_int, ys)
@@ -366,19 +367,20 @@ class NonSplitTrainer(Trainer):
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
             ys_hat, frame_lens = self.model(xs, frame_lens)
+            if frame_lens.lt(2*label_lens).nonzero().numel():
+                logger.debug("the batch includes a data with frame_lens < label_lens, so skipped")
+                return None
             if self.fp16:
                 ys_hat = ys_hat.float()
             ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
-            #frame_lens = torch.ceil(frame_lens.float() / FRAME_REDUCE_FACTOR).int()
             #torch.set_printoptions(threshold=5000000)
             #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
             #print(onehot2int(ys_hat).squeeze(), ys)
-            #frame_lens = frame_lens.new_full((batch_size, ), fill_value=ys_hat.size(0))  # for CUDNN ctc_loss backend -> not working well
-            d = frame_lens.float()
+            d = frame_lens.sum().float()
             if self.use_cuda:
                 d = d.cuda()
-            loss = (self.loss(ys_hat, ys, frame_lens, label_lens) / d).mean()
-            #loss = self.loss(ys_hat, ys, frame_lens, label_lens).div_(d)
+            #loss = (self.loss(ys_hat, ys, tmp_frame_lens, label_lens) / d).mean()
+            loss = self.loss(ys_hat, ys, frame_lens, label_lens).div_(d)
             if torch.isnan(loss) or loss.item() == float("inf") or loss.item() == -float("inf"):
                 logger.warning("received an inf loss, setting loss value to 0")
                 loss.data = torch.tensor(0.).cuda() if self.use_cuda else torch.tensor(0.)

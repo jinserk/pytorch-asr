@@ -139,9 +139,6 @@ class DeepSpeech(nn.Module):
             nn.Linear(H1, 256, bias=True),
             nn.Dropout(0.5, inplace=True),
             nn.Linear(256, num_classes, bias=True),
-            #nn.LayerNorm(num_classes, elementwise_affine=False),
-            #nn.Hardtanh(-50, 50, inplace=True),
-            #nn.Tanh(),
         ))
         self.softmax = nn.LogSoftmax(dim=-1)
 
@@ -152,9 +149,9 @@ class DeepSpeech(nn.Module):
         h = self.fc1(h)
         g = self.rnns[0](h, seq_lens)
         for i in range(1, self._hidden_layers):
-            #g = g + h
+            g = g + h
             g = self.rnns[i](g, seq_lens)
-        #g = g + h
+        g = g + h
         y = self.fc2(g)
         y = self.softmax(y)
         return y, seq_lens

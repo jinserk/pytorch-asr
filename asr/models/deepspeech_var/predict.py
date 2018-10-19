@@ -27,7 +27,7 @@ def predict(argv):
         logger.error("model name is missing: add '--continue-from <model-name>' in options")
         sys.exit(1)
 
-    input_folding = 3
+    input_folding = 2
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
     predictor = NonSplitPredictor(model, **vars(args))
 
