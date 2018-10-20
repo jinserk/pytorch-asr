@@ -368,7 +368,7 @@ class NonSplitTrainer(Trainer):
                 xs = xs.cuda(non_blocking=True)
             ys_hat, frame_lens = self.model(xs, frame_lens)
             if frame_lens.lt(2*label_lens).nonzero().numel():
-                logger.debug("the batch includes a data with frame_lens < label_lens, so skipped")
+                logger.debug("the batch includes a data with frame_lens < 2*label_lens, so skipped")
                 return None
             if self.fp16:
                 ys_hat = ys_hat.float()
