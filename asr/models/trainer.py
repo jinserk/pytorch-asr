@@ -16,6 +16,7 @@ from apex import amp
 import torchvision.utils as tvu
 import torchnet as tnt
 import Levenshtein as Lev
+import warpctc_pytorch as wp
 
 from asr.utils.logger import logger
 from asr.utils.misc import onehot2int, int2onehot, remove_duplicates, get_model_file_path
@@ -123,7 +124,8 @@ class Trainer:
             self.model.cuda()
 
         # setup loss
-        self.loss = nn.CTCLoss(blank=0, reduction='sum')
+        #self.loss = nn.CTCLoss(blank=0, reduction='sum')
+        self.loss = wp.CTCLoss(blank=0, size_average=True, length_average=True)
 
         # setup optimizer
         if opt_type is None:
@@ -376,11 +378,12 @@ class NonSplitTrainer(Trainer):
             #torch.set_printoptions(threshold=5000000)
             #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
             #print(onehot2int(ys_hat).squeeze(), ys)
-            d = frame_lens.sum().float()
-            if self.use_cuda:
-                d = d.cuda()
+            #d = frame_lens.sum().float()
+            #if self.use_cuda:
+            #    d = d.cuda()
             #loss = (self.loss(ys_hat, ys, tmp_frame_lens, label_lens) / d).mean()
-            loss = self.loss(ys_hat, ys, frame_lens, label_lens).div_(d)
+            #loss = self.loss(ys_hat, ys, frame_lens, label_lens).div_(d)
+            loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             if torch.isnan(loss) or loss.item() == float("inf") or loss.item() == -float("inf"):
                 logger.warning("received an inf loss, setting loss value to 0")
                 loss.data = torch.tensor(0.).cuda() if self.use_cuda else torch.tensor(0.)
