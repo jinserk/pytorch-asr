@@ -22,7 +22,7 @@ if [ ! -e $lang_dir ]; then
   mkdir -p $model_dir; cd $model_dir
   if [ ! -e ./0001_aspire_chain_model.tar.gz ]; then
     echo "downloading pretrained ASpIRE model"
-    wget --no-check-certificate --quiet http://dl.kaldi-asr.org/models/0001_aspire_chain_model.tar.gz
+    wget --no-check-certificate --quiet --show-progress --progress=bar:force:noscroll http://dl.kaldi-asr.org/models/0001_aspire_chain_model.tar.gz
     tar zxf 0001_aspire_chain_model.tar.gz
   else
     echo "model file already downloaded, but not unzipped"

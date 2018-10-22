@@ -1,4 +1,6 @@
---find-links https://download.pytorch.org/whl/nightly/cu92/torch_nightly.html
+numpy
+scipy
+torch_nightly --find-links https://download.pytorch.org/whl/nightly/cpu/torch_nightly.html
 git+https://github.com/pytorch/audio
 git+https://github.com/pytorch/vision
 git+https://github.com/pytorch/text
@@ -7,6 +9,7 @@ git+https://github.com/NVIDIA/apex
 pyro-ppl
 cffi
 pyyaml
+wheel
 scikit-learn
 matplotlib
 colorlover

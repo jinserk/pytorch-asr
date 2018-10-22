@@ -7,8 +7,6 @@ import torch
 from torch.utils.data.dataset import ConcatDataset
 from torch.utils.data.distributed import DistributedSampler
 
-from apex import amp
-
 from asr.utils.dataset import NonSplitTrainDataset, AudioSubset
 from asr.utils.dataloader import NonSplitTrainDataLoader
 from asr.utils.logger import logger, init_logger
@@ -47,7 +45,13 @@ def batch_train(argv):
     set_seed(args.seed)
 
     # check fp16
-    amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False) if args.fp16 else None
+    if not args.use_cuda:
+        args.fp16 = False
+    if args.fp16:
+        from apex import amp
+        amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False)
+    else:
+        amp_handle = None
 
     # prepare trainer object
     input_folding = 2
@@ -155,7 +159,13 @@ def train(argv):
     set_seed(args.seed)
 
     # check fp16
-    amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False) if args.fp16 else None
+    if not args.use_cuda:
+        args.fp16 = False
+    if args.fp16:
+        from apex import amp
+        amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False)
+    else:
+        amp_handle = None
 
     # prepare trainer object
     input_folding = 2
@@ -223,7 +233,13 @@ def test(argv):
     assert args.continue_from is not None
 
     # check fp16
-    amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False) if args.fp16 else None
+    if not args.use_cuda:
+        args.fp16 = False
+    if args.fp16:
+        from apex import amp
+        amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False)
+    else:
+        amp_handle = None
 
     input_folding = 2
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
