@@ -10,9 +10,6 @@ import torch
 import torch.nn as nn
 import torch.distributed as dist
 
-import apex.parallel
-from apex import amp
-
 import torchvision.utils as tvu
 import torchnet as tnt
 import Levenshtein as Lev
@@ -102,6 +99,8 @@ class Trainer:
                  checkpoint=False, continue_from=None, opt_type=None,
                  *args, **kwargs):
         if fp16:
+            import apex.parallel
+            from apex import amp
             if not use_cuda:
                 raise RuntimeError
         self.amp_handle = amp_handle

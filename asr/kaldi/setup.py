@@ -11,34 +11,35 @@ from _path import KALDI_ROOT
 
 # making graph
 print("## download & prepare model...")
-sp.run([f"scripts/mkgraph.sh {KALDI_ROOT}"], shell=True, check=True)
+#sp.run([f"scripts/mkgraph.sh {KALDI_ROOT}"], shell=True, check=True)
 
 # building latget_lib
 sources = ['src/latgen_lib.cc']
 
 include_dirs = [
     KALDI_ROOT + "/src",
-    KALDI_ROOT + "/tools/openfst/src/include",
+    KALDI_ROOT + "/tools/openfst/include",
 ]
 extra_compile_args = [
-    "-std=c99",
     "-std=c++11",
     "-w",
     "-fPIC",
 ]
 library_dirs = list()
+runtime_library_dirs = list()
 extra_link_args = list()
 
-kaldi_lib_root = KALDI_ROOT + "/src"
-for lib in Path(kaldi_lib_root).rglob("libkaldi-*.so"):
-    library_dirs.append(str(lib.parent))
-    extra_link_args.append(f"-l{str(lib.name)[3:-3]}")
-    extra_link_args.append(f"-Wl,-rpath={str(lib.parent)}")
+kaldi_lib_root = KALDI_ROOT + "/src/lib"
+library_dirs.append(kaldi_lib_root)
+runtime_library_dirs.append(kaldi_lib_root)
+extra_link_args += [f"-l{lib.name[3:-3]}" for lib in Path(kaldi_lib_root).rglob("libkaldi-*.so")]
+#extra_link_args.append(f"-Wl,-rpath={kaldi_lib_root}")
 
 openfst_lib_root = KALDI_ROOT + "/tools/openfst/lib"
 library_dirs.append(openfst_lib_root)
+runtime_library_dirs.append(openfst_lib_root)
 extra_link_args.append("-lfst")
-extra_link_args.append(f"-Wl,-rpath={openfst_lib_root}")
+#extra_link_args.append(f"-Wl,-rpath={openfst_lib_root}")
 
 print("\n## building latgen module...")
 setup(
@@ -49,6 +50,7 @@ setup(
             sources=sources,
             include_dirs=include_dirs,
             library_dirs=library_dirs,
+            runtime_library_dirs=runtime_library_dirs,
             extra_compile_args=extra_compile_args,
             extra_link_args=extra_link_args
         )
