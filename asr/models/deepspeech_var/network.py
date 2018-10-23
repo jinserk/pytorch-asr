@@ -140,7 +140,8 @@ class DeepSpeech(nn.Module):
             nn.Dropout(0.5, inplace=True),
             nn.Linear(256, num_classes, bias=True),
         ))
-        self.softmax = nn.LogSoftmax(dim=-1)
+        #self.softmax = nn.LogSoftmax(dim=-1)
+        self.softmax = InferenceBatchSoftmax()
 
     def forward(self, x, seq_lens):
         h = self.conv(x)

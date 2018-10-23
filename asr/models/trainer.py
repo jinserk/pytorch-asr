@@ -124,7 +124,7 @@ class Trainer:
 
         # setup loss
         #self.loss = nn.CTCLoss(blank=0, reduction='sum')
-        self.loss = wp.CTCLoss(blank=0, size_average=True, length_average=True)
+        self.loss = wp.CTCLoss(blank=0, length_average=True)
 
         # setup optimizer
         if opt_type is None:
@@ -138,11 +138,11 @@ class Trainer:
                 logger.debug("using SGDR")
                 self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9, weight_decay=5e-4)
                 #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
-                self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
+                self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=2, T_mult=2)
             elif opt_type == "adamwr":
                 logger.debug("using AdamWR")
                 self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=5e-4)
-                self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
+                self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=2, T_mult=2)
             elif opt_type == "adam":
                 logger.debug("using Adam")
                 self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=5e-4)
@@ -225,6 +225,8 @@ class Trainer:
             #self.meter_confusion.add(ys_int, ys)
 
             if i > ckpt:
+                #if self.lr_scheduler is not None:
+                #    self.lr_scheduler.step()
                 title = "train"
                 x = self.epoch + i / len(data_loader)
                 if logger.visdom is not None:
@@ -380,12 +382,13 @@ class NonSplitTrainer(Trainer):
             #d = frame_lens.sum().float()
             #if self.use_cuda:
             #    d = d.cuda()
-            #loss = (self.loss(ys_hat, ys, tmp_frame_lens, label_lens) / d).mean()
+            #loss = (self.loss(ys_hat, ys, frame_lens, label_lens) / d).mean()
             #loss = self.loss(ys_hat, ys, frame_lens, label_lens).div_(d)
             loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             if torch.isnan(loss) or loss.item() == float("inf") or loss.item() == -float("inf"):
-                logger.warning("received an inf loss, setting loss value to 0")
-                loss.data = torch.tensor(0.).cuda() if self.use_cuda else torch.tensor(0.)
+                logger.warning("received an nan/inf loss: probably frame_lens < label_lens or the learning rate is too high")
+                #loss.mul_(0.)
+                return None
             loss_value = loss.item()
             self.optimizer.zero_grad()
             if self.fp16:
@@ -394,6 +397,7 @@ class NonSplitTrainer(Trainer):
                 with self.optimizer.scale_loss(loss) as scaled_loss:
                     scaled_loss.backward()
             else:
+                #torch.exp(loss).backward()
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
             if is_distributed():

@@ -142,13 +142,13 @@ class InferenceBatchSoftmax(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.softmax = nn.LogSoftmax(dim=-1)
+        self.logsoftmax = nn.LogSoftmax(dim=-1)
 
     def forward(self, x):
         if self.training:
             return x
         else:
-            return self.softmax(x)
+            return self.logsoftmax(x)
 
 
 if __name__ == "__main__":
