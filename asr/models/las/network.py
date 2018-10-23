@@ -40,38 +40,37 @@ class SequenceWise(nn.Module):
 class BatchRNN(nn.Module):
 
     def __init__(self, input_size, hidden_size, rnn_type=nn.LSTM, bidirectional=False,
-                 bias=True, batch_first=True, batch_norm=True):
+                 batch_first=True, layer_norm=True):
         super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.bidirectional = bidirectional
         self.batch_first = batch_first
 
-        self.batch_norm = SequenceWise(nn.BatchNorm1d(input_size)) if batch_norm else None
+        self.layer_norm = SequenceWise(nn.LayerNorm(input_size, elementwise_affine=False)) if layer_norm else None
 
         self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size,
-                            bidirectional=bidirectional, batch_first=batch_first, bias=bias)
+                            bidirectional=bidirectional, batch_first=batch_first, bias=True)
 
     def flatten_parameters(self):
         self.rnn.flatten_parameters()
 
-    def forward(self, x, seq_lens):
-        if self.batch_norm is not None:
-            x = self.batch_norm(x)
-        if torch.is_tensor(seq_lens):
-            seq_lens = seq_lens.tolist()
-        ps = nn.utils.rnn.pack_padded_sequence(x, seq_lens, batch_first=self.batch_first)
-        ps, _ = self.rnn(ps)
-        x, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
+    def forward(self, x, seq_lens, hidden=None):
+        if self.layer_norm is not None:
+            x = self.layer_norm(x)
+        ps = nn.utils.rnn.pack_padded_sequence(x, seq_lens.tolist(), batch_first=self.batch_first)
+        ps, hidden = self.rnn(ps, hidden)
+        y, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
         if self.bidirectional:
-            x = x.view(x.size(0), x.size(1), 2, -1).sum(2).view(x.size(0), x.size(1), -1)  # (NxTxH*2) -> (NxTxH) by sum
-        return x
+            # (NxTxH*2) -> (NxTxH) by sum
+            y = y.view(y.size(0), y.size(1), 2, -1).sum(2).view(y.size(0), y.size(1), -1)
+        return y, hidden
 
 
 class Listener(nn.Module):
 
-    def __init__(self, listen_vec_size, input_folding=3, rnn_type=nn.LSTM,
-                 rnn_hidden_size=512, rnn_num_layers=[4], bidirectional=True, skip_fc=False):
+    def __init__(self, listen_vec_size, input_folding=2, rnn_type=nn.LSTM,
+                 rnn_hidden_size=512, rnn_num_layers=4, bidirectional=True, skip_fc=False):
         super().__init__()
 
         self.rnn_num_layers = rnn_num_layers
@@ -87,60 +86,69 @@ class Listener(nn.Module):
         W3 = (W2 - 11 + 2*5) // 2 + 1   # 17
         C3 = C2 * 2
 
-        H0 = [C3 * W3, rnn_hidden_size, rnn_hidden_size]
+        H0 = C3 * W3
+        H1 = rnn_hidden_size
 
         self.conv = nn.Sequential(
-            nn.Conv2d(C0, C1, kernel_size=(41, 11), stride=(2, 1), padding=(20, 5)),
+            nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(1, 1), padding=(20, 3)),
             nn.BatchNorm2d(C1),
-            #nn.ReLU(inplace=True),
-            Swish(inplace=True),
-            nn.Conv2d(C1, C2, kernel_size=(21, 11), stride=(2, 1), padding=(10, 5)),
+            #nn.Hardtanh(-10, 10, inplace=True),
+            nn.LeakyReLU(inplace=True),
+            #Swish(inplace=True),
+            nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
+            nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(1, 1), padding=(10, 3)),
             nn.BatchNorm2d(C2),
-            #nn.ReLU(inplace=True),
-            Swish(inplace=True),
-            nn.Conv2d(C2, C3, kernel_size=(11, 11), stride=(2, 1), padding=(5, 5)),
+            #nn.Hardtanh(-10, 10, inplace=True),
+            nn.LeakyReLU(inplace=True),
+            #Swish(inplace=True),
+            nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
+            nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(1, 1), padding=(5, 3)),
             nn.BatchNorm2d(C3),
-            #nn.ReLU(inplace=True),
-            Swish(inplace=True),
+            #nn.Hardtanh(-10, 10, inplace=True),
+            nn.LeakyReLU(inplace=True),
+            #Swish(inplace=True),
+            nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
         )
 
+        self.fc1 = SequenceWise(nn.Sequential(
+            nn.Linear(H0, H1, bias=True),
+            nn.Dropout(0.5, inplace=True),
+            #nn.Hardtanh(-10, 10, inplace=True),
+            nn.LeakyReLU(inplace=True),
+            #Swish(inplace=True),
+        ))
+
         # using BatchRNN
-        self.rnns = nn.ModuleList()
-        for g in range(len(rnn_num_layers)):
-            for l in range(rnn_num_layers[g]):
-                self.rnns.append(
-                    BatchRNN(input_size=(H0[g] if l == 0 else rnn_hidden_size),
-                             hidden_size=rnn_hidden_size, rnn_type=rnn_type,
-                             bidirectional=bidirectional, batch_norm=True)
-                )
+        self.rnns = nn.ModuleList([
+            BatchRNN(input_size=H1 if l == 0 else rnn_hidden_size, hidden_size=rnn_hidden_size,
+                     rnn_type=rnn_type, bidirectional=bidirectional, layer_norm=True)
+            for l in range(rnn_num_layers)
+        ])
 
         if not skip_fc:
             self.fc = SequenceWise(nn.Sequential(
-                nn.BatchNorm1d(H1),
-                nn.Linear(H1, listen_vec_size, bias=False)
+                nn.LayerNorm(H1, elementwise_affine=False),
+                nn.Linear(H1, listen_vec_size, bias=True),
+                nn.Dropout(0.5, inplace=True),
             ))
         else:
             assert listen_vec_size == rnn_hidden_size
 
     def forward(self, x, seq_lens):
-        x = self.conv(x)
-
-        x = x.view(-1, x.size(1) * x.size(2), x.size(3))  # Collapse feature dimension
-        x = x.transpose(1, 2).contiguous()  # NxTxH
-        for i in range(self.rnn_num_layers[0]):
-            x = self.rnns[i](x, seq_lens)
-        for g in range(1, len(self.rnn_num_layers)):
-            x = x[:, :((x.size(1) // 2) * 2), :].view(-1, x.size(1) // 2, 2, x.size(2))
-            x = x.contiguous().view(-1, x.size(1) // 2, 2 * x.size(2))
-            seq_lens.div_(2)
-            for i in range(self.rnn_num_layers[g]):
-                j = np.cumsum(self.rnn_num_layers)[g-1] + i
-                x = self.rnns[j](x, seq_lens)
-
-        if not self.skip_fc:
-            x = self.fc(x)
-
-        return x, seq_lens
+        h = self.conv(x)
+        h = h.view(-1, h.size(1) * h.size(2), h.size(3))  # Collapse feature dimension
+        h = h.transpose(1, 2).contiguous()  # NxTxH
+        h = self.fc1(h)
+        g, _ = self.rnns[0](h, seq_lens)
+        for i in range(1, self.rnn_num_layers):
+            g = g + h
+            g, _ = self.rnns[i](g, seq_lens)
+        if self.skip_fc:
+            return g, seq_lens
+        else:
+            g = g + h
+            y = self.fc(g)
+            return y, seq_lens
 
 
 class Attention(nn.Module):
@@ -198,64 +206,9 @@ class Attention(nn.Module):
             return a.unsqueeze(dim=0), c
 
 
-class BatchRNNCell(nn.Module):
-
-    def __init__(self, input_size, hidden_size, rnn_type=nn.LSTMCell, bias=True, batch_norm=True):
-        super().__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-
-        self.batch_norm = SequenceWise(nn.BatchNorm1d(input_size)) if batch_norm else None
-
-        self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size, bias=bias)
-
-    def flatten_parameters(self):
-        self.rnn.flatten_parameters()
-
-    def forward(self, x, hidden):
-        if self.batch_norm is not None:
-            x = self.batch_norm(x)
-        x, hidden = self.rnn(x, hidden)
-        return x
-
-
-class SpellerRNNCell(nn.Module):
-
-    def __init__(self, input_size, hidden_size, num_layers=1, bias=True):
-        super().__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-
-        self.rnns = nn.ModuleList([
-            BatchRNNCell(input_size=(input_size if l == 0 else hidden_size),
-                         hidden_size=hidden_size, bias=bias)
-            for l in range(num_layers)
-        ])
-
-    def forward(self, x, hidden=None):
-        # x: Nx1xHx, hidden: (LxNxHr, LxNxHr)
-        if hidden is None:
-            hx = x.new_zeros(self.num_layers, x.size(0), self.hidden_size, requires_grad=False)
-            cx = x.new_zeros(self.num_layers, x.size(0), self.hidden_size, requires_grad=False)
-        else:
-            hx, cx = hidden
-
-        ht = [None, ] * self.num_layers
-        ct = [None, ] * self.num_layers
-
-        x = x.squeeze(dim=1)
-        h, c = hx, cx
-        for l, rnn in enumerate(self.rnns):
-            ht[l], ct[l] = rnn(x, (h[l], c[l]))
-            x = ht[l]
-
-        return ht[-1].unsqueeze(dim=1), (torch.stack(ht), torch.stack(ct))
-
-
 class Speller(nn.Module):
 
-    def __init__(self, listen_vec_size, label_vec_size,
+    def __init__(self, listen_vec_size, label_vec_size, rnn_type=nn.LSTM,
                  rnn_hidden_size=512, rnn_num_layers=1, max_seq_len=100,
                  apply_attend_proj=False, num_attend_heads=1):
         super().__init__()
@@ -265,12 +218,12 @@ class Speller(nn.Module):
 
         Hs, Hc, Hy = rnn_hidden_size, listen_vec_size, label_vec_size
 
-        self.rnns = SpellerRNNCell(input_size=(Hy + Hc), hidden_size=Hs, num_layers=rnn_num_layers)
-        #self.rnns = nn.ModuleList([
-        #     BatchRNN(input_size=((Hy + Hc) if l == 0 else Hs), hidden_size=Hs, rnn_type=nn.LSTM,
-        #              bidirectional=False, batch_norm=True)
-        #     for l in range(rnn_num_layers)
-        #])
+        self.rnn_num_layers = rnn_num_layers
+        self.rnns = nn.ModuleList([
+            BatchRNN(input_size=((Hy + Hc) if l == 0 else Hs), hidden_size=Hs,
+                     rnn_type=rnn_type, bidirectional=False, layer_norm=True)
+            for l in range(rnn_num_layers)
+        ])
 
         self.attention = Attention(state_vec_size=Hs, listen_vec_size=Hc,
                                    apply_proj=apply_attend_proj, num_heads=num_attend_heads)
@@ -286,18 +239,16 @@ class Speller(nn.Module):
         sos = int2onehot(h.new_full((batch_size, 1), self.label_vec_size - 2), num_classes=self.label_vec_size).float()
         x = torch.cat([sos, h.narrow(1, 0, 1)], dim=-1)
 
-        hidden = None
+        hidden = [ None ] * self.rnn_num_layers
         y_hats = list()
         attentions = list()
-
         max_seq_len = self.max_seq_len if not teacher_force else y.size(1)
+        cell_seq_len = torch.ones((batch_size, ))
         for i in range(max_seq_len):
-            #s = x
-            #for rnn in self.rnns:
-            #    s = rnn(s, [1] * batch_size)
-            s, hidden = self.rnns(x, hidden)
-            a, c = self.attention(s, h)
-            y_hat = self.chardist(torch.cat([s, c], dim=-1))
+            for l, rnn in enumerate(self.rnns):
+                x, hidden[l] = rnn(x, cell_seq_len, hidden[l])
+            a, c = self.attention(x, h)
+            y_hat = self.chardist(torch.cat([x, c], dim=-1))
 
             y_hats.append(y_hat)
             attentions.append(a)
@@ -333,8 +284,8 @@ class ListenAttendSpell(nn.Module):
         self.tf_rate_step = 0
         self.tf_rate = tf_rate_range[0]
 
-        self.listen = Listener(listen_vec_size=listen_vec_size, input_folding=3, rnn_type=nn.LSTM,
-                               rnn_hidden_size=listen_vec_size, rnn_num_layers=[4], bidirectional=True,
+        self.listen = Listener(listen_vec_size=listen_vec_size, input_folding=2, rnn_type=nn.LSTM,
+                               rnn_hidden_size=listen_vec_size, rnn_num_layers=4, bidirectional=True,
                                skip_fc=True)
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
@@ -350,7 +301,7 @@ class ListenAttendSpell(nn.Module):
 
     def forward(self, x, x_seq_lens, y=None, y_seq_lens=None):
         # listener
-        h, _ = self.listen(x, x_seq_lens)
+        h, x_seq_lens = self.listen(x, x_seq_lens)
         # speller
         if self.training:
             # change y to one-hot tensors

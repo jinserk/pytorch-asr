@@ -123,7 +123,7 @@ class Trainer:
             self.model.cuda()
 
         # setup loss
-        self.loss = nn.CTCLoss(blank=0, reduction='sum')
+        self.loss = nn.CTCLoss(blank=0, reduction='none')
         #self.loss = wp.CTCLoss(blank=0, length_average=True)
 
         # setup optimizer
@@ -379,11 +379,12 @@ class NonSplitTrainer(Trainer):
             #torch.set_printoptions(threshold=5000000)
             #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
             #print(onehot2int(ys_hat).squeeze(), ys)
-            d = frame_lens.sum().float()
+            d = frame_lens.float()
+            #d = frame_lens.sum().float()
             if self.use_cuda:
                 d = d.cuda()
-            #loss = (self.loss(ys_hat, ys, frame_lens, label_lens) / d).mean()
-            loss = self.loss(ys_hat, ys, frame_lens, label_lens).div_(d)
+            loss = (self.loss(ys_hat, ys, frame_lens, label_lens) / d).mean()
+            #loss = self.loss(ys_hat, ys, frame_lens, label_lens).div_(d)
             #loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             if torch.isnan(loss) or loss.item() == float("inf") or loss.item() == -float("inf"):
                 logger.warning("received an nan/inf loss: probably frame_lens < label_lens or the learning rate is too high")
