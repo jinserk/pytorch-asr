@@ -47,6 +47,12 @@ libraries.append("fst")
 print("\n## building latgen module...")
 setup(
     name='torch_asr',
+    version="0.0.1",
+    description="providing Kaldi decoder to pytorch",
+    url="https://github.com/jinserk/pytorch-asr",
+    author="Jinserk Baik",
+    author_email="jinserk.baik@gmail.com",
+    license="GPLv3",
     ext_modules=[
         CppExtension(
             name='torch_asr._latgen_lib',

@@ -7,8 +7,6 @@ from torch.autograd import Function
 from asr.utils.misc import get_num_lines
 import torch_asr._latgen_lib as latgen_lib
 
-from .._path import KALDI_ROOT
-
 
 GRAPH_PATH = Path(__file__).parents[1].joinpath("graph")
 if not GRAPH_PATH.exists():
