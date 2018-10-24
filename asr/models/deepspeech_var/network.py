@@ -152,7 +152,6 @@ class DeepSpeech(nn.Module):
         for i in range(1, self._hidden_layers):
             g = g + h
             g = self.rnns[i](g, seq_lens)
-        g = g + h
         y = self.fc2(g)
         y = self.softmax(y)
         return y, seq_lens

@@ -123,8 +123,8 @@ class Trainer:
             self.model.cuda()
 
         # setup loss
-        self.loss = nn.CTCLoss(blank=0, reduction='none')
-        #self.loss = wp.CTCLoss(blank=0, length_average=True)
+        #self.loss = nn.CTCLoss(blank=0, reduction='none')
+        self.loss = wp.CTCLoss(blank=0, length_average=True)
 
         # setup optimizer
         if opt_type is None:

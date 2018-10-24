@@ -243,10 +243,10 @@ class Speller(nn.Module):
         y_hats = list()
         attentions = list()
         max_seq_len = self.max_seq_len if not teacher_force else y.size(1)
-        cell_seq_len = torch.ones((batch_size, ))
+        unit_len = torch.ones((batch_size, ))
         for i in range(max_seq_len):
             for l, rnn in enumerate(self.rnns):
-                x, hidden[l] = rnn(x, cell_seq_len, hidden[l])
+                x, hidden[l] = rnn(x, unit_len, hidden[l])
             a, c = self.attention(x, h)
             y_hat = self.chardist(torch.cat([x, c], dim=-1))
 
