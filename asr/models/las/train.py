@@ -33,27 +33,34 @@ class LASTrainer(NonSplitTrainer):
             if self.use_cuda:
                 xs, ys = xs.cuda(non_blocking=True), ys.cuda(non_blocking=True)
             ys_hat, ys_hat_lens, ys = self.model(xs, frame_lens, ys, label_lens)
+            if ys_hat is None:
+                logger.debug("the batch includes a data with label_lens > max_seq_lens, so skipped")
+                return None
             if self.fp16:
                 ys_hat = ys_hat.float()
             loss = self.loss(ys_hat.transpose(1, 2), ys.long())
             loss_value = loss.item()
             self.optimizer.zero_grad()
             if self.fp16:
-                self.optimizer.backward(loss)
-                self.optimizer.clip_master_grads(self.max_norm)
+                #self.optimizer.backward(loss)
+                #self.optimizer.clip_master_grads(self.max_norm)
+                with self.optimizer.scale_loss(loss) as scaled_loss:
+                    scaled_loss.backward()
             else:
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
+            if is_distributed():
+                self.average_gradients()
             self.optimizer.step()
             if self.use_cuda:
                 torch.cuda.synchronize()
             del loss
             return loss_value
         except Exception as e:
-            raise
             print(e)
             print(filenames, frame_lens, label_lens)
-            return 0
+            raise
+            #return 0
 
     def unit_validate(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
@@ -98,15 +105,18 @@ def batch_train(argv):
     set_seed(args.seed)
 
     # prepare trainer object
-    model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, tf_total_steps=args.num_epochs)
-    trainer = LASTrainer(model, **vars(args))
+    input_folding = 2
+    model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, tf_total_steps=args.num_epochs, input_folding=input_folding)
+
+    amp_handle = get_amp_handle(args)
+    trainer = LASTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
 
     train_datasets = [
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/train.csv"),
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/dev.csv"),
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/test.csv"),
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/train.csv"),
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/train.csv", stride=input_folding),
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/dev.csv", stride=input_folding),
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/test.csv", stride=input_folding),
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/train.csv", stride=input_folding),
     ]
 
     datasets = {
@@ -114,8 +124,8 @@ def batch_train(argv):
         "train5" : ConcatDataset([AudioSubset(d, max_len=5) for d in train_datasets]),
         "train10": ConcatDataset([AudioSubset(d, max_len=10) for d in train_datasets]),
         "train15": ConcatDataset([AudioSubset(d, max_len=15) for d in train_datasets]),
-        "dev"    : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv"),
-        "test"   : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv"),
+        "dev"    : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv", stride=input_folding),
+        "test"   : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv", stride=input_folding),
     }
 
     dataloaders = {
@@ -144,22 +154,22 @@ def batch_train(argv):
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"],
-                                           batch_size=64, num_workers=32,
+                                           batch_size=32, num_workers=16,
                                            shuffle=False, pin_memory=args.use_cuda),
         "test"   : NonSplitTrainDataLoader(datasets["test"],
-                                           batch_size=64, num_workers=32,
+                                           batch_size=32, num_workers=16,
                                            shuffle=False, pin_memory=args.use_cuda),
     }
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
-        if i < 5: # 5
+        if i < 2:
             trainer.train_epoch(dataloaders["train3"])
             trainer.validate(dataloaders["dev"])
-        elif i < 15: # 5+10
+        elif i < (2 + 4 + 8):
             trainer.train_epoch(dataloaders["train5"])
             trainer.validate(dataloaders["dev"])
-        elif i < 35: # 5+10+20
+        elif i < (2 + 4 + 8 + 16):
             trainer.train_epoch(dataloaders["train10"])
             trainer.validate(dataloaders["dev"])
         else:
@@ -202,22 +212,25 @@ def train(argv):
     set_seed(args.seed)
 
     # prepare trainer object
-    model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, tf_total_steps=args.num_epochs)
-    trainer = LASTrainer(model=model, **vars(args))
+    input_folding = 2
+    model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, tf_total_steps=args.num_epochs, input_folding=input_folding)
+
+    amp_handle = get_amp_handle(args)
+    trainer = LASTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
 
     train_datasets = [
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/train.csv"),
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/dev.csv"),
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/test.csv"),
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/train.csv"),
+        #NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/train.csv", stride=input_folding),
+        #NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/dev.csv", stride=input_folding),
+        #NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/test.csv", stride=input_folding),
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/train.csv", stride=input_folding),
     ]
 
     datasets = {
         "train": ConcatDataset([AudioSubset(d, data_size=0, min_len=args.min_len, max_len=args.max_len)
                                 for d in train_datasets]),
-        "dev"  : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv"),
-        "test" : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv"),
+        "dev"  : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv", stride=input_folding),
+        "test" : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv", stride=input_folding),
     }
 
     dataloaders = {
@@ -258,23 +271,30 @@ def test(argv):
     parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
     parser.add_argument('--log-dir', default='./logs_las', type=str, help="filename for logging the outputs")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
+    parser.add_argument('--validate', default=False, action='store_true', help="test LER instead of WER")
     args = parser.parse_args(argv)
 
     init_logger(log_file="test.log", **vars(args))
 
     assert args.continue_from is not None
 
-    model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS)
-    trainer = LASTrainer(model, **vars(args))
+    input_folding = 2
+    model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
+
+    amp_handle = get_amp_handle(args)
+    trainer = LASTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
 
     manifest = f"{args.data_path}/eval2000.csv"
-    dataset = AudioSubset(NonSplitTrainDataset(labeler=labeler, manifest_file=manifest),
+    dataset = AudioSubset(NonSplitTrainDataset(labeler=labeler, manifest_file=manifest, stride=input_folding),
                           max_len=args.max_len, min_len=args.min_len)
     dataloader = NonSplitTrainDataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,
                                          shuffle=True, pin_memory=args.use_cuda)
 
-    trainer.test(dataloader)
+    if args.validate:
+        trainer.validate(dataloader)
+    else:
+        trainer.test(dataloader)
 
 
 if __name__ == "__main__":

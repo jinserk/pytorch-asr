@@ -215,6 +215,8 @@ class Speller(nn.Module):
 
         self.max_seq_len = max_seq_len
         self.label_vec_size = label_vec_size
+        self.sos = label_vec_size - 2
+        self.eos = label_vec_size - 1
 
         Hs, Hc, Hy = rnn_hidden_size, listen_vec_size, label_vec_size
 
@@ -236,7 +238,7 @@ class Speller(nn.Module):
     def forward(self, h, y=None, teacher_force_rate=0.):
         teacher_force = True if y is not None and np.random.random_sample() < teacher_force_rate else False
         batch_size = h.size(0)
-        sos = int2onehot(h.new_full((batch_size, 1), self.label_vec_size - 2), num_classes=self.label_vec_size).float()
+        sos = int2onehot(h.new_full((batch_size, 1), self.sos), num_classes=self.label_vec_size).float()
         x = torch.cat([sos, h.narrow(1, 0, 1)], dim=-1)
 
         hidden = [ None ] * self.rnn_num_layers
@@ -252,6 +254,10 @@ class Speller(nn.Module):
 
             y_hats.append(y_hat)
             attentions.append(a)
+
+            # if eos occurs in all batch, stop iteration
+            if not onehot2int(y_hat.squeeze()).ne(self.eos).nonzero().numel():
+                break
 
             if teacher_force:
                 x = torch.cat([y.narrow(1, i, 1), c], dim=-1)
@@ -273,8 +279,8 @@ class Speller(nn.Module):
 class ListenAttendSpell(nn.Module):
 
     def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=256,
-                 state_vec_size=512, num_attend_heads=2, max_seq_len=100,
-                 tf_rate_range=(0.9, 0.1), tf_total_steps=50):
+                 state_vec_size=512, num_attend_heads=2, max_seq_len=200,
+                 tf_rate_range=(0.9, 0.1), tf_total_steps=50, input_folding=2):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
@@ -284,7 +290,7 @@ class ListenAttendSpell(nn.Module):
         self.tf_rate_step = 0
         self.tf_rate = tf_rate_range[0]
 
-        self.listen = Listener(listen_vec_size=listen_vec_size, input_folding=2, rnn_type=nn.LSTM,
+        self.listen = Listener(listen_vec_size=listen_vec_size, input_folding=input_folding, rnn_type=nn.LSTM,
                                rnn_hidden_size=listen_vec_size, rnn_num_layers=4, bidirectional=True,
                                skip_fc=True)
 
@@ -304,18 +310,25 @@ class ListenAttendSpell(nn.Module):
         h, x_seq_lens = self.listen(x, x_seq_lens)
         # speller
         if self.training:
+            if y_seq_lens.ge(self.max_seq_len).nonzero().numel():
+                return None, None, None
             # change y to one-hot tensors
-            ys = [yb for yb in torch.split(y, y_seq_lens.tolist())]
-            ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=(self.label_vec_size - 1))
+            eos = self.label_vec_size - 1
+            eos_tensor = torch.cuda.IntTensor([eos, ]) if y.is_cuda else torch.IntTensor([eos, ])
+            ys = [torch.cat([yb, eos_tensor]) for yb in torch.split(y, y_seq_lens.tolist())]
+            ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=eos)
             yss = int2onehot(ys, num_classes=self.label_vec_size).float()
             # do spell
             y_hats, y_hats_seq_lens, _ = self.spell(h, yss, teacher_force_rate=self.tf_rate)
             # match seq lens between y_hats and ys
             s1, s2 = y_hats.size(1), ys.size(1)
             if s1 < s2:
-                y_hats = F.pad(y_hats.transpose(1, 2), (0, s2 - s1)).transpose(1, 2)
+                # append one-hot tensors of eos to y_hats
+                dummy = y_hats.new_full((y_hats.size(0), s2 - s1, ), fill_value=eos)
+                dummy = int2onehot(dummy, num_classes=self.label_vec_size).float()
+                y_hats = torch.cat([y_hats, dummy], dim=1)
             elif s1 > s2:
-                ys = F.pad(ys, (0, s1 - s2), value=(self.label_vec_size - 1))
+                ys = F.pad(ys, (0, s1 - s2), value=eos)
             # return with seq lens
             return y_hats, y_hats_seq_lens, ys
         else:

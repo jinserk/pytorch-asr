@@ -44,18 +44,11 @@ def batch_train(argv):
     init_logger(log_file="train.log", rank=get_rank(), **vars(args))
     set_seed(args.seed)
 
-    # check fp16
-    if not args.use_cuda:
-        args.fp16 = False
-    if args.fp16:
-        from apex import amp
-        amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False)
-    else:
-        amp_handle = None
-
     # prepare trainer object
     input_folding = 2
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
+
+    amp_handle = get_amp_handle(args)
     trainer = NonSplitTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
 
@@ -158,18 +151,11 @@ def train(argv):
     init_logger(log_file="train.log", rank=get_rank(), **vars(args))
     set_seed(args.seed)
 
-    # check fp16
-    if not args.use_cuda:
-        args.fp16 = False
-    if args.fp16:
-        from apex import amp
-        amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False)
-    else:
-        amp_handle = None
-
     # prepare trainer object
     input_folding = 2
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
+
+    amp_handle = get_amp_handle(args)
     trainer = NonSplitTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
 
@@ -232,17 +218,10 @@ def test(argv):
 
     assert args.continue_from is not None
 
-    # check fp16
-    if not args.use_cuda:
-        args.fp16 = False
-    if args.fp16:
-        from apex import amp
-        amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False)
-    else:
-        amp_handle = None
-
     input_folding = 2
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
+
+    amp_handle = get_amp_handle(args)
     trainer = NonSplitTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
 

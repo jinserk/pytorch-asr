@@ -92,6 +92,17 @@ def set_seed(seed=None):
             torch.cuda.manual_seed(seed)
 
 
+def get_amp_handle(args):
+    if not args.use_cuda:
+        args.fp16 = False
+    if args.fp16:
+        from apex import amp
+        amp_handle = amp.init(enabled=True, enable_caching=True, verbose=False)
+        return amp_handle
+    else:
+        return None
+
+
 class Trainer:
 
     def __init__(self, model, amp_handle=None, init_lr=1e-2, max_norm=100, use_cuda=False,
