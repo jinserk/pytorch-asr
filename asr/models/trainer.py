@@ -216,6 +216,22 @@ class Trainer:
         meter_loss = tnt.meter.MovingAverageValueMeter(len(data_loader) // 100 + 1)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
+
+        def plot_scalar(i, loss, title="train"):
+            #if self.lr_scheduler is not None:
+            #    self.lr_scheduler.step()
+            x = self.epoch + i / len(data_loader)
+            if logger.visdom is not None:
+                opts = { 'xlabel': 'epoch', 'ylabel': 'loss', }
+                logger.visdom.add_point(title=title, x=x, y=loss, **opts)
+            if logger.tensorboard is not None:
+                logger.tensorboard.add_graph(self.model, xs)
+                xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
+                logger.tensorboard.add_image('xs', x, xs_img)
+                ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
+                logger.tensorboard.add_image('ys_hat', x, ys_hat_img)
+                logger.tensorboard.add_scalars(title, x, { 'loss': loss, })
+
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
         logger.debug(f"current lr = {self.optimizer.param_groups[0]['lr']}")
@@ -234,22 +250,8 @@ class Trainer:
             t.refresh()
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
-
             if i > ckpt:
-                #if self.lr_scheduler is not None:
-                #    self.lr_scheduler.step()
-                title = "train"
-                x = self.epoch + i / len(data_loader)
-                if logger.visdom is not None:
-                    opts = { 'xlabel': 'epoch', 'ylabel': 'loss', }
-                    logger.visdom.add_point(title=title, x=x, y=meter_loss.value()[0], **opts)
-                if logger.tensorboard is not None:
-                    logger.tensorboard.add_graph(self.model, xs)
-                    xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
-                    logger.tensorboard.add_image('xs', x, xs_img)
-                    ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
-                    logger.tensorboard.add_image('ys_hat', x, ys_hat_img)
-                    logger.tensorboard.add_scalars(title, x, { 'loss': meter_loss.value()[0], })
+                plot_scalar(i, meter_loss.value()[0])
                 if self.checkpoint:
                     logger.info(f"training loss at epoch_{self.epoch:03d}_ckpt_{i:07d}: "
                                 f"{meter_loss.value()[0]:5.3f}")
@@ -258,6 +260,7 @@ class Trainer:
                 ckpt = next(ckpts)
             #input("press key to continue")
 
+        plot_scalar(i, meter_loss.value()[0])
         self.epoch += 1
         logger.info(f"epoch {self.epoch:03d}: "
                     f"training loss {meter_loss.value()[0]:5.3f} ")

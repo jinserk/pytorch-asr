@@ -235,8 +235,8 @@ class Speller(nn.Module):
             InferenceBatchSoftmax()
         ))
 
-    def forward(self, h, y=None, teacher_force_rate=0.):
-        teacher_force = True if y is not None and np.random.random_sample() < teacher_force_rate else False
+    def forward(self, h, y=None, teach_force_rate=0.):
+        teach_force = True if y is not None and np.random.random_sample() < teach_force_rate else False
         batch_size = h.size(0)
         sos = int2onehot(h.new_full((batch_size, 1), self.sos), num_classes=self.label_vec_size).float()
         x = torch.cat([sos, h.narrow(1, 0, 1)], dim=-1)
@@ -244,7 +244,7 @@ class Speller(nn.Module):
         hidden = [ None ] * self.rnn_num_layers
         y_hats = list()
         attentions = list()
-        max_seq_len = self.max_seq_len if not teacher_force else y.size(1)
+        max_seq_len = self.max_seq_len if not teach_force else y.size(1)
         unit_len = torch.ones((batch_size, ))
         for i in range(max_seq_len):
             for l, rnn in enumerate(self.rnns):
@@ -259,7 +259,7 @@ class Speller(nn.Module):
             if not onehot2int(y_hat.squeeze()).ne(self.eos).nonzero().numel():
                 break
 
-            if teacher_force:
+            if teach_force:
                 x = torch.cat([y.narrow(1, i, 1), c], dim=-1)
             else:
                 x = torch.cat([y_hat, c], dim=-1)
@@ -269,7 +269,7 @@ class Speller(nn.Module):
 
         seq_lens = torch.full((batch_size,), max_seq_len, dtype=torch.int)
         for b, y_hat in enumerate(y_hats):
-            idx = onehot2int(y_hat).eq(self.label_vec_size - 1).nonzero()
+            idx = onehot2int(y_hat).eq(self.eos).nonzero()
             if idx.numel():
                 seq_lens[b] = idx[0][0]
 
@@ -319,7 +319,7 @@ class ListenAttendSpell(nn.Module):
             ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=eos)
             yss = int2onehot(ys, num_classes=self.label_vec_size).float()
             # do spell
-            y_hats, y_hats_seq_lens, _ = self.spell(h, yss, teacher_force_rate=self.tf_rate)
+            y_hats, y_hats_seq_lens, _ = self.spell(h, yss, teach_force_rate=self.tf_rate)
             # match seq lens between y_hats and ys
             s1, s2 = y_hats.size(1), ys.size(1)
             if s1 < s2:
@@ -335,7 +335,7 @@ class ListenAttendSpell(nn.Module):
             # do spell
             y_hats, y_hats_seq_lens, _ = self.spell(h)
             # return with seq lens
-            return y_hats, y_hats_seq_lens, None
+            return y_hats[:, :, :-2], y_hats_seq_lens
 
 
 if __name__ == '__main__':
