@@ -26,6 +26,7 @@ class LASTrainer(NonSplitTrainer):
 
     def train_loop_before_hook(self):
         self.model.step_tf_rate()
+        logger.debug(f"current tfr = {self.model.tfr}")
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
@@ -66,11 +67,11 @@ class LASTrainer(NonSplitTrainer):
         xs, ys, frame_lens, label_lens, filenames, _ = data
         if self.use_cuda:
             xs, ys = xs.cuda(non_blocking=True), ys.cuda(non_blocking=True)
-        ys_hat, ys_hat_lens, _ = self.model(xs, frame_lens, ys, label_lens)
+        ys_hat, ys_hat_lens = self.model(xs, frame_lens, ys, label_lens)
         if self.fp16:
             ys_hat = ys_hat.float()
         # convert likes to ctc labels
-        hyps = [onehot2int(yh[:s, :-2]) for yh, s in zip(ys_hat, ys_hat_lens)]
+        hyps = [onehot2int(yh[:s, :]) for yh, s in zip(ys_hat, ys_hat_lens)]
         # slice the targets
         pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(label_lens, dim=0)))
         refs = [ys[s:l] for s, l in zip(pos[:-1], pos[1:])]
@@ -106,7 +107,7 @@ def batch_train(argv):
 
     # prepare trainer object
     input_folding = 2
-    model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, tf_total_steps=args.num_epochs, input_folding=input_folding)
+    model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)
     trainer = LASTrainer(model, amp_handle, **vars(args))
@@ -213,7 +214,7 @@ def train(argv):
 
     # prepare trainer object
     input_folding = 2
-    model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, tf_total_steps=args.num_epochs, input_folding=input_folding)
+    model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)
     trainer = LASTrainer(model, amp_handle, **vars(args))
@@ -227,7 +228,7 @@ def train(argv):
     ]
 
     datasets = {
-        "train": ConcatDataset([AudioSubset(d, data_size=0, min_len=args.min_len, max_len=args.max_len)
+        "train": ConcatDataset([AudioSubset(d, data_size=10, min_len=args.min_len, max_len=args.max_len)
                                 for d in train_datasets]),
         "dev"  : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv", stride=input_folding),
         "test" : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv", stride=input_folding),

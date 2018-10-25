@@ -139,16 +139,13 @@ class Listener(nn.Module):
         h = h.view(-1, h.size(1) * h.size(2), h.size(3))  # Collapse feature dimension
         h = h.transpose(1, 2).contiguous()  # NxTxH
         h = self.fc1(h)
-        g, _ = self.rnns[0](h, seq_lens)
+        y, _ = self.rnns[0](h, seq_lens)
         for i in range(1, self.rnn_num_layers):
-            g = g + h
-            g, _ = self.rnns[i](g, seq_lens)
-        if self.skip_fc:
-            return g, seq_lens
-        else:
-            g = g + h
-            y = self.fc(g)
-            return y, seq_lens
+            #y = y + h
+            y, _ = self.rnns[i](y, seq_lens)
+        if not self.skip_fc:
+            y = self.fc(y)
+        return y, seq_lens
 
 
 class Attention(nn.Module):
@@ -160,12 +157,12 @@ class Attention(nn.Module):
 
         if apply_proj:
             self.phi = SequenceWise(nn.Sequential(
-                nn.BatchNorm1d(state_vec_size),
-                nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=False)
+                nn.LayerNorm(state_vec_size, elementwise_affine=False),
+                nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=True)
             ))
             self.psi = SequenceWise(nn.Sequential(
-                nn.BatchNorm1d(state_vec_size),
-                nn.Linear(listen_vec_size, proj_hidden_size, bias=False)
+                nn.LayerNorm(state_vec_size, elementwise_affine=False),
+                nn.Linear(listen_vec_size, proj_hidden_size, bias=True)
             ))
         else:
             assert state_vec_size == listen_vec_size * num_heads
@@ -173,9 +170,10 @@ class Attention(nn.Module):
         self.normal = nn.Softmax(dim=-1)
 
         if num_heads > 1:
+            input_size = listen_vec_size * num_heads
             self.reduce = SequenceWise(nn.Sequential(
-                nn.BatchNorm1d(listen_vec_size * num_heads),
-                nn.Linear(listen_vec_size * num_heads, listen_vec_size, bias=False)
+                nn.LayerNorm(input_size, elementwise_affine=False),
+                nn.Linear(input_size, listen_vec_size, bias=True)
             ))
 
     def score(self, m, n):
@@ -183,24 +181,24 @@ class Attention(nn.Module):
         return torch.bmm(m, n.transpose(1, 2))
 
     def forward(self, s, h):
-        # s: Bx1xHs -> ms: Bx1xHe
-        # h: BxThxHh -> mh: BxThxHe
+        # s: Bx1xHs -> m: Bx1xHe
+        # h: BxThxHh -> n: BxThxHe
         if self.apply_proj:
-            ms = self.phi(s)
-            mh = self.psi(h)
+            m = self.phi(s)
+            n = self.psi(h)
         else:
-            ms = s
-            mh = h
+            m = s
+            n = h
 
-        # <ms, mh> -> e: Bx1xTh -> c: Bx1xHh
+        # <m, n> -> e: Bx1xTh -> c: Bx1xHh
         if self.num_heads > 1:
-            proj_hidden_size = ms.size(-1) // self.num_heads
-            ee = [self.score(msi, mh) for msi in torch.split(ms, proj_hidden_size, dim=-1)]
+            proj_hidden_size = m.size(-1) // self.num_heads
+            ee = [self.score(mi, n) for mi in torch.split(m, proj_hidden_size, dim=-1)]
             aa = [self.normal(e) for e in ee]
             c = self.reduce(torch.cat([torch.bmm(a, h) for a in aa], dim=-1))
             return torch.stack(aa), c
         else:
-            e = self.score(ms, mh)
+            e = self.score(m, n)
             a = self.normal(e)
             c = torch.bmm(a, h)
             return a.unsqueeze(dim=0), c
@@ -231,12 +229,12 @@ class Speller(nn.Module):
                                    apply_proj=apply_attend_proj, num_heads=num_attend_heads)
 
         self.chardist = SequenceWise(nn.Sequential(
-            nn.Linear(Hs + Hc, label_vec_size),
+            nn.LayerNorm(Hs + Hc, elementwise_affine=False),
+            nn.Linear(Hs + Hc, label_vec_size, bias=True),
             InferenceBatchSoftmax()
         ))
 
-    def forward(self, h, y=None, teacher_force_rate=0.):
-        teacher_force = True if y is not None and np.random.random_sample() < teacher_force_rate else False
+    def forward(self, h, y=None):
         batch_size = h.size(0)
         sos = int2onehot(h.new_full((batch_size, 1), self.sos), num_classes=self.label_vec_size).float()
         x = torch.cat([sos, h.narrow(1, 0, 1)], dim=-1)
@@ -244,8 +242,9 @@ class Speller(nn.Module):
         hidden = [ None ] * self.rnn_num_layers
         y_hats = list()
         attentions = list()
-        max_seq_len = self.max_seq_len if not teacher_force else y.size(1)
+        max_seq_len = self.max_seq_len if y is None else y.size(1)
         unit_len = torch.ones((batch_size, ))
+
         for i in range(max_seq_len):
             for l, rnn in enumerate(self.rnns):
                 x, hidden[l] = rnn(x, unit_len, hidden[l])
@@ -259,17 +258,17 @@ class Speller(nn.Module):
             if not onehot2int(y_hat.squeeze()).ne(self.eos).nonzero().numel():
                 break
 
-            if teacher_force:
-                x = torch.cat([y.narrow(1, i, 1), c], dim=-1)
-            else:
+            if y is None:
                 x = torch.cat([y_hat, c], dim=-1)
+            else:  # teach force
+                x = torch.cat([y.narrow(1, i, 1), c], dim=-1)
 
         y_hats = torch.cat(y_hats, dim=1)
         attentions = torch.stack(attentions)
 
         seq_lens = torch.full((batch_size,), max_seq_len, dtype=torch.int)
         for b, y_hat in enumerate(y_hats):
-            idx = onehot2int(y_hat).eq(self.label_vec_size - 1).nonzero()
+            idx = onehot2int(y_hat).eq(self.eos).nonzero()
             if idx.numel():
                 seq_lens[b] = idx[0][0]
 
@@ -280,30 +279,33 @@ class ListenAttendSpell(nn.Module):
 
     def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=256,
                  state_vec_size=512, num_attend_heads=2, max_seq_len=200,
-                 tf_rate_range=(0.9, 0.1), tf_total_steps=50, input_folding=2):
+                 tfr_range=(0.9, 0.1), tfr_steps=20, input_folding=2):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
         self.max_seq_len = max_seq_len
-        self.tf_rate_range = tf_rate_range
-        self.tf_rate_total_step = tf_total_steps
-        self.tf_rate_step = 0
-        self.tf_rate = tf_rate_range[0]
+        self.tfr_upper, self.tfr_lower = tfr_range
+        assert 0. < self.tfr_lower < self.tfr_upper < 1.
+        self.tfr_steps = tfr_steps
+        self.tfr_step = 0
+        self.tfr = self.tfr_upper
 
         self.listen = Listener(listen_vec_size=listen_vec_size, input_folding=input_folding, rnn_type=nn.LSTM,
-                               rnn_hidden_size=listen_vec_size, rnn_num_layers=4, bidirectional=True,
+                               rnn_hidden_size=listen_vec_size, rnn_num_layers=3, bidirectional=True,
                                skip_fc=True)
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
-                             rnn_hidden_size=state_vec_size, rnn_num_layers=1, max_seq_len=max_seq_len,
+                             rnn_hidden_size=state_vec_size, rnn_num_layers=2, max_seq_len=max_seq_len,
                              apply_attend_proj=False, num_attend_heads=num_attend_heads)
 
     def step_tf_rate(self):
-        if self.tf_rate_step < self.tf_rate_total_step:
-            upper, lower = self.tf_rate_range
-            self.tf_rate = upper - (upper - lower) * self.tf_rate_step / self.tf_rate_total_step
+        # linearly declined
+        if self.tfr_step < self.tfr_steps:
+            slope = (self.tfr_upper - self.tfr_lower) / self.tfr_steps
+            self.tfr = self.tfr_upper - slope * self.tfr_step
+            self.tfr_step += 1
         else:
-            self.tf_rate = self.tf_rate_range[1]
+            self.tfr = self.tfr_lower
 
     def forward(self, x, x_seq_lens, y=None, y_seq_lens=None):
         # listener
@@ -313,13 +315,16 @@ class ListenAttendSpell(nn.Module):
             if y_seq_lens.ge(self.max_seq_len).nonzero().numel():
                 return None, None, None
             # change y to one-hot tensors
-            eos = self.label_vec_size - 1
+            eos = self.spell.eos
             eos_tensor = torch.cuda.IntTensor([eos, ]) if y.is_cuda else torch.IntTensor([eos, ])
             ys = [torch.cat([yb, eos_tensor]) for yb in torch.split(y, y_seq_lens.tolist())]
             ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=eos)
-            yss = int2onehot(ys, num_classes=self.label_vec_size).float()
-            # do spell
-            y_hats, y_hats_seq_lens, _ = self.spell(h, yss, teacher_force_rate=self.tf_rate)
+            # speller with teach force flag
+            if np.random.random_sample() < self.tfr:
+                yss = int2onehot(ys, num_classes=self.label_vec_size).float()
+                y_hats, y_hats_seq_lens, _ = self.spell(h, yss)
+            else:
+                y_hats, y_hats_seq_lens, _ = self.spell(h)
             # match seq lens between y_hats and ys
             s1, s2 = y_hats.size(1), ys.size(1)
             if s1 < s2:
@@ -335,7 +340,7 @@ class ListenAttendSpell(nn.Module):
             # do spell
             y_hats, y_hats_seq_lens, _ = self.spell(h)
             # return with seq lens
-            return y_hats, y_hats_seq_lens, None
+            return y_hats[:, :, :-2], y_hats_seq_lens
 
 
 if __name__ == '__main__':

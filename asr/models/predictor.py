@@ -56,7 +56,7 @@ class NonSplitPredictor:
     def print_result(self, filename, ys_hat, words):
         logger.info(f"decoding wav file: {str(Path(filename).resolve())}")
         if self.verbose:
-            labels = onehot2int(ys_hat).squeeze()
+            labels = onehot2int(ys_hat)
             logger.info(f"labels: {' '.join([str(x) for x in labels.tolist()])}")
             rd = [x.item() for x in remove_duplicates(labels, blank=0)]
             logger.info(f"duplicated_removed: {' '.join([str(x) for x in rd])}")

@@ -1,14 +1,31 @@
 #!python
 import sys
 import argparse
+from pathlib import Path
 
 from asr.utils.dataset import NonSplitPredictDataset
 from asr.utils.dataloader import NonSplitPredictDataLoader
 from asr.utils.logger import logger, init_logger
+from asr.utils.misc import onehot2int
 from asr.utils import params as p
 
 from ..predictor import NonSplitPredictor
 from .network import ListenAttendSpell
+
+
+class LASPredictor(NonSplitPredictor):
+
+    def print_result(self, filename, ys_hat, words):
+        logger.info(f"decoding wav file: {str(Path(filename).resolve())}")
+        if self.verbose:
+            labels = onehot2int(ys_hat)
+            logger.info(f"labels: {' '.join([str(x) for x in labels.tolist()])}")
+            symbols = [self.decoder.labeler.idx2phone(x.item()) for x in labels]
+            logger.info(f"symbols: {' '.join(symbols)}")
+        words = words.squeeze()
+        text = ' '.join([self.decoder.labeler.idx2word(i) for i in words]) \
+               if words.dim() else '<null output from decoder>'
+        logger.info(f"decoded text: {text}")
 
 
 def predict(argv):
@@ -28,7 +45,7 @@ def predict(argv):
         sys.exit(1)
 
     model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS)
-    predictor = NonSplitPredictor(model, **vars(args))
+    predictor = LASPredictor(model, **vars(args))
 
     dataset = NonSplitPredictDataset(wav_files=args.wav_files)
     dataloader = NonSplitPredictDataLoader(dataset=dataset, batch_size=args.batch_size,
