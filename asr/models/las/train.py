@@ -106,7 +106,7 @@ def batch_train(argv):
     set_seed(args.seed)
 
     # prepare trainer object
-    input_folding = 2
+    input_folding = 3
     model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)
@@ -213,7 +213,7 @@ def train(argv):
     set_seed(args.seed)
 
     # prepare trainer object
-    input_folding = 2
+    input_folding = 3
     model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)
@@ -228,7 +228,7 @@ def train(argv):
     ]
 
     datasets = {
-        "train": ConcatDataset([AudioSubset(d, data_size=10, min_len=args.min_len, max_len=args.max_len)
+        "train": ConcatDataset([AudioSubset(d, data_size=0, min_len=args.min_len, max_len=args.max_len)
                                 for d in train_datasets]),
         "dev"  : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv", stride=input_folding),
         "test" : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv", stride=input_folding),
@@ -279,7 +279,7 @@ def test(argv):
 
     assert args.continue_from is not None
 
-    input_folding = 2
+    input_folding = 3
     model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)

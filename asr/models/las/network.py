@@ -112,7 +112,7 @@ class Listener(nn.Module):
 
         self.fc1 = SequenceWise(nn.Sequential(
             nn.Linear(H0, H1, bias=True),
-            nn.Dropout(0.5, inplace=True),
+            nn.Dropout(0.2, inplace=True),
             #nn.Hardtanh(-10, 10, inplace=True),
             nn.LeakyReLU(inplace=True),
             #Swish(inplace=True),
@@ -129,7 +129,7 @@ class Listener(nn.Module):
             self.fc = SequenceWise(nn.Sequential(
                 nn.LayerNorm(H1, elementwise_affine=False),
                 nn.Linear(H1, listen_vec_size, bias=True),
-                nn.Dropout(0.5, inplace=True),
+                nn.Dropout(0.2, inplace=True),
             ))
         else:
             assert listen_vec_size == rnn_hidden_size
@@ -141,7 +141,7 @@ class Listener(nn.Module):
         h = self.fc1(h)
         y, _ = self.rnns[0](h, seq_lens)
         for i in range(1, self.rnn_num_layers):
-            #y = y + h
+            y = y + h
             y, _ = self.rnns[i](y, seq_lens)
         if not self.skip_fc:
             y = self.fc(y)
@@ -158,11 +158,13 @@ class Attention(nn.Module):
         if apply_proj:
             self.phi = SequenceWise(nn.Sequential(
                 nn.LayerNorm(state_vec_size, elementwise_affine=False),
-                nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=True)
+                nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=True),
+                nn.Dropout(0.2, inplace=True),
             ))
             self.psi = SequenceWise(nn.Sequential(
                 nn.LayerNorm(state_vec_size, elementwise_affine=False),
-                nn.Linear(listen_vec_size, proj_hidden_size, bias=True)
+                nn.Linear(listen_vec_size, proj_hidden_size, bias=True),
+                nn.Dropout(0.2, inplace=True),
             ))
         else:
             assert state_vec_size == listen_vec_size * num_heads
@@ -173,7 +175,8 @@ class Attention(nn.Module):
             input_size = listen_vec_size * num_heads
             self.reduce = SequenceWise(nn.Sequential(
                 nn.LayerNorm(input_size, elementwise_affine=False),
-                nn.Linear(input_size, listen_vec_size, bias=True)
+                nn.Linear(input_size, listen_vec_size, bias=True),
+                nn.Dropout(0.2, inplace=True),
             ))
 
     def score(self, m, n):
@@ -278,7 +281,7 @@ class Speller(nn.Module):
 class ListenAttendSpell(nn.Module):
 
     def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=256,
-                 state_vec_size=512, num_attend_heads=2, max_seq_len=200,
+                 state_vec_size=512, num_attend_heads=2, max_seq_len=256,
                  tfr_range=(0.9, 0.1), tfr_steps=20, input_folding=2):
         super().__init__()
 
@@ -291,11 +294,11 @@ class ListenAttendSpell(nn.Module):
         self.tfr = self.tfr_upper
 
         self.listen = Listener(listen_vec_size=listen_vec_size, input_folding=input_folding, rnn_type=nn.LSTM,
-                               rnn_hidden_size=listen_vec_size, rnn_num_layers=3, bidirectional=True,
+                               rnn_hidden_size=listen_vec_size, rnn_num_layers=4, bidirectional=True,
                                skip_fc=True)
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
-                             rnn_hidden_size=state_vec_size, rnn_num_layers=2, max_seq_len=max_seq_len,
+                             rnn_hidden_size=state_vec_size, rnn_num_layers=1, max_seq_len=max_seq_len,
                              apply_attend_proj=False, num_attend_heads=num_attend_heads)
 
     def step_tf_rate(self):
