@@ -199,13 +199,14 @@ class Attention(nn.Module):
             ee = [self.score(mi, n) for mi in torch.split(m, proj_hidden_size, dim=-1)]
             aa = [self.normal(e) for e in ee]
             c = self.reduce(torch.cat([torch.bmm(a, h) for a in aa], dim=-1))
-            return torch.stack(aa), c
+            a = torch.stack(aa).transpose(0, 1)
         else:
             e = self.score(m, n)
             a = self.normal(e)
             c = torch.bmm(a, h)
-            return a.unsqueeze(dim=0), c
-
+            a = a.unsqueeze(dim=1)
+        # c: context (Bx1xHh), a: Bxheadsx1xTh
+        return c, a
 
 class Speller(nn.Module):
 
@@ -251,7 +252,7 @@ class Speller(nn.Module):
         for i in range(max_seq_len):
             for l, rnn in enumerate(self.rnns):
                 x, hidden[l] = rnn(x, unit_len, hidden[l])
-            a, c = self.attention(x, h)
+            c, a = self.attention(x, h)
             y_hat = self.chardist(torch.cat([x, c], dim=-1))
 
             y_hats.append(y_hat)
@@ -267,7 +268,7 @@ class Speller(nn.Module):
                 x = torch.cat([y.narrow(1, i, 1), c], dim=-1)
 
         y_hats = torch.cat(y_hats, dim=1)
-        attentions = torch.stack(attentions)
+        attentions = torch.cat(attentions, dim=2)
 
         seq_lens = torch.full((batch_size,), max_seq_len, dtype=torch.int)
         for b, y_hat in enumerate(y_hats):
@@ -301,6 +302,8 @@ class ListenAttendSpell(nn.Module):
                              rnn_hidden_size=state_vec_size, rnn_num_layers=1, max_seq_len=max_seq_len,
                              apply_attend_proj=False, num_attend_heads=num_attend_heads)
 
+        self.attentions = None
+
     def step_tf_rate(self):
         # linearly declined
         if self.tfr_step < self.tfr_steps:
@@ -325,9 +328,9 @@ class ListenAttendSpell(nn.Module):
             # speller with teach force flag
             if np.random.random_sample() < self.tfr:
                 yss = int2onehot(ys, num_classes=self.label_vec_size).float()
-                y_hats, y_hats_seq_lens, _ = self.spell(h, yss)
+                y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss)
             else:
-                y_hats, y_hats_seq_lens, _ = self.spell(h)
+                y_hats, y_hats_seq_lens, self.attentions = self.spell(h)
             # match seq lens between y_hats and ys
             s1, s2 = y_hats.size(1), ys.size(1)
             if s1 < s2:

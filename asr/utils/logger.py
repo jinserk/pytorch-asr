@@ -122,57 +122,79 @@ class VisdomLogger:
         self.viz = Visdom(server=f"http://{host}", port=port, env=env, log_to_filename=log_path)
         self.windows = dict()
         # if prev log exists
-        if log_path is not None and log_path.exists():
+        if log_path is not None and log_path.exists() and (rank is None or rank == 0):
             self.viz.replay_log(log_path)
 
-    def _get_win(self, title):
+    def _get_win(self, title, type):
         import json
         win_data = json.loads(self.viz.get_window_data(win=None, env=self.env))
-        wins = [(w, v) for w, v in win_data.items() if v['title'] == title]
+        wins = [(w, v) for w, v in win_data.items() if v['title'] == title and v['type'] == type]
         if wins:
             handle, value = sorted(wins, key=lambda x: x[0])[0]
-            names = [int(x['name'].partition('_')[0]) for x in value['content']['data']]
-            return handle, max(names)
+            return handle, value['content']
         else:
-            return None, 1
+            return None, None
 
-    def _new_window(self, title, X, Y, name, opts):
+    def _get_rank0_win(self, title, type):
         if self.rank is not None and self.rank > 0:
             # wait and fetch the window handle until rank=0 client generates new window
             import time
-            for _ in range(100):
-                handle, name = self._get_win(title)
+            for _ in range(10):
+                handle, content = self._get_win(title, type)
                 if handle is not None:
-                    break
+                    return handle, content
                 time.sleep(0.5)
             else:
                 logger.error("could't get a proper window handle from the visdom server")
                 raise RuntimeError
-            name = f"{name}_{self.rank}"
-            self.viz.line(Y=Y, X=X, update='append', win=handle, name=name, opts=opts)
         else:
-            name = f"{name}_{self.rank}" if self.rank is not None else f"{name}"
-            handle = self.viz.line(Y=Y, X=X, name=name, opts=opts)
-        return handle, name, opts
+            return self._get_win(title, type)
+
+    def _new_window(self, cmd, title, **cmd_args):
+        type = "image" if cmd == self.viz.images else "plot"
+        handle, content = self._get_rank0_win(title, type)
+        if handle is None:
+            if "opts" in cmd_args:
+                cmd_args['opts'].update({ "title": title, })
+            else:
+                cmd_args['opts'] = { "title": title, }
+            if type == "plot":
+                name = f"1_{self.rank}" if self.rank is not None else "1"
+                handle = cmd(name=name, **cmd_args)
+            else:
+                name = None
+                handle = cmd(**cmd_args)
+        else:
+            if type == "plot":
+                name = max([int(x['name'].partition('_')[0]) for x in content['data']])
+                name = f"{name+1}_{self.rank}" if self.rank is not None else f"{name+1}"
+                cmd(win=handle, name=name, update="append", **cmd_args)
+            else:
+                name = None
+                handle = cmd(win=handle, **cmd_args)
+        self.windows[title] = { 'handle': handle, 'name': name, 'opts': cmd_args["opts"], }
 
     def add_point(self, title, x, y, **kwargs):
         X, Y = torch.FloatTensor([x,]), torch.FloatTensor([y,])
         if title not in self.windows:
-            handle, name = self._get_win(title)
-            opts = { 'title': title, }
-            opts.update(kwargs)
-            if handle is None:
-                handle, name, opts = self._new_window(title, X, Y, name, opts)
-            else:
-                name = f"{name + 1}_{self.rank}" if self.rank is not None else f"{name + 1}"
-                self.viz.line(Y=Y, X=X, update='append', win=handle, name=name, opts=opts)
-            self.windows[title] = { 'handle': handle, 'name': name, 'opts': opts, }
+            cmd = self.viz.line
+            self._new_window(cmd, title, X=X, Y=Y, opts=kwargs)
         else:
+            self.windows[title]['opts'].update(kwargs)
             handle = self.windows[title]['handle']
             name = self.windows[title]['name']
-            opts = kwargs
-            self.viz.line(Y=Y, X=X, update='append', win=handle, name=name, opts=opts)
-            self.windows[title]['opts'].update(opts)
+            opts = self.windows[title]['opts']
+            self.viz.line(win=handle, update='append', Y=Y, X=X, name=name, opts=opts)
+
+    def plot_images(self, title, tensor, nrow, **kwargs):
+        if title not in self.windows:
+            cmd = self.viz.images
+            self._new_window(cmd, title, tensor=tensor, nrow=nrow, opts=kwargs)
+        else:
+            self.windows[title]['opts'].update(kwargs)
+            handle = self.windows[title]['handle']
+            opts = self.windows[title]['opts']
+            self.viz.images(win=handle, tensor=tensor, nrow=nrow, opts=opts)
 
 
 class TensorboardLogger:

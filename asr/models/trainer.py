@@ -200,6 +200,9 @@ class Trainer:
     def train_loop_before_hook(self):
         raise NotImplementedError
 
+    def train_loop_after_hook(self):
+        raise NotImplementedError
+
     def unit_train(self, data):
         raise NotImplementedError
 
@@ -268,6 +271,7 @@ class Trainer:
         if not is_distributed() or (is_distributed() and dist.get_rank() == 0):
             self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
             self.__remove_ckpt_files(self.epoch-1)
+        self.train_loop_after_hook()
 
     def unit_validate(self, data):
         raise NotImplementedError
@@ -377,6 +381,9 @@ class NonSplitTrainer(Trainer):
     def train_loop_before_hook(self):
         pass
 
+    def train_loop_after_hook(self):
+        pass
+
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
         try:
@@ -470,6 +477,9 @@ class SplitTrainer(Trainer):
     """ training model for splitting utterance into multiple images
         single image stands for localized timing segment corresponding to frame output
     """
+
+    def train_loop_after_hook(self):
+        pass
 
     def train_loop_after_hook(self):
         pass
