@@ -235,7 +235,6 @@ class Speller(nn.Module):
         self.chardist = SequenceWise(nn.Sequential(
             nn.LayerNorm(Hs + Hc, elementwise_affine=False),
             nn.Linear(Hs + Hc, label_vec_size, bias=True),
-            InferenceBatchSoftmax()
         ))
 
     def forward(self, h, y=None):
@@ -303,6 +302,7 @@ class ListenAttendSpell(nn.Module):
                              apply_attend_proj=False, num_attend_heads=num_attend_heads)
 
         self.attentions = None
+        self.softmax = nn.LogSoftmax(dim = -1)
 
     def step_tf_rate(self):
         # linearly declined
@@ -327,7 +327,7 @@ class ListenAttendSpell(nn.Module):
             ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=eos)
             # speller with teach force flag
             if np.random.random_sample() < self.tfr:
-                yss = int2onehot(ys, num_classes=self.label_vec_size).float()
+                yss = int2onehot(ys, num_classes=self.label_vec_size).float() - 0.5
                 y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss)
             else:
                 y_hats, y_hats_seq_lens, self.attentions = self.spell(h)
@@ -345,8 +345,9 @@ class ListenAttendSpell(nn.Module):
         else:
             # do spell
             y_hats, y_hats_seq_lens, _ = self.spell(h)
+            y_hats = self.softmax(y_hats[:, :, :-2])
             # return with seq lens
-            return y_hats[:, :, :-2], y_hats_seq_lens
+            return y_hats, y_hats_seq_lens
 
 
 if __name__ == '__main__':
