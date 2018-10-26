@@ -145,7 +145,7 @@ class VisdomLogger:
                     return handle, content
                 time.sleep(0.5)
             else:
-                logger.error("could't get a proper window handle from the visdom server")
+                logger.error("couldn't get a proper window handle from the visdom server")
                 raise RuntimeError
         else:
             return self._get_win(title, type)

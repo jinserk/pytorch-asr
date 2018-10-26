@@ -30,10 +30,12 @@ class LASTrainer(NonSplitTrainer):
         logger.debug(f"current tfr = {self.model.tfr}")
 
     def train_loop_after_hook(self):
-        if logger.visdom is not None and self.model.attentions is not None:
+        if logger.visdom is not None and self.model.attentions is not None and \
+           (not is_distributed() or dist.get_rank == 0):
             # pick up random attention in batch size, plot each of num of heads
             b = np.random.randint(0, self.model.attentions.size(0))
-            images = self.model.attentions[b, :, :, :].unsqueeze(dim=1).transpose(-2, -1)
+            images = self.model.attentions[b, :, :, :].unsqueeze(dim=1)
+            images = (255 * images).int().transpose(2, 3)
             opts = { 'xlabel': 'frames', 'ylabel': 'labels'}
             logger.visdom.plot_images(title='attention', tensor=images, nrow=1, **opts)
 
@@ -237,7 +239,7 @@ def train(argv):
     ]
 
     datasets = {
-        "train": ConcatDataset([AudioSubset(d, data_size=50, min_len=args.min_len, max_len=args.max_len)
+        "train": ConcatDataset([AudioSubset(d, data_size=0, min_len=args.min_len, max_len=args.max_len)
                                 for d in train_datasets]),
         "dev"  : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv", stride=input_folding),
         "test" : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv", stride=input_folding),
