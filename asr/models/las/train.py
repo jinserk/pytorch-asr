@@ -27,7 +27,7 @@ class LASTrainer(NonSplitTrainer):
 
     def train_loop_before_hook(self):
         self.model.step_tf_rate()
-        logger.debug(f"current tfr = {self.model.tfr}")
+        logger.debug(f"current tfr = {self.model.tfr:.3e}")
 
     def train_loop_after_hook(self):
         if logger.visdom is not None and self.model.attentions is not None and \

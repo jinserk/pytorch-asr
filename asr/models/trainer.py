@@ -237,7 +237,7 @@ class Trainer:
 
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
-        logger.debug(f"current lr = {self.optimizer.param_groups[0]['lr']}")
+        logger.debug(f"current lr = {self.optimizer.param_groups[0]['lr']:.3e}")
         if is_distributed() and data_loader.sampler is not None:
             data_loader.sampler.set_epoch(self.epoch)
         ckpts = iter(len(data_loader) * np.arange(0.1, 1.1, 0.1))

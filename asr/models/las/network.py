@@ -327,7 +327,7 @@ class ListenAttendSpell(nn.Module):
             ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=eos)
             # speller with teach force flag
             if np.random.random_sample() < self.tfr:
-                yss = int2onehot(ys, num_classes=self.label_vec_size).float() - 0.5
+                yss = int2onehot(ys, num_classes=self.label_vec_size).float() * 2. - 1.
                 y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss)
             else:
                 y_hats, y_hats_seq_lens, self.attentions = self.spell(h)
