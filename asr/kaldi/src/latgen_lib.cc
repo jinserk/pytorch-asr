@@ -202,12 +202,13 @@ decode(torch::Tensor loglikes, torch::Tensor frame_lens)
 	}
 
 	// prepare output
+	const long sz = static_cast<long>(results.size());
 	auto opt = loglikes.options().dtype(at::kInt);
-	auto words = torch::zeros({results.size(), max_words}, opt);
-	auto alignments = torch::zeros({results.size(), max_alignments}, opt);
-	auto w_sizes = torch::zeros({results.size(), }, opt);
-	auto a_sizes = torch::zeros({results.size(), }, opt);
-	for (int i = 0; i < results.size(); i++) {
+	auto words = torch::zeros({sz, max_words}, opt);
+	auto alignments = torch::zeros({sz, max_alignments}, opt);
+	auto w_sizes = torch::zeros({sz, }, opt);
+	auto a_sizes = torch::zeros({sz, }, opt);
+	for (int i = 0; i < sz; i++) {
 		if (results[i].failed_) continue;
 		//strncpy(texts[i], results[i].text_.c_str(), results[i].text_.length());
 		w_sizes[i] = (int)results[i].words_.size();
