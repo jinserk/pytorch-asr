@@ -141,7 +141,7 @@ class Listener(nn.Module):
         h = self.fc1(h)
         y, _ = self.rnns[0](h, seq_lens)
         for i in range(1, self.rnn_num_layers):
-            y = y + h
+            #y = y + h
             y, _ = self.rnns[i](y, seq_lens)
         if not self.skip_fc:
             y = self.fc(y)
