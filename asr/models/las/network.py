@@ -287,6 +287,7 @@ class ListenAttendSpell(nn.Module):
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
         self.max_seq_len = max_seq_len
+        self.num_heads = num_attend_heads
         self.tfr_upper, self.tfr_lower = tfr_range
         assert 0. < self.tfr_lower < self.tfr_upper < 1.
         self.tfr_steps = tfr_steps

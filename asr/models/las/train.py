@@ -34,10 +34,9 @@ class LASTrainer(NonSplitTrainer):
            (not is_distributed() or dist.get_rank == 0):
             # pick up random attention in batch size, plot each of num of heads
             b = np.random.randint(0, self.model.attentions.size(0))
-            images = self.model.attentions[b, :, :, :].unsqueeze(dim=1)
-            images = (255 * images).int().transpose(2, 3)
-            opts = { 'xlabel': 'frames', 'ylabel': 'labels'}
-            logger.visdom.plot_images(title='attention', tensor=images, nrow=1, **opts)
+            for head in range(self.model.num_heads):
+                a = self.model.attentions[b, head, :, :].transpose(2, 3)
+                logger.visdom.plot_heatmap(title=f'attention_head{head}', tensor=a)
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data

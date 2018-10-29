@@ -151,21 +151,30 @@ class VisdomLogger:
             return self._get_win(title, type)
 
     def _new_window(self, cmd, title, **cmd_args):
-        type = "image" if cmd == self.viz.images else "plot"
-        handle, content = self._get_rank0_win(title, type)
+        if cmd == self.viz.images:
+            types = ("image", None)
+        elif cmd == self.viz.scatter or cmd == self.viz.line:
+            types = ("plot", "scatter")
+        elif cmd == self.viz.heatmap:
+            types = ("plot", "heatmap")
+        else:
+            types = ("plot", None)
+
+        handle, content = self._get_rank0_win(title, types[0])
+
         if handle is None:
             if "opts" in cmd_args:
                 cmd_args['opts'].update({ "title": title, })
             else:
                 cmd_args['opts'] = { "title": title, }
-            if type == "plot":
+            if types == ("plot", "scatter"):
                 name = f"1_{self.rank}" if self.rank is not None else "1"
                 handle = cmd(name=name, **cmd_args)
             else:
                 name = None
                 handle = cmd(**cmd_args)
         else:
-            if type == "plot":
+            if types == ("plot", "scatter"):
                 name = max([int(x['name'].partition('_')[0]) for x in content['data']])
                 name = f"{name+1}_{self.rank}" if self.rank is not None else f"{name+1}"
                 cmd(win=handle, name=name, update="append", **cmd_args)
@@ -185,6 +194,16 @@ class VisdomLogger:
             name = self.windows[title]['name']
             opts = self.windows[title]['opts']
             self.viz.line(win=handle, update='append', Y=Y, X=X, name=name, opts=opts)
+
+    def plot_heatmap(self, title, tensor, **kwargs):
+        if title not in self.windows:
+            cmd = self.viz.heatmap
+            self._new_window(cmd, title, X=tensor, opts=kwargs)
+        else:
+            self.windows[title]['opts'].update(kwargs)
+            handle = self.windows[title]['handle']
+            opts = self.windows[title]['opts']
+            self.viz.heatmap(win=handle, X=tensor, opts=opts)
 
     def plot_images(self, title, tensor, nrow, **kwargs):
         if title not in self.windows:
