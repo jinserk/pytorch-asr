@@ -198,10 +198,10 @@ class Trainer:
             ckpt.unlink()
 
     def train_loop_before_hook(self):
-        raise NotImplementedError
+        pass
 
     def train_loop_after_hook(self):
-        raise NotImplementedError
+        pass
 
     def unit_train(self, data):
         raise NotImplementedError
@@ -378,12 +378,6 @@ class Trainer:
 class NonSplitTrainer(Trainer):
     """training model for overall utterance spectrogram as a single image"""
 
-    def train_loop_before_hook(self):
-        pass
-
-    def train_loop_after_hook(self):
-        pass
-
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
         try:
@@ -477,12 +471,6 @@ class SplitTrainer(Trainer):
     """ training model for splitting utterance into multiple images
         single image stands for localized timing segment corresponding to frame output
     """
-
-    def train_loop_after_hook(self):
-        pass
-
-    def train_loop_after_hook(self):
-        pass
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
