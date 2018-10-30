@@ -24,7 +24,9 @@ class LASTrainer(NonSplitTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.loss = nn.CrossEntropyLoss()
-        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=5, epochs=25)
+        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=0, epochs=25)
+        if self.states is not None and "tfr_scheduler" in self.states:
+            self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
     def train_loop_before_hook(self):
         self.tfr_scheduler.step()
@@ -86,6 +88,9 @@ class LASTrainer(NonSplitTrainer):
         pos = torch.cat((torch.zeros((1, ), dtype=torch.long), torch.cumsum(label_lens, dim=0)))
         refs = [ys[s:l] for s, l in zip(pos[:-1], pos[1:])]
         return hyps, refs
+
+    def save_hook(self):
+        self.states["tfr_scheduler"] = self.tfr_scheduler.state_dict()
 
 
 def batch_train(argv):

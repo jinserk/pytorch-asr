@@ -126,6 +126,11 @@ class Trainer:
         self.checkpoint = checkpoint
         self.opt_type = opt_type
         self.epoch = 0
+        self.states = None
+
+        # load from pre-trained model if needed
+        if continue_from is not None:
+            self.load(continue_from)
 
         # setup model
         self.model = model
@@ -167,10 +172,6 @@ class Trainer:
         self.decoder = LatGenCTCDecoder()
         self.labeler = self.decoder.labeler
 
-        # load from pre-trained model if needed
-        if continue_from is not None:
-            self.load(continue_from)
-
         # FP16 and distributed after load
         if self.fp16:
             #self.model = network_to_half(self.model)
@@ -189,6 +190,8 @@ class Trainer:
             else:
                 self.model = nn.parallel.DistributedDataParallel(self.model)
 
+        if self.states is not None:
+            self.restore_state()
 
     def __get_model_name(self, desc):
         return str(get_model_file_path(self.log_dir, self.model_prefix, desc))
@@ -338,23 +341,31 @@ class Trainer:
         ys_hat = torch.log(ys_hat)
         return ys_hat
 
+    def save_hook(self):
+        pass
+
     def save(self, file_path, **kwargs):
         Path(file_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
         logger.debug(f"saving the model to {file_path}")
-        states = kwargs
-        states["epoch"] = self.epoch
-        states["opt_type"] = self.opt_type
+
+        if self.states is None:
+            self.states = dict()
+        self.states.update(kwargs)
+        self.states["epoch"] = self.epoch
+        self.states["opt_type"] = self.opt_type
         if is_distributed():
             model_state_dict = self.model.state_dict()
             strip_prefix = 9 if self.fp16 else 7
             # remove "module.1." prefix from keys
-            states["model"] = {k[strip_prefix:]: v for k, v in model_state_dict.items()}
+            self.states["model"] = {k[strip_prefix:]: v for k, v in model_state_dict.items()}
         else:
-            states["model"] = self.model.state_dict()
-        states["optimizer"] = self.optimizer.state_dict()
+            self.states["model"] = self.model.state_dict()
+        self.states["optimizer"] = self.optimizer.state_dict()
         if self.lr_scheduler is not None:
-            states["lr_scheduler"] = self.lr_scheduler.state_dict()
-        torch.save(states, file_path)
+            self.states["lr_scheduler"] = self.lr_scheduler.state_dict()
+
+        self.save_hook()
+        torch.save(self.states, file_path)
 
     def load(self, file_path):
         if isinstance(file_path, str):
@@ -364,13 +375,15 @@ class Trainer:
             sys.exit(1)
         logger.debug(f"loading the model from {file_path}")
         to_device = f"cuda:{torch.cuda.current_device()}" if self.use_cuda else "cpu"
-        states = torch.load(file_path, map_location=to_device)
-        self.epoch = states["epoch"]
-        self.model.load_state_dict(states["model"])
-        if "opt_type" in states and self.opt_type == states["opt_type"]:
-            self.optimizer.load_state_dict(states["optimizer"])
-        if self.lr_scheduler is not None and "lr_scheduler" in states:
-            self.lr_scheduler.load_state_dict(states["lr_scheduler"])
+        self.states = torch.load(file_path, map_location=to_device)
+
+    def restore_state(self):
+        self.epoch = self.states["epoch"]
+        self.model.load_state_dict(self.states["model"])
+        if "opt_type" in self.states and self.opt_type == self.states["opt_type"]:
+            self.optimizer.load_state_dict(self.states["optimizer"])
+        if self.lr_scheduler is not None and "lr_scheduler" in self.states:
+            self.lr_scheduler.load_state_dict(self.states["lr_scheduler"])
         #for _ in range(self.epoch-1):
         #    self.lr_scheduler.step()
 
