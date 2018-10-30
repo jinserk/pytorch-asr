@@ -278,22 +278,51 @@ class Speller(nn.Module):
         return y_hats, seq_lens, attentions
 
 
+class TFRScheduler(object):
+
+    def __init__(self, model, ranges=(0.9, 0.1), warm_up=5, epochs=25):
+        self.model = model
+
+        self.upper, self.lower = ranges
+        assert 0. < self.lower < self.upper < 1.
+        self.warm_up = warm_up
+        self.end_epochs = epochs + warm_up
+        self.slope = (self.lower - self.upper) / epochs
+
+        self.last_epoch = -1
+
+    def state_dict(self):
+        return {key: value for key, value in self.__dict__.items() if key != 'model'}
+
+    def load_state_dict(self, state_dict):
+        self.__dict__.update(state_dict)
+
+    def get_tfr(self):
+        # linearly declined
+        if self.last_epoch < self.warm_up:
+            return self.upper
+        elif self.last_epoch < self.end_epochs:
+            return self.upper + self.slope * (self.last_epoch - self.warm_up)
+        else:
+            return self.lower
+
+    def step(self, epoch=None):
+        if epoch is None:
+            epoch = self.last_epoch + 1
+        self.last_epoch = epoch
+        self.model.tfr = self.get_tfr()
+
+
 class ListenAttendSpell(nn.Module):
 
     def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=512,
-                 state_vec_size=512, num_attend_heads=1, max_seq_len=256,
-                 tfr_range=(0.9, 0.1), tfr_steps=25, input_folding=2):
+                 state_vec_size=512, num_attend_heads=1, max_seq_len=256, input_folding=2):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
         self.max_seq_len = max_seq_len
         self.num_heads = num_attend_heads
-        self.tfr_upper, self.tfr_lower = tfr_range
-        assert 0. < self.tfr_lower < self.tfr_upper < 1.
-        self.tfr_warmup = 5
-        self.tfr_steps = tfr_steps
-        self.tfr_step = 0
-        self.tfr = self.tfr_upper
+        self.tfr = 1.
 
         self.listen = Listener(listen_vec_size=listen_vec_size, input_folding=input_folding, rnn_type=nn.LSTM,
                                rnn_hidden_size=listen_vec_size, rnn_num_layers=4, bidirectional=True,
@@ -306,16 +335,8 @@ class ListenAttendSpell(nn.Module):
         self.attentions = None
         self.softmax = nn.LogSoftmax(dim = -1)
 
-    def step_tf_rate(self):
-        # linearly declined
-        if self.tfr_step <= self.tfr_warmup:
-            self.tfr = self.tfr_upper
-        elif self.tfr_warmup < self.tfr_step < (self.tfr_steps + self.tfr_warmup):
-            slope = (self.tfr_upper - self.tfr_lower) / self.tfr_steps
-            self.tfr = self.tfr_upper - slope * (self.tfr_step - self.tfr_warmup)
-            self.tfr_step += 1
-        else:
-            self.tfr = self.tfr_lower
+    def _is_teacher_force(self):
+        return np.random.random_sample() < self.tfr
 
     def forward(self, x, x_seq_lens, y=None, y_seq_lens=None):
         # listener
@@ -329,8 +350,8 @@ class ListenAttendSpell(nn.Module):
             eos_tensor = torch.cuda.IntTensor([eos, ]) if y.is_cuda else torch.IntTensor([eos, ])
             ys = [torch.cat([yb, eos_tensor]) for yb in torch.split(y, y_seq_lens.tolist())]
             ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=eos)
-            # speller with teach force flag
-            if np.random.random_sample() < self.tfr:
+            # speller with teach force rate
+            if self._is_teacher_force():
                 yss = int2onehot(ys, num_classes=self.label_vec_size).float() * 2. - 1.
                 y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss)
             else:

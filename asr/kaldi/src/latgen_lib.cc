@@ -23,7 +23,7 @@
 #include <tuple>
 #include <sstream>
 
-#include <torch/torch.h>
+#include <torch/extension.h>
 #include <torch/tensor.h>
 
 #include "base/kaldi-common.h"

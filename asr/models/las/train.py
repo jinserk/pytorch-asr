@@ -15,7 +15,7 @@ from asr.utils import params as p
 from asr.kaldi.latgen import LatGenCTCDecoder
 
 from ..trainer import *
-from .network import ListenAttendSpell
+from .network import TFRScheduler, ListenAttendSpell
 
 
 class LASTrainer(NonSplitTrainer):
@@ -24,9 +24,10 @@ class LASTrainer(NonSplitTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.loss = nn.CrossEntropyLoss()
+        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=5, epochs=25)
 
     def train_loop_before_hook(self):
-        self.model.step_tf_rate()
+        self.tfr_scheduler.step()
         logger.debug(f"current tfr = {self.model.tfr:.3e}")
 
     def train_loop_after_hook(self):
@@ -239,7 +240,9 @@ def train(argv):
     datasets = {
         "train": ConcatDataset([AudioSubset(d, data_size=0, min_len=args.min_len, max_len=args.max_len)
                                 for d in train_datasets]),
-        "dev"  : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv", stride=input_folding),
+        "dev"  : AudioSubset(NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv",
+                                                  stride=input_folding),
+                             data_size=0),
         "test" : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv", stride=input_folding),
     }
 
