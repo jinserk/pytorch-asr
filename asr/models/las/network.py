@@ -280,9 +280,9 @@ class Speller(nn.Module):
 
 class ListenAttendSpell(nn.Module):
 
-    def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=256,
-                 state_vec_size=512, num_attend_heads=2, max_seq_len=256,
-                 tfr_range=(0.9, 0.1), tfr_steps=20, input_folding=2):
+    def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=512,
+                 state_vec_size=512, num_attend_heads=1, max_seq_len=256,
+                 tfr_range=(0.9, 0.1), tfr_steps=25, input_folding=2):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
@@ -290,6 +290,7 @@ class ListenAttendSpell(nn.Module):
         self.num_heads = num_attend_heads
         self.tfr_upper, self.tfr_lower = tfr_range
         assert 0. < self.tfr_lower < self.tfr_upper < 1.
+        self.tfr_warmup = 5
         self.tfr_steps = tfr_steps
         self.tfr_step = 0
         self.tfr = self.tfr_upper
@@ -307,9 +308,11 @@ class ListenAttendSpell(nn.Module):
 
     def step_tf_rate(self):
         # linearly declined
-        if self.tfr_step < self.tfr_steps:
+        if self.tfr_step <= self.tfr_warmup:
+            self.tfr = self.tfr_upper
+        elif self.tfr_warmup < self.tfr_step < (self.tfr_steps + self.tfr_warmup):
             slope = (self.tfr_upper - self.tfr_lower) / self.tfr_steps
-            self.tfr = self.tfr_upper - slope * self.tfr_step
+            self.tfr = self.tfr_upper - slope * (self.tfr_step - self.tfr_warmup)
             self.tfr_step += 1
         else:
             self.tfr = self.tfr_lower
