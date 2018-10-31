@@ -303,7 +303,7 @@ def test(argv):
     trainer = LASTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
 
-    manifest = f"{args.data_path}/eval2000.csv"
+    manifest = f"{args.data_path}/rt03.csv"
     dataset = AudioSubset(NonSplitTrainDataset(labeler=labeler, manifest_file=manifest, stride=input_folding),
                           max_len=args.max_len, min_len=args.min_len)
     dataloader = NonSplitTrainDataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,

@@ -10,9 +10,9 @@ The code was tested with Python 3.7 and PyTorch 1.0.0rc1. We have a lot of [f-st
 
 | model | train dataset | dev dataset | test dataset | LER | WER |
 |-------|---------------|-------------|--------------|-----|-----|
-| decoder<sup id="a1">[1](#f1)</sup> | - | - | swbd eval2000 | - | 1.87% |
-| deepspeech_var | fisher + swbd train | swbd eval2000 | swbd rt03 |       |
-| las | fisher + swbd train | swbd eval2000 | swbd rt03 |       |
+| decoder baseline<sup id="a1">[1](#f1)</sup> | - | - | swbd rt03 | - | 1.74% |
+| deepspeech_var | aspire + swbd train | swbd eval2000 | swbd rt03 |       |
+| las | aspire + swbd train | swbd eval2000 | swbd rt03 |       |
 
 
 <sub><sup id="f1">1. This is the result by engaging the phone label sequences (onehot vectors) into the decoder input.
