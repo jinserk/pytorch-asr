@@ -1,8 +1,19 @@
 # ASR with PyTorch
 
 This repository maintains an experimental code for speech recognition using [PyTorch](https://github.com/pytorch/pytorch) and [Kaldi](https://github.com/kaldi-asr/kaldi).
-The Kaldi latgen decoder is integrated with PyTorch binding for CTC based acoustic model training.
-The code was tested with Python 3.7 and PyTorch 1.0.0rc1. We have a lot of f-strings so you must use Python 3.6+.
+We are more focusing on better acoustic model that produce phoneme sequence than end-to-end transcription.
+For this purpose, the Kaldi latgen decoder is integrated as a PyTorch CppExtension.
+
+The code was tested with Python 3.7 and PyTorch 1.0.0rc1. We have a lot of [f-strings](https://www.python.org/dev/peps/pep-0498/), so you must use Python 3.6 or later.
+
+## Performance
+
+| model | train dataset | dev dataset | test dataset | LER | BER |
+|-------|---------------|-------------|--------------|-----|-----|
+| baseline<sup id="a1">[1](#f1)</sup> | - | - | swbd eval2000 | - | 1.87% |
+
+<sup id="f1">1</sup> This is the result engaged the phone label sequences (onehot vectors) into the decoder input.
+Only < 20-sec utterances were selected. [back](#a1)
 
 ## Installation
 
@@ -13,7 +24,7 @@ The code was tested with Python 3.7 and PyTorch 1.0.0rc1. We have a lot of f-str
 * [TNT](https://github.com/pytorch/tnt.git)
 
 We recommend [pyenv](https://github.com/pyenv/pyenv).
-Do not forget to set `pyenv local 3.7.0` in the local repo if you're using pyenv.
+Do not forget to set `pyenv local <python-version>` in the local repo if you're using pyenv.
 
 If you want to use AdamW as your optimizer, you need to patch [PR #4429](https://github.com/pytorch/pytorch/pull/4429) to PyTorch source by yourself.
 CosineAnnealingWithRestartLR for SGDR from [PR #7821](https://github.com/pytorch/pytorch/pull/7821) is included in `asr/utils/lr_scheduler.py` as a part of this project.
