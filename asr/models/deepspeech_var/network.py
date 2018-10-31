@@ -95,29 +95,29 @@ class DeepSpeech(nn.Module):
         H1 = rnn_hidden_size
 
         self.conv = nn.Sequential(
-            nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(1, 1), padding=(20, 3)),
+            nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(2, 1), padding=(20, 3)),
             nn.BatchNorm2d(C1),
             #nn.Hardtanh(-10, 10, inplace=True),
             nn.LeakyReLU(inplace=True),
             #Swish(inplace=True),
-            nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(1, 1), padding=(10, 3)),
+            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
+            nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(2, 1), padding=(10, 3)),
             nn.BatchNorm2d(C2),
             #nn.Hardtanh(-10, 10, inplace=True),
             nn.LeakyReLU(inplace=True),
             #Swish(inplace=True),
-            nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(1, 1), padding=(5, 3)),
+            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
+            nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(2, 1), padding=(5, 3)),
             nn.BatchNorm2d(C3),
             #nn.Hardtanh(-10, 10, inplace=True),
             nn.LeakyReLU(inplace=True),
             #Swish(inplace=True),
-            nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
+            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
         )
 
         self.fc1 = SequenceWise(nn.Sequential(
             nn.Linear(H0, rnn_hidden_size, bias=True),
-            nn.Dropout(0.5, inplace=True),
+            nn.Dropout(0.2, inplace=True),
             #nn.Hardtanh(-10, 10, inplace=True),
             nn.LeakyReLU(inplace=True),
             #Swish(inplace=True),
@@ -136,9 +136,9 @@ class DeepSpeech(nn.Module):
 
         self.fc2 = SequenceWise(nn.Sequential(
             nn.LayerNorm(H1, elementwise_affine=False),
-            nn.Linear(H1, 256, bias=True),
-            nn.Dropout(0.5, inplace=True),
-            nn.Linear(256, num_classes, bias=True),
+            nn.Linear(H1, num_classes, bias=True),
+            #nn.Dropout(0.2, inplace=True),
+            #nn.Linear(256, num_classes, bias=True),
         ))
         #self.softmax = nn.LogSoftmax(dim=-1)
         self.softmax = InferenceBatchSoftmax()
@@ -150,7 +150,7 @@ class DeepSpeech(nn.Module):
         h = self.fc1(h)
         g = self.rnns[0](h, seq_lens)
         for i in range(1, self._hidden_layers):
-            #g = g + h
+            g = g + h
             g = self.rnns[i](g, seq_lens)
         y = self.fc2(g)
         y = self.softmax(y)
