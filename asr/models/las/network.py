@@ -150,7 +150,7 @@ class Listener(nn.Module):
 
 class Attention(nn.Module):
 
-    def __init__(self, state_vec_size, listen_vec_size, apply_proj=True, proj_hidden_size=512, num_heads=1):
+    def __init__(self, state_vec_size, listen_vec_size, apply_proj=True, proj_hidden_size=256, num_heads=1):
         super().__init__()
         self.apply_proj = apply_proj
         self.num_heads = num_heads
@@ -330,7 +330,7 @@ class ListenAttendSpell(nn.Module):
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
                              rnn_hidden_size=state_vec_size, rnn_num_layers=1, max_seq_len=max_seq_len,
-                             apply_attend_proj=False, num_attend_heads=num_attend_heads)
+                             apply_attend_proj=True, num_attend_heads=num_attend_heads)
 
         self.attentions = None
         self.softmax = nn.LogSoftmax(dim = -1)
