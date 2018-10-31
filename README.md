@@ -14,7 +14,7 @@ The code was tested with Python 3.7 and PyTorch 1.0.0rc1. We have a lot of [f-st
 
 <sub><sup id="f1">1. This is the result engaged the phone label sequences (onehot vectors) into the decoder input.
 Only < 20-sec utterances were selected. please see [here](https://github.com/jinserk/pytorch-asr/blob/master/asr/models/trainer.py#L459)
-with `target_test=True`. [&#x23ce](#a1)</sup></sub>
+with `target_test=True`. [&#9166](#a1)</sup></sub>
 
 ## Installation
 
