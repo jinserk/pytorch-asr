@@ -13,8 +13,9 @@ The code was tested with Python 3.7 and PyTorch 1.0.0rc1. We have a lot of [f-st
 | baseline<sup id="a1">[1](#f1)</sup> | - | - | swbd eval2000 | - | 1.87% |
 
 <sub><sup id="f1">1. This is the result engaged the phone label sequences (onehot vectors) into the decoder input.
-Only < 20-sec utterances were selected. please see [here](https://github.com/jinserk/pytorch-asr/blob/master/asr/models/trainer.py#L459)
-with `target_test=True`. [&#9166;](#a1)</sup></sub>
+Only < 20-sec utterances were selected, choosed a random pronunciation for words from the lexicon if the the words have multiple pronunciations, after
+inserting sil phones with prob 0.2 between the words and with prob 0.8 at the beginning and end of the utterances.
+please see [here](https://github.com/jinserk/pytorch-asr/blob/master/asr/models/trainer.py#L459) with `target_test=True`. [&#9166;](#a1)</sup></sub>
 
 ## Installation
 
