@@ -12,8 +12,8 @@ The code was tested with Python 3.7 and PyTorch 1.0.0rc1. We have a lot of [f-st
 |-------|---------------|-------------|--------------|-----|-----|
 | baseline<sup id="a1">[1](#f1)</sup> | - | - | swbd eval2000 | - | 1.87% |
 
-<sup id="f1">1</sup> This is the result engaged the phone label sequences (onehot vectors) into the decoder input.
-Only < 20-sec utterances were selected. [back](#a1)
+<sub><sup id="f1">1. This is the result engaged the phone label sequences (onehot vectors) into the decoder input.
+Only < 20-sec utterances were selected. [back](#a1)</sup></sub>
 
 ## Installation
 
