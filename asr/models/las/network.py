@@ -85,33 +85,31 @@ class Listener(nn.Module):
         C2 = C1 * 2
         W3 = (W2 - 11 + 2*5) // 2 + 1   # 17
         C3 = C2 * 2
-
         H0 = C3 * W3
-        H1 = rnn_hidden_size
 
         self.conv = nn.Sequential(
-            nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(1, 1), padding=(20, 3)),
+            nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(2, 1), padding=(20, 3)),
             nn.BatchNorm2d(C1),
             #nn.Hardtanh(-10, 10, inplace=True),
             nn.LeakyReLU(inplace=True),
             #Swish(inplace=True),
-            nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(1, 1), padding=(10, 3)),
+            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
+            nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(2, 1), padding=(10, 3)),
             nn.BatchNorm2d(C2),
             #nn.Hardtanh(-10, 10, inplace=True),
             nn.LeakyReLU(inplace=True),
             #Swish(inplace=True),
-            nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(1, 1), padding=(5, 3)),
+            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
+            nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(2, 1), padding=(5, 3)),
             nn.BatchNorm2d(C3),
             #nn.Hardtanh(-10, 10, inplace=True),
             nn.LeakyReLU(inplace=True),
             #Swish(inplace=True),
-            nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
+            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
         )
 
         self.fc1 = SequenceWise(nn.Sequential(
-            nn.Linear(H0, H1, bias=True),
+            nn.Linear(H0, rnn_hidden_size, bias=True),
             nn.Dropout(0.2, inplace=True),
             #nn.Hardtanh(-10, 10, inplace=True),
             nn.LeakyReLU(inplace=True),
@@ -120,15 +118,15 @@ class Listener(nn.Module):
 
         # using BatchRNN
         self.rnns = nn.ModuleList([
-            BatchRNN(input_size=H1 if l == 0 else rnn_hidden_size, hidden_size=rnn_hidden_size,
+            BatchRNN(input_size=rnn_hidden_size, hidden_size=rnn_hidden_size,
                      rnn_type=rnn_type, bidirectional=bidirectional, layer_norm=True)
-            for l in range(rnn_num_layers)
+            for _ in range(rnn_num_layers)
         ])
 
         if not skip_fc:
             self.fc = SequenceWise(nn.Sequential(
-                nn.LayerNorm(H1, elementwise_affine=False),
-                nn.Linear(H1, listen_vec_size, bias=True),
+                nn.LayerNorm(rnn_hidden_size, elementwise_affine=False),
+                nn.Linear(rnn_hidden_size, listen_vec_size, bias=True),
                 nn.Dropout(0.2, inplace=True),
             ))
         else:
@@ -141,7 +139,7 @@ class Listener(nn.Module):
         h = self.fc1(h)
         y, _ = self.rnns[0](h, seq_lens)
         for i in range(1, self.rnn_num_layers):
-            #y = y + h
+            y = y + h
             y, _ = self.rnns[i](y, seq_lens)
         if not self.skip_fc:
             y = self.fc(y)
@@ -212,7 +210,7 @@ class Speller(nn.Module):
 
     def __init__(self, listen_vec_size, label_vec_size, rnn_type=nn.LSTM,
                  rnn_hidden_size=512, rnn_num_layers=1, max_seq_len=100,
-                 apply_attend_proj=False, num_attend_heads=1):
+                 apply_attend_proj=False, proj_hidden_size=256, num_attend_heads=1):
         super().__init__()
 
         self.max_seq_len = max_seq_len
@@ -230,7 +228,8 @@ class Speller(nn.Module):
         ])
 
         self.attention = Attention(state_vec_size=Hs, listen_vec_size=Hc,
-                                   apply_proj=apply_attend_proj, num_heads=num_attend_heads)
+                                   apply_proj=apply_attend_proj, proj_hidden_size=proj_hidden_size,
+                                   num_heads=num_attend_heads)
 
         self.chardist = SequenceWise(nn.Sequential(
             nn.LayerNorm(Hs + Hc, elementwise_affine=False),
@@ -330,7 +329,7 @@ class ListenAttendSpell(nn.Module):
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
                              rnn_hidden_size=state_vec_size, rnn_num_layers=1, max_seq_len=max_seq_len,
-                             apply_attend_proj=True, num_attend_heads=num_attend_heads)
+                             apply_attend_proj=True, proj_hidden_size=256, num_attend_heads=num_attend_heads)
 
         self.attentions = None
         self.softmax = nn.LogSoftmax(dim = -1)
