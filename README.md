@@ -8,12 +8,15 @@ The code was tested with Python 3.7 and PyTorch 1.0.0rc1. We have a lot of [f-st
 
 ## Performance
 
-| model | train dataset | dev dataset | test dataset | LER | BER |
+| model | train dataset | dev dataset | test dataset | LER | WER |
 |-------|---------------|-------------|--------------|-----|-----|
-| baseline<sup id="a1">[1](#f1)</sup> | - | - | swbd eval2000 | - | 1.87% |
+| decoder<sup id="a1">[1](#f1)</sup> | - | - | swbd eval2000 | - | 1.87% |
+| deepspeech_var | fisher + swbd train | swbd eval2000 | swbd rt03 |       |
+| las | fisher + swbd train | swbd eval2000 | swbd rt03 |       |
 
-<sub><sup id="f1">1. This is the result engaged the phone label sequences (onehot vectors) into the decoder input.
-Only < 20-sec utterances were selected, choosed a random pronunciation for words from the lexicon if the the words have multiple pronunciations, after
+
+<sub><sup id="f1">1. This is the result by engaging the phone label sequences (onehot vectors) into the decoder input.
+The result is from < 20-sec utterances, choosing a random pronunciation for words from the lexicon if the words have multiple pronunciations, after
 inserting sil phones with prob 0.2 between the words and with prob 0.8 at the beginning and end of the utterances.
 please see [here](https://github.com/jinserk/pytorch-asr/blob/master/asr/models/trainer.py#L459) with `target_test=True`. [&#9166;](#a1)</sup></sub>
 
