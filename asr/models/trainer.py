@@ -36,9 +36,9 @@ torch.backends.cudnn.enabled = True
 torch.backends.cudnn.deterministic = False
 
 
-def init_distributed(use_cuda, backend="nccl", init="slurm"):
+def init_distributed(use_cuda, backend="gloo", init="slurm"):
     try:
-        mp.set_start_method('spawn') # spawn, forkserver, and fork
+        mp.set_start_method('forkserver')  # spawn, forkserver, and fork
     except RuntimeError:
         pass
 
@@ -65,7 +65,8 @@ def init_distributed(use_cuda, backend="nccl", init="slurm"):
         #init_method = "env://"
         dist.init_process_group(backend=backend, init_method=init_method, world_size=world_size, rank=rank)
         print(f"initialized as {rank}/{world_size} via {init_method}")
-    except:
+    except Exception as e:
+        #print(e)
         print(f"initialized as single process")
 
 
@@ -209,13 +210,13 @@ class Trainer:
     def unit_train(self, data):
         raise NotImplementedError
 
-    def average_gradients(self):
-        if not is_distributed():
-            return
-        size = float(dist.get_world_size())
-        for param in self.model.parameters():
-            dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM)
-            param.grad.data /= size
+    #def average_gradients(self):
+    #    if not is_distributed():
+    #        return
+    #    size = float(dist.get_world_size())
+    #    for param in self.model.parameters():
+    #        dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM, async_op=True)
+    #        param.grad.data /= size
 
     def train_epoch(self, data_loader):
         self.model.train()
@@ -379,7 +380,10 @@ class Trainer:
 
     def restore_state(self):
         self.epoch = self.states["epoch"]
-        self.model.load_state_dict(self.states["model"])
+        if is_distributed():
+            self.model.load_state_dict({f"module.{k}": v for k, v in self.states["model"].items()})
+        else:
+            self.model.load_state_dict(self.states["model"])
         if "opt_type" in self.states and self.opt_type == self.states["opt_type"]:
             self.optimizer.load_state_dict(self.states["optimizer"])
         if self.lr_scheduler is not None and "lr_scheduler" in self.states:
@@ -428,8 +432,8 @@ class NonSplitTrainer(Trainer):
             else:
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
-            if is_distributed():
-                self.average_gradients()
+            #if is_distributed():
+            #    self.average_gradients()
             self.optimizer.step()
             if self.use_cuda:
                 torch.cuda.synchronize()
@@ -510,8 +514,8 @@ class SplitTrainer(Trainer):
             else:
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
-            if is_distributed():
-                self.average_gradients()
+            #if is_distributed():
+            #    self.average_gradients()
             self.optimizer.step()
             del loss
         except Exception as e:

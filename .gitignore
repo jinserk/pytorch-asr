@@ -120,3 +120,5 @@ asr/kaldi/graph
 *.out
 *.err
 
+# mergetool
+*.orig
