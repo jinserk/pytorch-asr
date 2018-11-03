@@ -124,7 +124,7 @@ def batch_train(argv):
     set_seed(args.seed)
 
     # prepare trainer object
-    input_folding = 3
+    input_folding = 2
     model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)
@@ -157,19 +157,19 @@ def batch_train(argv):
         "train5" : NonSplitTrainDataLoader(datasets["train5"],
                                            sampler=(DistributedSampler(datasets["train5"])
                                                     if is_distributed() else None),
-                                           batch_size=64, num_workers=32,
+                                           batch_size=16, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train10": NonSplitTrainDataLoader(datasets["train10"],
                                            sampler=(DistributedSampler(datasets["train10"])
                                                     if is_distributed() else None),
-                                           batch_size=64, num_workers=32,
+                                           batch_size=8, num_workers=8,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train15": NonSplitTrainDataLoader(datasets["train15"],
                                            sampler=(DistributedSampler(datasets["train15"])
                                                     if is_distributed() else None),
-                                           batch_size=64, num_workers=32,
+                                           batch_size=8, num_workers=8,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"],
@@ -182,10 +182,10 @@ def batch_train(argv):
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
-        if i < 2:
-            trainer.train_epoch(dataloaders["train3"])
-            trainer.validate(dataloaders["dev"])
-        elif i < (2 + 4 + 8):
+        #if i < 2:
+        #    trainer.train_epoch(dataloaders["train3"])
+        #    trainer.validate(dataloaders["dev"])
+        if i < (2 + 4 + 8):
             trainer.train_epoch(dataloaders["train5"])
             trainer.validate(dataloaders["dev"])
         elif i < (2 + 4 + 8 + 16):
@@ -231,7 +231,7 @@ def train(argv):
     set_seed(args.seed)
 
     # prepare trainer object
-    input_folding = 3
+    input_folding = 2
     model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)
@@ -299,7 +299,7 @@ def test(argv):
 
     assert args.continue_from is not None
 
-    input_folding = 3
+    input_folding = 2
     model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)

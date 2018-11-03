@@ -47,10 +47,10 @@ class BatchRNN(nn.Module):
         self.bidirectional = bidirectional
         self.batch_first = batch_first
 
-        self.layer_norm = SequenceWise(nn.LayerNorm(input_size, elementwise_affine=False)) if layer_norm else None
+        self.layer_norm = SequenceWise(nn.LayerNorm(input_size, elementwise_affine=True)) if layer_norm else None
 
         self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size,
-                            bidirectional=bidirectional, batch_first=batch_first, bias=True)
+                            bidirectional=bidirectional, batch_first=batch_first, bias=False)
 
     def flatten_parameters(self):
         self.rnn.flatten_parameters()
@@ -108,25 +108,17 @@ class Listener(nn.Module):
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
         )
 
-        self.fc1 = SequenceWise(nn.Sequential(
-            nn.Linear(H0, rnn_hidden_size, bias=True),
-            nn.Dropout(0.2),
-            #nn.Hardtanh(-10, 10),
-            #nn.LeakyReLU(),
-            Swish(),
-        ))
-
         # using BatchRNN
         self.rnns = nn.ModuleList([
-            BatchRNN(input_size=rnn_hidden_size, hidden_size=rnn_hidden_size,
+            BatchRNN(input_size=(H0 if l == 0 else rnn_hidden_size), hidden_size=rnn_hidden_size,
                      rnn_type=rnn_type, bidirectional=bidirectional, layer_norm=True)
-            for _ in range(rnn_num_layers)
+            for l in range(rnn_num_layers)
         ])
 
         if not skip_fc:
             self.fc = SequenceWise(nn.Sequential(
                 nn.LayerNorm(rnn_hidden_size, elementwise_affine=False),
-                nn.Linear(rnn_hidden_size, listen_vec_size, bias=True),
+                nn.Linear(rnn_hidden_size, listen_vec_size, bias=False),
                 nn.Dropout(0.2),
             ))
         else:
@@ -135,11 +127,8 @@ class Listener(nn.Module):
     def forward(self, x, seq_lens):
         h = self.conv(x)
         h = h.view(-1, h.size(1) * h.size(2), h.size(3))  # Collapse feature dimension
-        h = h.transpose(1, 2).contiguous()  # NxTxH
-        h = self.fc1(h)
-        y, _ = self.rnns[0](h, seq_lens)
-        for i in range(1, self.rnn_num_layers):
-            #y = y + h
+        y = h.transpose(1, 2).contiguous()  # NxTxH
+        for i in range(self.rnn_num_layers):
             y, _ = self.rnns[i](y, seq_lens)
         if not self.skip_fc:
             y = self.fc(y)
@@ -156,12 +145,12 @@ class Attention(nn.Module):
         if apply_proj:
             self.phi = SequenceWise(nn.Sequential(
                 nn.LayerNorm(state_vec_size, elementwise_affine=False),
-                nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=True),
+                nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=False),
                 nn.Dropout(0.2),
             ))
             self.psi = SequenceWise(nn.Sequential(
                 nn.LayerNorm(state_vec_size, elementwise_affine=False),
-                nn.Linear(listen_vec_size, proj_hidden_size, bias=True),
+                nn.Linear(listen_vec_size, proj_hidden_size, bias=False),
                 nn.Dropout(0.2),
             ))
         else:
@@ -173,7 +162,7 @@ class Attention(nn.Module):
             input_size = listen_vec_size * num_heads
             self.reduce = SequenceWise(nn.Sequential(
                 nn.LayerNorm(input_size, elementwise_affine=False),
-                nn.Linear(input_size, listen_vec_size, bias=True),
+                nn.Linear(input_size, listen_vec_size, bias=False),
                 nn.Dropout(0.2),
             ))
 
@@ -233,7 +222,7 @@ class Speller(nn.Module):
 
         self.chardist = SequenceWise(nn.Sequential(
             nn.LayerNorm(Hs + Hc, elementwise_affine=False),
-            nn.Linear(Hs + Hc, label_vec_size, bias=True),
+            nn.Linear(Hs + Hc, label_vec_size, bias=False),
         ))
 
     def forward(self, h, y=None):
