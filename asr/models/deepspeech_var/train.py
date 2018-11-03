@@ -84,13 +84,13 @@ def batch_train(argv):
         "train10": NonSplitTrainDataLoader(datasets["train10"],
                                            sampler=(DistributedSampler(datasets["train10"])
                                                     if is_distributed() else None),
-                                           batch_size=64, num_workers=16,
+                                           batch_size=32, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train15": NonSplitTrainDataLoader(datasets["train15"],
                                            sampler=(DistributedSampler(datasets["train15"])
                                                     if is_distributed() else None),
-                                           batch_size=64, num_workers=16,
+                                           batch_size=32, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"],
