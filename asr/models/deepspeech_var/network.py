@@ -94,26 +94,26 @@ class DeepSpeech(nn.Module):
         #W5 = 2 * rnn_hidden_size if bidirectional else rnn_hidden_size
         H1 = rnn_hidden_size
 
-        self.conv = nn.Sequential(
-            nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(2, 1), padding=(20, 3)),
-            nn.BatchNorm2d(C1),
-            #nn.Hardtanh(-10, 10),
-            #nn.LeakyReLU(),
-            Swish(),
-            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(2, 1), padding=(10, 3)),
-            nn.BatchNorm2d(C2),
-            #nn.Hardtanh(-10, 10),
-            #nn.LeakyReLU(),
-            Swish(),
-            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(2, 1), padding=(5, 3)),
-            nn.BatchNorm2d(C3),
-            #nn.Hardtanh(-10, 10),
-            #nn.LeakyReLU(,
-            Swish(),
-            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-        )
+        self.feature = nn.Sequential(OrderedDict([
+            ("cv1", nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(2, 1), padding=(20, 3))),
+            ("bn1", nn.BatchNorm2d(C1)),
+            #("nl1", nn.Hardtanh(-10, 10)),
+            #("nl1", nn.LeakyReLU()),
+            ("nl1", Swish()),
+            #("mp1", nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
+            ("cv2", nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(2, 1), padding=(10, 3))),
+            ("bn2", nn.BatchNorm2d(C2)),
+            #("nl2", nn.Hardtanh(-10, 10)),
+            #("nl2", nn.LeakyReLU()),
+            ("nl2", Swish()),
+            #("mp2", nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
+            ("cv3", nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(2, 1), padding=(5, 3))),
+            ("bn3", nn.BatchNorm2d(C3)),
+            #("nl3", nn.Hardtanh(-10, 10)),
+            #("nl3", nn.LeakyReLU()),
+            ("nl3", Swish()),
+            #("mp3", nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
+        ]))
 
         # using BatchRNN
         self.rnns = nn.ModuleList([
@@ -126,17 +126,17 @@ class DeepSpeech(nn.Module):
         #self.rnns = nn.LSTM(input_size=W4, hidden_size=rnn_hidden_size, num_layers=rnn_num_layers,
         #                    bidirectional=bidirectional, dropout=0)
 
-        self.fc = SequenceWise(nn.Sequential(
-            nn.LayerNorm(H1, elementwise_affine=False),
-            nn.Linear(H1, num_classes, bias=False),
-            #nn.Dropout(0.2),
-            #nn.Linear(256, num_classes, bias=True),
-        ))
+        self.fc = SequenceWise(nn.Sequential(OrderedDict([
+            ("ln1", nn.LayerNorm(H1, elementwise_affine=False)),
+            ("fc1", nn.Linear(H1, num_classes, bias=False)),
+            #("do1", nn.Dropout(0.2)),
+            #("fc2", nn.Linear(256, num_classes, bias=True)),
+        ])))
         #self.softmax = nn.LogSoftmax(dim=-1)
         self.softmax = InferenceBatchSoftmax()
 
     def forward(self, x, seq_lens):
-        h = self.conv(x)
+        h = self.feature(x)
         h = h.view(-1, h.size(1) * h.size(2), h.size(3))  # Collapse feature dimension
         g = h.transpose(1, 2).contiguous()  # NxTxH
         for i in range(self._hidden_layers):
