@@ -90,30 +90,30 @@ class Listener(nn.Module):
         self.conv = nn.Sequential(
             nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(2, 1), padding=(20, 3)),
             nn.BatchNorm2d(C1),
-            #nn.Hardtanh(-10, 10, inplace=True),
-            nn.LeakyReLU(inplace=True),
-            #Swish(inplace=True),
+            #nn.Hardtanh(-10, 10),
+            #nn.LeakyReLU(),
+            Swish(),
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
             nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(2, 1), padding=(10, 3)),
             nn.BatchNorm2d(C2),
-            #nn.Hardtanh(-10, 10, inplace=True),
-            nn.LeakyReLU(inplace=True),
-            #Swish(inplace=True),
+            #nn.Hardtanh(-10, 10),
+            #nn.LeakyReLU(),
+            Swish(),
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
             nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(2, 1), padding=(5, 3)),
             nn.BatchNorm2d(C3),
-            #nn.Hardtanh(-10, 10, inplace=True),
-            nn.LeakyReLU(inplace=True),
-            #Swish(inplace=True),
+            #nn.Hardtanh(-10, 10),
+            #nn.LeakyReLU(),
+            Swish(),
             #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
         )
 
         self.fc1 = SequenceWise(nn.Sequential(
             nn.Linear(H0, rnn_hidden_size, bias=True),
-            nn.Dropout(0.2, inplace=True),
-            #nn.Hardtanh(-10, 10, inplace=True),
-            nn.LeakyReLU(inplace=True),
-            #Swish(inplace=True),
+            nn.Dropout(0.2),
+            #nn.Hardtanh(-10, 10),
+            #nn.LeakyReLU(),
+            Swish(),
         ))
 
         # using BatchRNN
@@ -127,7 +127,7 @@ class Listener(nn.Module):
             self.fc = SequenceWise(nn.Sequential(
                 nn.LayerNorm(rnn_hidden_size, elementwise_affine=False),
                 nn.Linear(rnn_hidden_size, listen_vec_size, bias=True),
-                nn.Dropout(0.2, inplace=True),
+                nn.Dropout(0.2),
             ))
         else:
             assert listen_vec_size == rnn_hidden_size
@@ -157,12 +157,12 @@ class Attention(nn.Module):
             self.phi = SequenceWise(nn.Sequential(
                 nn.LayerNorm(state_vec_size, elementwise_affine=False),
                 nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=True),
-                nn.Dropout(0.2, inplace=True),
+                nn.Dropout(0.2),
             ))
             self.psi = SequenceWise(nn.Sequential(
                 nn.LayerNorm(state_vec_size, elementwise_affine=False),
                 nn.Linear(listen_vec_size, proj_hidden_size, bias=True),
-                nn.Dropout(0.2, inplace=True),
+                nn.Dropout(0.2),
             ))
         else:
             assert state_vec_size == listen_vec_size * num_heads
@@ -174,7 +174,7 @@ class Attention(nn.Module):
             self.reduce = SequenceWise(nn.Sequential(
                 nn.LayerNorm(input_size, elementwise_affine=False),
                 nn.Linear(input_size, listen_vec_size, bias=True),
-                nn.Dropout(0.2, inplace=True),
+                nn.Dropout(0.2),
             ))
 
     def score(self, m, n):
