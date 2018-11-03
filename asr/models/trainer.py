@@ -36,7 +36,7 @@ torch.backends.cudnn.enabled = True
 torch.backends.cudnn.deterministic = False
 
 
-def init_distributed(use_cuda, backend="gloo", init="slurm"):
+def init_distributed(use_cuda, backend="nccl", init="slurm"):
     try:
         mp.set_start_method('forkserver')  # spawn, forkserver, and fork
     except RuntimeError:
@@ -402,7 +402,7 @@ class NonSplitTrainer(Trainer):
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
             ys_hat, frame_lens = self.model(xs, frame_lens)
-            if frame_lens.lt(2*label_lens).nonzero().numel():
+            if frame_lens.cpu().lt(2*label_lens).nonzero().numel():
                 logger.debug("the batch includes a data with frame_lens < 2*label_lens, so skipped")
                 return None
             if self.fp16:
