@@ -51,7 +51,7 @@ class BatchRNN(nn.Module):
         self.layer_norm = SequenceWise(nn.LayerNorm(input_size, elementwise_affine=False)) if layer_norm else None
 
         self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size,
-                            bidirectional=bidirectional, batch_first=batch_first, bias=True)
+                            bidirectional=bidirectional, batch_first=batch_first, bias=False)
 
     def flatten_parameters(self):
         self.rnn.flatten_parameters()
@@ -128,7 +128,7 @@ class DeepSpeech(nn.Module):
 
         self.fc = SequenceWise(nn.Sequential(
             nn.LayerNorm(H1, elementwise_affine=False),
-            nn.Linear(H1, num_classes, bias=True),
+            nn.Linear(H1, num_classes, bias=False),
             #nn.Dropout(0.2),
             #nn.Linear(256, num_classes, bias=True),
         ))
