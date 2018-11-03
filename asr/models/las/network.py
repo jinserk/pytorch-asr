@@ -87,26 +87,26 @@ class Listener(nn.Module):
         C3 = C2 * 2
         H0 = C3 * W3
 
-        self.conv = nn.Sequential(
-            nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(2, 1), padding=(20, 3)),
-            nn.BatchNorm2d(C1),
-            #nn.Hardtanh(-10, 10),
-            #nn.LeakyReLU(),
-            Swish(),
-            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(2, 1), padding=(10, 3)),
-            nn.BatchNorm2d(C2),
-            #nn.Hardtanh(-10, 10),
-            #nn.LeakyReLU(),
-            Swish(),
-            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-            nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(2, 1), padding=(5, 3)),
-            nn.BatchNorm2d(C3),
-            #nn.Hardtanh(-10, 10),
-            #nn.LeakyReLU(),
-            Swish(),
-            #nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0)),
-        )
+        self.feature = nn.Sequential(OrderedDict([
+            ('cv1', nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(2, 1), padding=(20, 3))),
+            ('bn1', nn.BatchNorm2d(C1)),
+            #('nl1', nn.Hardtanh(-10, 10)),
+            #('nl1', nn.LeakyReLU()),
+            ('nl1', Swish()),
+            #('mp1', nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
+            ('cv2', nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(2, 1), padding=(10, 3))),
+            ('bn2', nn.BatchNorm2d(C2)),
+            #('nl2', nn.Hardtanh(-10, 10)),
+            #('nl2', nn.LeakyReLU()),
+            ('nl2', Swish()),
+            #('mp2', nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
+            ('cv3', nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(2, 1), padding=(5, 3))),
+            ('bn3', nn.BatchNorm2d(C3)),
+            #('nl3', nn.Hardtanh(-10, 10)),
+            #('nl3', nn.LeakyReLU()),
+            ('nl3', Swish()),
+            #('mp3', nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
+        ]))
 
         # using BatchRNN
         self.rnns = nn.ModuleList([
@@ -116,16 +116,16 @@ class Listener(nn.Module):
         ])
 
         if not skip_fc:
-            self.fc = SequenceWise(nn.Sequential(
-                nn.LayerNorm(rnn_hidden_size, elementwise_affine=False),
-                nn.Linear(rnn_hidden_size, listen_vec_size, bias=False),
-                nn.Dropout(0.2),
-            ))
+            self.fc = SequenceWise(nn.Sequential(OrderedDict([
+                ('ln1', nn.LayerNorm(rnn_hidden_size, elementwise_affine=False)),
+                ('fc1', nn.Linear(rnn_hidden_size, listen_vec_size, bias=False)),
+                ('do1', nn.Dropout(0.2)),
+            ])))
         else:
             assert listen_vec_size == rnn_hidden_size
 
     def forward(self, x, seq_lens):
-        h = self.conv(x)
+        h = self.feature(x)
         h = h.view(-1, h.size(1) * h.size(2), h.size(3))  # Collapse feature dimension
         y = h.transpose(1, 2).contiguous()  # NxTxH
         for i in range(self.rnn_num_layers):
@@ -143,16 +143,16 @@ class Attention(nn.Module):
         self.num_heads = num_heads
 
         if apply_proj:
-            self.phi = SequenceWise(nn.Sequential(
-                nn.LayerNorm(state_vec_size, elementwise_affine=False),
-                nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=False),
-                nn.Dropout(0.2),
-            ))
-            self.psi = SequenceWise(nn.Sequential(
-                nn.LayerNorm(state_vec_size, elementwise_affine=False),
-                nn.Linear(listen_vec_size, proj_hidden_size, bias=False),
-                nn.Dropout(0.2),
-            ))
+            self.phi = SequenceWise(nn.Sequential(OrderedDict([
+                ('ln1', nn.LayerNorm(state_vec_size, elementwise_affine=False)),
+                ('fc1', nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=False)),
+                ('do1', nn.Dropout(0.2)),
+            ])))
+            self.psi = SequenceWise(nn.Sequential(OrderedDict([
+                ('ln1', nn.LayerNorm(state_vec_size, elementwise_affine=False)),
+                ('fc1', nn.Linear(listen_vec_size, proj_hidden_size, bias=False)),
+                ('do1', nn.Dropout(0.2)),
+            ])))
         else:
             assert state_vec_size == listen_vec_size * num_heads
 
@@ -160,11 +160,11 @@ class Attention(nn.Module):
 
         if num_heads > 1:
             input_size = listen_vec_size * num_heads
-            self.reduce = SequenceWise(nn.Sequential(
-                nn.LayerNorm(input_size, elementwise_affine=False),
-                nn.Linear(input_size, listen_vec_size, bias=False),
-                nn.Dropout(0.2),
-            ))
+            self.reduce = SequenceWise(nn.Sequential(OrderedDict([
+                ('ln1', nn.LayerNorm(input_size, elementwise_affine=False)),
+                ('fc1', nn.Linear(input_size, listen_vec_size, bias=False)),
+                ('do1', nn.Dropout(0.2)),
+            ])))
 
     def score(self, m, n):
         """ dot product as score function """
@@ -220,10 +220,10 @@ class Speller(nn.Module):
                                    apply_proj=apply_attend_proj, proj_hidden_size=proj_hidden_size,
                                    num_heads=num_attend_heads)
 
-        self.chardist = SequenceWise(nn.Sequential(
-            nn.LayerNorm(Hs + Hc, elementwise_affine=False),
-            nn.Linear(Hs + Hc, label_vec_size, bias=False),
-        ))
+        self.chardist = SequenceWise(nn.Sequential(OrderedDict([
+            ('ln1', nn.LayerNorm(Hs + Hc, elementwise_affine=False)),
+            ('fc1', nn.Linear(Hs + Hc, label_vec_size, bias=False)),
+        ])))
 
     def forward(self, h, y=None):
         batch_size = h.size(0)
