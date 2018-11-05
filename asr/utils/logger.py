@@ -245,3 +245,7 @@ class TensorboardLogger:
 
     def add_scalars(self, title, x, y):
         self.writer.add_scalars(title, y, x)
+
+    def add_histogram(self, name, x, step):
+        self.writer.add_histogram(name, x, step)
+

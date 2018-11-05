@@ -275,6 +275,9 @@ class Trainer:
         if not is_distributed() or (is_distributed() and dist.get_rank() == 0):
             self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
             self.__remove_ckpt_files(self.epoch-1)
+        if logger.tensorboard is not None:
+            for name, param in self.model.parameters():
+                logger.tensorboard.add_histogram(name, param.clone().cpu().data.numpy(), self.epoch)
         self.train_loop_after_hook()
 
     def unit_validate(self, data):
