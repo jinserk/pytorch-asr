@@ -47,7 +47,7 @@ class BatchRNN(nn.Module):
         self.bidirectional = bidirectional
         self.batch_first = batch_first
 
-        self.layer_norm = SequenceWise(nn.LayerNorm(input_size, elementwise_affine=True)) if layer_norm else None
+        self.layer_norm = SequenceWise(nn.LayerNorm(input_size, elementwise_affine=False)) if layer_norm else None
 
         self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size,
                             bidirectional=bidirectional, batch_first=batch_first, bias=False)
