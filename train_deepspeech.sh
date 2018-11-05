@@ -16,11 +16,12 @@ export MASTER_PORT="23456"
 . .slackbot
 
 srun -o slurmd.%j.%t.out -e slurmd.%j.%t.err --export=ALL --network="MPI,DEVNAME=bond0" \
-  python batch_train.py deepspeech_ctc \
+  python batch_train.py deepspeech_var \
     --use-cuda \
     --slack \
     --visdom \
     --visdom-host 172.26.15.44 \
     --checkpoint \
-    --log-dir logs_20181011_deepspeech_ctc_skipconn \
-    --continue-from logs_20181011_deepspeech_ctc_skipconn/deepspeech_ctc_epoch_003.pth.tar
+    --opt-type "adam" \
+    --init-lr 1e-4 \
+    --log-dir logs_20181103_deepspeech_var_wp \
