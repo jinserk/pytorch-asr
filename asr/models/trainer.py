@@ -232,12 +232,13 @@ class Trainer:
                 opts = { 'xlabel': 'epoch', 'ylabel': 'loss', }
                 logger.visdom.add_point(title=title, x=x, y=loss, **opts)
             if logger.tensorboard is not None:
-                logger.tensorboard.add_graph(self.model, xs)
-                xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
-                logger.tensorboard.add_image('xs', x, xs_img)
-                ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
-                logger.tensorboard.add_image('ys_hat', x, ys_hat_img)
-                logger.tensorboard.add_scalars(title, x, { 'loss': loss, })
+                step = int(x * 10)
+                #logger.tensorboard.add_graph(self.model, xs)
+                #xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
+                #logger.tensorboard.add_image('xs', x, xs_img)
+                #ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
+                #logger.tensorboard.add_image('ys_hat', x, ys_hat_img)
+                logger.tensorboard.add_scalars(title, step, { 'loss': loss, })
 
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
@@ -276,8 +277,8 @@ class Trainer:
             self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
             self.__remove_ckpt_files(self.epoch-1)
         if logger.tensorboard is not None:
-            for name, param in self.model.parameters():
-                logger.tensorboard.add_histogram(name, param.clone().cpu().data.numpy(), self.epoch)
+            for name, param in self.model.named_parameters():
+                logger.tensorboard.add_histogram(name, self.epoch, param.clone().cpu().data.numpy())
         self.train_loop_after_hook()
 
     def unit_validate(self, data):

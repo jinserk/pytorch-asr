@@ -67,7 +67,7 @@ def init_logger(**kwargs):
     # prepare tensorboard
     logger.tensorboard = None
     if "tensorboard" in kwargs and kwargs["tensorboard"]:
-        env = str(Path(log_dir, 'tensorboard').resolve)
+        env = str(Path(log_dir, 'tensorboard').resolve())
         try:
             logger.tensorboard = TensorboardLogger(env)
         except:
@@ -219,7 +219,7 @@ class VisdomLogger:
 class TensorboardLogger:
 
     def __init__(self, log_dir):
-        logger.debug("using tensorboard on --logdir {log_dir}")
+        logger.debug(f"using tensorboard on --logdir {log_dir}")
         log_path = Path(log_dir)
         try:
             Path.mkdir(log_path, parents=True, exist_ok=True)
@@ -246,6 +246,6 @@ class TensorboardLogger:
     def add_scalars(self, title, x, y):
         self.writer.add_scalars(title, y, x)
 
-    def add_histogram(self, name, x, step):
-        self.writer.add_histogram(name, x, step)
+    def add_histogram(self, name, x, y):
+        self.writer.add_histogram(name, y, x)
 

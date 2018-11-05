@@ -4,9 +4,11 @@ import argparse
 from pathlib import Path, PurePath
 
 import numpy as np
+
 import torch
 from torch.utils.data.dataset import ConcatDataset
 from torch.utils.data.distributed import DistributedSampler
+import torchvision.utils as vutils
 
 from asr.utils.dataset import NonSplitTrainDataset, AudioSubset
 from asr.utils.dataloader import NonSplitTrainDataLoader
@@ -33,15 +35,18 @@ class LASTrainer(NonSplitTrainer):
         logger.debug(f"current tfr = {self.model.tfr:.3e}")
 
     def train_loop_after_hook(self):
-        if logger.visdom is not None and self.model.attentions is not None and \
-           (not is_distributed() or dist.get_rank == 0):
+        if is_distributed() and dist.get_rank > 0:
+            return
+        if logger.visdom is not None and self.model.attentions is not None:
             # pick up random attention in batch size, plot each of num of heads
             for head in range(self.model.num_heads):
                 a = self.model.attentions[0, head, :, :]
-                #h, w = a.size()
-                #logger.visdom.plot_heatmap(title=f'attention_head{head}', tensor=a,
-                #                           autosize=False, width=2*w, height=2*h)
                 logger.visdom.plot_heatmap(title=f'attention_head{head}', tensor=a)
+        if logger.tensorboard is not None and self.model.attentions is not None:
+            for head in range(self.model.num_heads):
+                a = self.model.attentions[0, head, :, :]
+                img = vutils.make_grid(a, scale_each=True)
+                logger.tensorboard.add_image(f'attention_head{head}', self.epoch, img)
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
@@ -246,11 +251,11 @@ def train(argv):
     ]
 
     datasets = {
-        "train": ConcatDataset([AudioSubset(d, data_size=0, min_len=args.min_len, max_len=args.max_len)
+        "train": ConcatDataset([AudioSubset(d, data_size=100, min_len=args.min_len, max_len=args.max_len)
                                 for d in train_datasets]),
         "dev"  : AudioSubset(NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv",
                                                   stride=input_folding),
-                             data_size=0),
+                             data_size=10),
         "test" : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv", stride=input_folding),
     }
 
