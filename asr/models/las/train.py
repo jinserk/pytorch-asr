@@ -45,8 +45,7 @@ class LASTrainer(NonSplitTrainer):
         if logger.tensorboard is not None and self.model.attentions is not None:
             for head in range(self.model.num_heads):
                 a = self.model.attentions[0, head, :, :]
-                img = vutils.make_grid(a, scale_each=True)
-                logger.tensorboard.add_image(f'attention_head{head}', self.epoch, img)
+                logger.tensorboard.add_heatmap(f'attention_head{head}', self.epoch, a)
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data

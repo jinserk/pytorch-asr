@@ -7,7 +7,6 @@ import logging
 import torch
 import git
 
-
 logger = logging.getLogger("pytorch-asr")
 logger.setLevel(logging.DEBUG)
 
@@ -63,6 +62,7 @@ def init_logger(**kwargs):
                                          log_path=log_path, rank=rank)
         except:
             logger.error("error to use visdom")
+            raise
 
     # prepare tensorboard
     logger.tensorboard = None
@@ -72,6 +72,7 @@ def init_logger(**kwargs):
             logger.tensorboard = TensorboardLogger(env)
         except:
             logger.error("error to use tensorboard")
+            raise
 
     # print version and args
     logger.info(f"command-line options: {' '.join(sys.argv)}")
@@ -246,6 +247,14 @@ class TensorboardLogger:
     def add_scalars(self, title, x, y):
         self.writer.add_scalars(title, y, x)
 
-    def add_histogram(self, name, x, y):
-        self.writer.add_histogram(name, y, x)
+    def add_histogram(self, title, x, y):
+        self.writer.add_histogram(title, y, x)
+
+    def add_heatmap(self, title, x, tensor):
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots()
+        fig.patch.set_color('white')
+        ax.imshow(tensor.detach().numpy())
+        fig.tight_layout()
+        self.writer.add_figure(title, fig, x)
 
