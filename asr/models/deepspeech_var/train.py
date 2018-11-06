@@ -17,13 +17,29 @@ from ..trainer import *
 from .network import DeepSpeech
 
 
+class DeepSpeechTrainer(NonSplitTrainer):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        def loss_backward_hook(self, grad_input, grad_output):
+            #print('Inside ' + self.__class__.__name__ + ' backward')
+            #print('Inside class:' + self.__class__.__name__)
+            #print('grad_input: ', [(gi.min().item(), gi.max().item()) for gi in grad_input])
+            #print('grad_output: ', [(go.min().item(), go.max().item()) for go in grad_output])
+            for g in grad_input:
+                g[g != g] = 0   # replace all nan/inf in gradients to zero
+
+        self.loss.register_backward_hook(loss_backward_hook)
+
+
 def batch_train(argv):
     parser = argparse.ArgumentParser(description="DeepSpeech AM with batch training")
     # for training
     parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
     parser.add_argument('--num-epochs', default=200, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=1e-2, type=float, help="initial learning rate for the optimizer")
-    parser.add_argument('--max-norm', default=0.1, type=int, help="norm cutoff to prevent explosion of gradients")
+    parser.add_argument('--max-norm', default=1e-2, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
@@ -49,7 +65,7 @@ def batch_train(argv):
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)
-    trainer = NonSplitTrainer(model, amp_handle, **vars(args))
+    trainer = DeepSpeechTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
 
     train_datasets = [
@@ -106,10 +122,10 @@ def batch_train(argv):
         #if i < 2:
         #    trainer.train_epoch(dataloaders["train3"])
         #    trainer.validate(dataloaders["dev"])
-        if i < (2 + 4 + 8):
+        if i < (5 + 10):
             trainer.train_epoch(dataloaders["train5"])
             trainer.validate(dataloaders["dev"])
-        elif i < (2 + 4 + 8 + 16):
+        elif i < (5 + 10 + 20):
             trainer.train_epoch(dataloaders["train10"])
             trainer.validate(dataloaders["dev"])
         else:
@@ -130,7 +146,7 @@ def train(argv):
     parser.add_argument('--num-workers', default=32, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=1e-2, type=float, help="initial learning rate for the optimizer")
-    parser.add_argument('--max-norm', default=0.1, type=int, help="norm cutoff to prevent explosion of gradients")
+    parser.add_argument('--max-norm', default=1e-2, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
@@ -156,7 +172,7 @@ def train(argv):
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)
-    trainer = NonSplitTrainer(model, amp_handle, **vars(args))
+    trainer = DeepSpeechTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
 
     train_datasets = [
@@ -222,7 +238,7 @@ def test(argv):
     model = DeepSpeech(num_classes=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)
-    trainer = NonSplitTrainer(model, amp_handle, **vars(args))
+    trainer = DeepSpeechTrainer(model, amp_handle, **vars(args))
     labeler = trainer.decoder.labeler
 
     manifest = f"{args.data_path}/eval2000.csv"

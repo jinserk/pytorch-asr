@@ -155,7 +155,7 @@ class Trainer:
                 logger.debug("using SGDR")
                 self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9, weight_decay=5e-4)
                 #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
-                self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=2, T_mult=2)
+                self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
             elif opt_type == "adamwr":
                 logger.debug("using AdamWR")
                 self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=5e-4)
@@ -398,9 +398,6 @@ class NonSplitTrainer(Trainer):
             if self.use_cuda:
                 xs = xs.cuda(non_blocking=True)
             ys_hat, frame_lens = self.model(xs, frame_lens)
-            if frame_lens.cpu().lt(2*label_lens).nonzero().numel():
-                logger.debug("the batch includes a data with frame_lens < 2*label_lens, so skipped")
-                return None
             if self.fp16:
                 ys_hat = ys_hat.float()
             ys_hat = ys_hat.transpose(0, 1).contiguous()  # TxNxH
@@ -416,8 +413,10 @@ class NonSplitTrainer(Trainer):
             #loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             if torch.isnan(loss) or loss.item() == float("inf") or loss.item() == -float("inf"):
                 logger.warning("received an nan/inf loss: probably frame_lens < label_lens or the learning rate is too high")
-                #loss.mul_(0.)
-                return None
+                raise RuntimeError
+            if frame_lens.cpu().lt(2*label_lens).nonzero().numel():
+                logger.debug("the batch includes a data with frame_lens < 2*label_lens, so skipped")
+                loss.mul_(0)
             loss_value = loss.item()
             self.optimizer.zero_grad()
             if self.fp16:
@@ -437,7 +436,6 @@ class NonSplitTrainer(Trainer):
             print(e)
             print(filenames, frame_lens, label_lens)
             raise
-            #return 0
 
     def unit_validate(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data

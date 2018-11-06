@@ -26,9 +26,9 @@ class SequenceWise(nn.Module):
 
     def forward(self, x):
         t, n = x.size(0), x.size(1)
-        x = x.view(t * n, -1)
+        x = x.contiguous().view(t * n, -1)
         x = self.module(x)
-        x = x.view(t, n, -1)
+        x = x.contiguous().view(t, n, -1)
         return x
 
     def __repr__(self):
@@ -71,7 +71,7 @@ class BatchRNN(nn.Module):
 class DeepSpeech(nn.Module):
 
     def __init__(self, num_classes=p.NUM_CTC_LABELS, input_folding=3, rnn_type=nn.LSTM,
-                 rnn_hidden_size=512, rnn_num_layers=4, bidirectional=True, context=20):
+                 rnn_hidden_size=256, rnn_num_layers=4, bidirectional=True):
         super().__init__()
 
         # model metadata needed for serialization/deserialization
@@ -92,7 +92,7 @@ class DeepSpeech(nn.Module):
 
         H0 = C3 * W3
         #W5 = 2 * rnn_hidden_size if bidirectional else rnn_hidden_size
-        H1 = rnn_hidden_size
+        H1 = rnn_hidden_size * 2 if bidirectional else rnn_hidden_size
 
         self.feature = nn.Sequential(OrderedDict([
             ("cv1", nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(2, 1), padding=(20, 3))),
@@ -115,16 +115,17 @@ class DeepSpeech(nn.Module):
             #("mp3", nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
         ]))
 
-        # using BatchRNN
-        self.rnns = nn.ModuleList([
-            BatchRNN(input_size=(H0 if l == 0 else rnn_hidden_size), hidden_size=rnn_hidden_size,
-                     rnn_type=rnn_type, bidirectional=bidirectional, layer_norm=True)
-            for l in range(rnn_num_layers)
-        ])
+        ## using BatchRNN
+        #self.rnns = nn.ModuleList([
+        #    BatchRNN(input_size=(H0 if l == 0 else rnn_hidden_size), hidden_size=rnn_hidden_size,
+        #             rnn_type=rnn_type, bidirectional=bidirectional, layer_norm=True)
+        #    for l in range(rnn_num_layers)
+        #])
 
         # using multi-layered nn.LSTM
-        #self.rnns = nn.LSTM(input_size=W4, hidden_size=rnn_hidden_size, num_layers=rnn_num_layers,
-        #                    bidirectional=bidirectional, dropout=0)
+        self.batch_first = True
+        self.rnns = nn.LSTM(input_size=H0, hidden_size=rnn_hidden_size, num_layers=rnn_num_layers,
+                            bias=True, bidirectional=bidirectional, batch_first=self.batch_first, dropout=0.2)
 
         self.fc = SequenceWise(nn.Sequential(OrderedDict([
             ("ln1", nn.LayerNorm(H1, elementwise_affine=False)),
@@ -132,15 +133,27 @@ class DeepSpeech(nn.Module):
             #("do1", nn.Dropout(0.2)),
             #("fc2", nn.Linear(256, num_classes, bias=True)),
         ])))
+
         self.softmax = nn.LogSoftmax(dim=-1)
+
+        #def printgradnorm(self, grad_input, grad_output):
+        #    print('Inside ' + self.__class__.__name__ + ' backward')
+        #    print('Inside class:' + self.__class__.__name__)
+        #    print('grad_input: ', [(gi.min().item(), gi.max().item()) for gi in grad_input])
+        #    print('grad_output: ', [(go.min().item(), go.max().item()) for go in grad_output])
+#
+#        self.softmax.register_backward_hook(printgradnorm)
         #self.softmax = InferenceBatchSoftmax()
 
     def forward(self, x, seq_lens):
         h = self.feature(x)
         h = h.view(-1, h.size(1) * h.size(2), h.size(3))  # Collapse feature dimension
         g = h.transpose(1, 2).contiguous()  # NxTxH
-        for i in range(self._hidden_layers):
-            g = self.rnns[i](g, seq_lens)
+        #for i in range(self._hidden_layers):
+        #    g = self.rnns[i](g, seq_lens)
+        ps = nn.utils.rnn.pack_padded_sequence(g, seq_lens.tolist(), batch_first=self.batch_first)
+        ps, _ = self.rnns(ps)
+        g, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
         y = self.fc(g)
         y = self.softmax(y)
         return y, seq_lens

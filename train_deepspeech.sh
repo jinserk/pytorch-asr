@@ -19,9 +19,7 @@ srun -o slurmd.%j.%t.out -e slurmd.%j.%t.err --export=ALL --network="MPI,DEVNAME
   python batch_train.py deepspeech_var \
     --use-cuda \
     --slack \
-    --visdom \
-    --visdom-host 172.26.15.44 \
+    --tensorboard \
     --checkpoint \
-    --opt-type "adam" \
-    --init-lr 1e-4 \
-    --log-dir logs_20181103_deepspeech_var_wp \
+    --log-dir logs_20181106_deepspeech_var \
+    --continue-from logs_20181105_deepspeech_var/deepspeech_var_epoch_001.pth.tar

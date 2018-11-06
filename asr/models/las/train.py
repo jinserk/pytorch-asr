@@ -189,10 +189,10 @@ def batch_train(argv):
         #if i < 2:
         #    trainer.train_epoch(dataloaders["train3"])
         #    trainer.validate(dataloaders["dev"])
-        if i < (2 + 4 + 8):
+        if i < (5 + 10):
             trainer.train_epoch(dataloaders["train5"])
             trainer.validate(dataloaders["dev"])
-        elif i < (2 + 4 + 8 + 16):
+        elif i < (5 + 10 + 20):
             trainer.train_epoch(dataloaders["train10"])
             trainer.validate(dataloaders["dev"])
         else:

@@ -3,6 +3,7 @@ import os
 import sys
 from pathlib import Path
 import logging
+import time
 
 import torch
 import git
@@ -69,7 +70,7 @@ def init_logger(**kwargs):
     if "tensorboard" in kwargs and kwargs["tensorboard"]:
         env = str(Path(log_dir, 'tensorboard').resolve())
         try:
-            logger.tensorboard = TensorboardLogger(env)
+            logger.tensorboard = TensorboardLogger(env, rank=rank)
         except:
             logger.error("error to use tensorboard")
             raise
@@ -139,7 +140,6 @@ class VisdomLogger:
     def _get_rank0_win(self, title, type):
         if self.rank is not None and self.rank > 0:
             # wait and fetch the window handle until rank=0 client generates new window
-            import time
             for _ in range(10):
                 handle, content = self._get_win(title, type)
                 if handle is not None:
@@ -219,21 +219,25 @@ class VisdomLogger:
 
 class TensorboardLogger:
 
-    def __init__(self, log_dir):
-        logger.debug(f"using tensorboard on --logdir {log_dir}")
-        log_path = Path(log_dir)
+    def __init__(self, env, rank=None):
+        self.rank = rank
+        if self.rank is not None:
+            log_path = Path(env, f"rank{rank}").resolve()
+        else:
+            log_path = Path(env).resolve()
+        logger.debug(f"using tensorboard on --logdir {str(log_path)}")
         try:
             Path.mkdir(log_path, parents=True, exist_ok=True)
         except OSError as e:
             if e.errno == errno.EEXIST:
-                logger.warning(f'Tensorboard log directory already exists: {log_dir}')
+                logger.warning(f'Tensorboard log directory already exists: {str(log_path)}')
                 for f in log_path.rglob("*"):
                     f.unlink()
             else:
                 raise
 
         from tensorboardX import SummaryWriter
-        self.writer = SummaryWriter(str(log_dir))
+        self.writer = SummaryWriter(str(log_path))
 
     def add_graph(self, model, xs):
         self.writer.add_graph(model, (xs, ))

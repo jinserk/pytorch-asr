@@ -111,7 +111,7 @@ class Listener(nn.Module):
         # using BatchRNN
         self.rnns = nn.ModuleList([
             BatchRNN(input_size=(H0 if l == 0 else rnn_hidden_size), hidden_size=rnn_hidden_size,
-                     rnn_type=rnn_type, bidirectional=bidirectional, layer_norm=True)
+                     rnn_type=rnn_type, bidirectional=bidirectional, layer_norm=False)
             for l in range(rnn_num_layers)
         ])
 
@@ -212,7 +212,7 @@ class Speller(nn.Module):
         self.rnn_num_layers = rnn_num_layers
         self.rnns = nn.ModuleList([
             BatchRNN(input_size=((Hy + Hc) if l == 0 else Hs), hidden_size=Hs,
-                     rnn_type=rnn_type, bidirectional=False, layer_norm=True)
+                     rnn_type=rnn_type, bidirectional=False, layer_norm=False)
             for l in range(rnn_num_layers)
         ])
 
