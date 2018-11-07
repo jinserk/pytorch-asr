@@ -13,7 +13,6 @@ import torch.distributed as dist
 import torchvision.utils as tvu
 import torchnet as tnt
 import Levenshtein as Lev
-#import warpctc_pytorch as wp
 
 from asr.utils.logger import logger
 from asr.utils.misc import onehot2int, int2onehot, remove_duplicates, get_model_file_path
@@ -143,7 +142,6 @@ class Trainer:
 
         # setup loss
         self.loss = nn.CTCLoss(blank=0, reduction='mean')
-        #self.loss = wp.CTCLoss(blank=0, length_average=True)
 
         # setup optimizer
         self.optimizer = None
@@ -162,7 +160,7 @@ class Trainer:
                 self.optimizer = AdamW(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-4, amsgrad=True)
             elif opt_type == "adamwr":
                 logger.debug("using AdamWR")
-                self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-4)
+                self.optimizer = AdamW(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-4, amsgrad=True)
                 self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
             elif opt_type == "adam":
                 logger.debug("using Adam")
@@ -266,7 +264,6 @@ class Trainer:
                     if not is_distributed() or (is_distributed() and dist.get_rank() == 0):
                         self.save(self.__get_model_name(f"epoch_{self.epoch:03d}_ckpt_{i:07d}"))
                 ckpt = next(ckpts)
-            #input("press key to continue")
 
         self.epoch += 1
         logger.info(f"epoch {self.epoch:03d}: "
@@ -411,18 +408,12 @@ class NonSplitTrainer(Trainer):
             #torch.set_printoptions(threshold=5000000)
             #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
             #print(onehot2int(ys_hat).squeeze(), ys)
-            #d = frame_lens.float()
-            #d = frame_lens.sum().float()
-            #if self.use_cuda:
-            #    d = d.cuda()
-            #loss = (self.loss(ys_hat, ys, frame_lens, label_lens) / d).mean()
-            #loss = self.loss(ys_hat, ys, frame_lens, label_lens).div_(d)
             loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             if torch.isnan(loss) or loss.item() == float("inf") or loss.item() == -float("inf"):
                 logger.warning("received an nan/inf loss: probably frame_lens < label_lens or the learning rate is too high")
                 raise RuntimeError
             if frame_lens.cpu().lt(2*label_lens).nonzero().numel():
-                logger.debug("the batch includes a data with frame_lens < 2*label_lens, so skipped")
+                logger.debug("the batch includes a data with frame_lens < 2*label_lens: set loss to zero")
                 loss.mul_(0)
             loss_value = loss.item()
             self.optimizer.zero_grad()

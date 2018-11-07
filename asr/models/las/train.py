@@ -71,7 +71,7 @@ class LASTrainer(NonSplitTrainer):
             if self.fp16:
                 ys_hat = ys_hat.float()
             #print(ys_hat.min().item(), ys_hat.max().item())
-            loss = self.loss(ys_hat.log().transpose(1, 2), ys.long())
+            loss = self.loss(ys_hat.transpose(1, 2), ys.long())
             loss_value = loss.item()
             self.optimizer.zero_grad()
             if self.fp16:

@@ -38,36 +38,6 @@ class SequenceWise(nn.Module):
         return tmpstr
 
 
-class BatchRNN(nn.Module):
-
-    def __init__(self, input_size, hidden_size, rnn_type=nn.LSTM, bidirectional=False,
-                 batch_first=True, layer_norm=True):
-        super().__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.bidirectional = bidirectional
-        self.batch_first = batch_first
-
-        self.layer_norm = SequenceWise(nn.LayerNorm(input_size, elementwise_affine=False)) if layer_norm else None
-
-        self.rnn = rnn_type(input_size=input_size, hidden_size=hidden_size,
-                            bidirectional=bidirectional, batch_first=batch_first, bias=False)
-
-    def flatten_parameters(self):
-        self.rnn.flatten_parameters()
-
-    def forward(self, x, seq_lens):
-        if self.layer_norm is not None:
-            x = self.layer_norm(x)
-        ps = nn.utils.rnn.pack_padded_sequence(x, seq_lens.tolist(), batch_first=self.batch_first)
-        ps, _ = self.rnn(ps)
-        y, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
-        if self.bidirectional:
-            # (NxTxH*2) -> (NxTxH) by sum
-            y = y.view(y.size(0), y.size(1), 2, -1).sum(2).view(y.size(0), y.size(1), -1)
-        return y
-
-
 class DeepSpeech(nn.Module):
 
     def __init__(self, num_classes=p.NUM_CTC_LABELS, input_folding=3, rnn_type=nn.LSTM,
@@ -91,7 +61,6 @@ class DeepSpeech(nn.Module):
         C3 = C2 * 2
 
         H0 = C3 * W3
-        #W5 = 2 * rnn_hidden_size if bidirectional else rnn_hidden_size
         H1 = rnn_hidden_size * 2 if bidirectional else rnn_hidden_size
 
         self.feature = nn.Sequential(OrderedDict([
@@ -115,13 +84,6 @@ class DeepSpeech(nn.Module):
             #("mp3", nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
         ]))
 
-        ## using BatchRNN
-        #self.rnns = nn.ModuleList([
-        #    BatchRNN(input_size=(H0 if l == 0 else rnn_hidden_size), hidden_size=rnn_hidden_size,
-        #             rnn_type=rnn_type, bidirectional=bidirectional, layer_norm=True)
-        #    for l in range(rnn_num_layers)
-        #])
-
         # using multi-layered nn.LSTM
         self.batch_first = True
         self.rnns = nn.LSTM(input_size=H0, hidden_size=rnn_hidden_size, num_layers=rnn_num_layers,
@@ -130,31 +92,11 @@ class DeepSpeech(nn.Module):
         self.fc = SequenceWise(nn.Sequential(OrderedDict([
             ("ln1", nn.LayerNorm(H1, elementwise_affine=False)),
             ("fc1", nn.Linear(H1, num_classes, bias=False)),
-            #("do1", nn.Dropout(0.2)),
-            #("fc2", nn.Linear(256, num_classes, bias=True)),
         ])))
 
-        #def fc_backward_hook(self, grad_input, grad_output):
-        #    #print('Inside ' + self.__class__.__name__ + ' backward')
-        #    #print('Inside class:' + self.__class__.__name__)
-        #    #print('grad_input: ', [(gi.min().item(), gi.max().item()) for gi in grad_input])
-        #    #print('grad_output: ', [(go.min().item(), go.max().item()) for go in grad_output])
-        #    for g in grad_input:
-        #        g[g != g] = 0   # replace all nan/inf in gradients to zero
-
-        #self.fc.register_backward_hook(fc_backward_hook)
-
+        #self.softmax = InferenceBatchSoftmax()
         self.softmax = nn.Softmax(dim=-1)
         self.smoothing = smoothing
-
-        #def printgradnorm(self, grad_input, grad_output):
-        #    print('Inside ' + self.__class__.__name__ + ' backward')
-        #    print('Inside class:' + self.__class__.__name__)
-        #    print('grad_input: ', [(gi.min().item(), gi.max().item()) for gi in grad_input])
-        #    print('grad_output: ', [(go.min().item(), go.max().item()) for go in grad_output])
-#
-#        self.softmax.register_backward_hook(printgradnorm)
-        #self.softmax = InferenceBatchSoftmax()
 
     def smooth_labels(self, x):
         return (1.0 - self.smoothing) * x + self.smoothing / x.size(-1)
@@ -163,13 +105,14 @@ class DeepSpeech(nn.Module):
         h = self.feature(x)
         h = h.view(-1, h.size(1) * h.size(2), h.size(3))  # Collapse feature dimension
         g = h.transpose(1, 2).contiguous()  # NxTxH
-        #for i in range(self._hidden_layers):
-        #    g = self.rnns[i](g, seq_lens)
+
         ps = nn.utils.rnn.pack_padded_sequence(g, seq_lens.tolist(), batch_first=self.batch_first)
         ps, _ = self.rnns(ps)
         g, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
+
         y = self.fc(g)
         y = self.smooth_labels(self.softmax(y)).log()
+
         return y, seq_lens
 
 
