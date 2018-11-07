@@ -25,7 +25,19 @@ class LASTrainer(NonSplitTrainer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.loss = nn.CrossEntropyLoss()
+
+        self.loss = nn.NLLLoss()
+
+        #def loss_backward_hook(self, grad_input, grad_output):
+        #    #print('Inside ' + self.__class__.__name__ + ' backward')
+        #    #print('Inside class:' + self.__class__.__name__)
+        #    #print('grad_input: ', [(gi.min().item(), gi.max().item()) for gi in grad_input])
+        #    #print('grad_output: ', [(go.min().item(), go.max().item()) for go in grad_output])
+        #    for g in grad_input:
+        #        g[g != g] = 0   # replace all nan/inf in gradients to zero
+        #
+        #self.loss.register_backward_hook(loss_backward_hook)
+
         self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=0, epochs=25)
         if self.states is not None and "tfr_scheduler" in self.states:
             self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
@@ -45,7 +57,7 @@ class LASTrainer(NonSplitTrainer):
         if logger.tensorboard is not None and self.model.attentions is not None:
             for head in range(self.model.num_heads):
                 a = self.model.attentions[0, head, :, :]
-                logger.tensorboard.add_heatmap(f'attention_head{head}', self.epoch, a)
+                logger.tensorboard.add_heatmap(f'attention_head{head}', self.global_step, a)
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
@@ -58,7 +70,8 @@ class LASTrainer(NonSplitTrainer):
                 return None
             if self.fp16:
                 ys_hat = ys_hat.float()
-            loss = self.loss(ys_hat.transpose(1, 2), ys.long())
+            #print(ys_hat.min().item(), ys_hat.max().item())
+            loss = self.loss(ys_hat.log().transpose(1, 2), ys.long())
             loss_value = loss.item()
             self.optimizer.zero_grad()
             if self.fp16:
@@ -105,8 +118,8 @@ def batch_train(argv):
     # for training
     parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
     parser.add_argument('--num-epochs', default=200, type=int, help="number of epochs to run")
-    parser.add_argument('--init-lr', default=0.01, type=float, help="initial learning rate for Adam optimizer")
-    parser.add_argument('--max-norm', default=0.5, type=int, help="norm cutoff to prevent explosion of gradients")
+    parser.add_argument('--init-lr', default=1e-2, type=float, help="initial learning rate for Adam optimizer")
+    parser.add_argument('--max-norm', default=1e-2, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
@@ -212,8 +225,8 @@ def train(argv):
     parser.add_argument('--batch-size', default=8, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--num-workers', default=8, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
-    parser.add_argument('--init-lr', default=0.01, type=float, help="initial learning rate for Adam optimizer")
-    parser.add_argument('--max-norm', default=0.5, type=int, help="norm cutoff to prevent explosion of gradients")
+    parser.add_argument('--init-lr', default=1e-3, type=float, help="initial learning rate for Adam optimizer")
+    parser.add_argument('--max-norm', default=1e-2, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
@@ -227,7 +240,7 @@ def train(argv):
     parser.add_argument('--model-prefix', default='las', type=str, help="model file prefix to store")
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
-    parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
+    parser.add_argument('--opt-type', default="adamw", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
     args = parser.parse_args(argv)
 
     init_distributed(args.use_cuda)
@@ -243,18 +256,18 @@ def train(argv):
     labeler = trainer.decoder.labeler
 
     train_datasets = [
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/train.csv", stride=input_folding),
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/dev.csv", stride=input_folding),
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/test.csv", stride=input_folding),
+        #NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/train.csv", stride=input_folding),
+        #NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/dev.csv", stride=input_folding),
+        #NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/test.csv", stride=input_folding),
         NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/train.csv", stride=input_folding),
     ]
 
     datasets = {
-        "train": ConcatDataset([AudioSubset(d, data_size=100, min_len=args.min_len, max_len=args.max_len)
+        "train": ConcatDataset([AudioSubset(d, data_size=0, min_len=args.min_len, max_len=args.max_len)
                                 for d in train_datasets]),
         "dev"  : AudioSubset(NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv",
                                                   stride=input_folding),
-                             data_size=10),
+                             data_size=0),
         "test" : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv", stride=input_folding),
     }
 

@@ -71,7 +71,7 @@ class BatchRNN(nn.Module):
 class DeepSpeech(nn.Module):
 
     def __init__(self, num_classes=p.NUM_CTC_LABELS, input_folding=3, rnn_type=nn.LSTM,
-                 rnn_hidden_size=256, rnn_num_layers=4, bidirectional=True):
+                 rnn_hidden_size=256, rnn_num_layers=4, bidirectional=True, smoothing=0.01):
         super().__init__()
 
         # model metadata needed for serialization/deserialization
@@ -96,22 +96,22 @@ class DeepSpeech(nn.Module):
 
         self.feature = nn.Sequential(OrderedDict([
             ("cv1", nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(2, 1), padding=(20, 3))),
+            #("nl1", nn.Hardtanh(-5, 5)),
+            ("nl1", nn.ReLU()),
+            #("nl1", Swish()),
             ("bn1", nn.BatchNorm2d(C1)),
-            #("nl1", nn.Hardtanh(-10, 10)),
-            #("nl1", nn.LeakyReLU()),
-            ("nl1", Swish()),
             #("mp1", nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ("cv2", nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(2, 1), padding=(10, 3))),
-            ("bn2", nn.BatchNorm2d(C2)),
             #("nl2", nn.Hardtanh(-10, 10)),
-            #("nl2", nn.LeakyReLU()),
-            ("nl2", Swish()),
+            ("nl2", nn.ReLU()),
+            #("nl2", Swish()),
+            ("bn2", nn.BatchNorm2d(C2)),
             #("mp2", nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ("cv3", nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(2, 1), padding=(5, 3))),
+            #("nl3", nn.Hardtanh(-20, 20)),
+            ("nl3", nn.ReLU()),
+            #("nl3", Swish()),
             ("bn3", nn.BatchNorm2d(C3)),
-            #("nl3", nn.Hardtanh(-10, 10)),
-            #("nl3", nn.LeakyReLU()),
-            ("nl3", Swish()),
             #("mp3", nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
         ]))
 
@@ -125,7 +125,7 @@ class DeepSpeech(nn.Module):
         # using multi-layered nn.LSTM
         self.batch_first = True
         self.rnns = nn.LSTM(input_size=H0, hidden_size=rnn_hidden_size, num_layers=rnn_num_layers,
-                            bias=True, bidirectional=bidirectional, batch_first=self.batch_first, dropout=0.2)
+                            bias=True, bidirectional=bidirectional, batch_first=self.batch_first)
 
         self.fc = SequenceWise(nn.Sequential(OrderedDict([
             ("ln1", nn.LayerNorm(H1, elementwise_affine=False)),
@@ -134,7 +134,18 @@ class DeepSpeech(nn.Module):
             #("fc2", nn.Linear(256, num_classes, bias=True)),
         ])))
 
-        self.softmax = nn.LogSoftmax(dim=-1)
+        #def fc_backward_hook(self, grad_input, grad_output):
+        #    #print('Inside ' + self.__class__.__name__ + ' backward')
+        #    #print('Inside class:' + self.__class__.__name__)
+        #    #print('grad_input: ', [(gi.min().item(), gi.max().item()) for gi in grad_input])
+        #    #print('grad_output: ', [(go.min().item(), go.max().item()) for go in grad_output])
+        #    for g in grad_input:
+        #        g[g != g] = 0   # replace all nan/inf in gradients to zero
+
+        #self.fc.register_backward_hook(fc_backward_hook)
+
+        self.softmax = nn.Softmax(dim=-1)
+        self.smoothing = smoothing
 
         #def printgradnorm(self, grad_input, grad_output):
         #    print('Inside ' + self.__class__.__name__ + ' backward')
@@ -144,6 +155,9 @@ class DeepSpeech(nn.Module):
 #
 #        self.softmax.register_backward_hook(printgradnorm)
         #self.softmax = InferenceBatchSoftmax()
+
+    def smooth_labels(self, x):
+        return (1.0 - self.smoothing) * x + self.smoothing / x.size(-1)
 
     def forward(self, x, seq_lens):
         h = self.feature(x)
@@ -155,7 +169,7 @@ class DeepSpeech(nn.Module):
         ps, _ = self.rnns(ps)
         g, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
         y = self.fc(g)
-        y = self.softmax(y)
+        y = self.smooth_labels(self.softmax(y)).log()
         return y, seq_lens
 
 

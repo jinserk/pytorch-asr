@@ -25,9 +25,9 @@ class SequenceWise(nn.Module):
 
     def forward(self, x):
         t, n = x.size(0), x.size(1)
-        x = x.view(t * n, -1)
+        x = x.contiguous().view(t * n, -1)
         x = self.module(x)
-        x = x.view(t, n, -1)
+        x = x.contiguous().view(t, n, -1)
         return x
 
     def __repr__(self):
@@ -70,10 +70,11 @@ class BatchRNN(nn.Module):
 class Listener(nn.Module):
 
     def __init__(self, listen_vec_size, input_folding=2, rnn_type=nn.LSTM,
-                 rnn_hidden_size=512, rnn_num_layers=4, bidirectional=True, skip_fc=False):
+                 rnn_hidden_size=256, rnn_num_layers=4, bidirectional=True, skip_fc=False):
         super().__init__()
 
         self.rnn_num_layers = rnn_num_layers
+        self.bidirectional = bidirectional
         self.skip_fc = skip_fc
 
         # Based on above convolutions and spectrogram size using conv formula (W - F + 2P)/ S+1
@@ -89,37 +90,42 @@ class Listener(nn.Module):
 
         self.feature = nn.Sequential(OrderedDict([
             ('cv1', nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(2, 1), padding=(20, 3))),
-            ('bn1', nn.BatchNorm2d(C1)),
             #('nl1', nn.Hardtanh(-10, 10)),
-            #('nl1', nn.LeakyReLU()),
-            ('nl1', Swish()),
+            ('nl1', nn.ReLU()),
+            #('nl1', Swish()),
+            ('bn1', nn.BatchNorm2d(C1)),
             #('mp1', nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ('cv2', nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(2, 1), padding=(10, 3))),
-            ('bn2', nn.BatchNorm2d(C2)),
             #('nl2', nn.Hardtanh(-10, 10)),
-            #('nl2', nn.LeakyReLU()),
-            ('nl2', Swish()),
+            ('nl2', nn.ReLU()),
+            #('nl2', Swish()),
+            ('bn2', nn.BatchNorm2d(C2)),
             #('mp2', nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ('cv3', nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(2, 1), padding=(5, 3))),
-            ('bn3', nn.BatchNorm2d(C3)),
             #('nl3', nn.Hardtanh(-10, 10)),
-            #('nl3', nn.LeakyReLU()),
-            ('nl3', Swish()),
+            ('nl3', nn.ReLU()),
+            #('nl3', Swish()),
+            ('bn3', nn.BatchNorm2d(C3)),
             #('mp3', nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
         ]))
 
         # using BatchRNN
-        self.rnns = nn.ModuleList([
-            BatchRNN(input_size=(H0 if l == 0 else rnn_hidden_size), hidden_size=rnn_hidden_size,
-                     rnn_type=rnn_type, bidirectional=bidirectional, layer_norm=False)
-            for l in range(rnn_num_layers)
-        ])
+        #self.rnns = nn.ModuleList([
+        #    BatchRNN(input_size=(H0 if l == 0 else rnn_hidden_size), hidden_size=rnn_hidden_size,
+        #             rnn_type=rnn_type, bidirectional=bidirectional, layer_norm=False)
+        #    for l in range(rnn_num_layers)
+        #])
+
+        # using multi-layered nn.LSTM
+        self.batch_first = True
+        self.rnns = rnn_type(input_size=H0, hidden_size=rnn_hidden_size, num_layers=rnn_num_layers,
+                             bias=True, bidirectional=bidirectional, batch_first=self.batch_first)
 
         if not skip_fc:
             self.fc = SequenceWise(nn.Sequential(OrderedDict([
                 ('ln1', nn.LayerNorm(rnn_hidden_size, elementwise_affine=False)),
                 ('fc1', nn.Linear(rnn_hidden_size, listen_vec_size, bias=False)),
-                ('do1', nn.Dropout(0.2)),
+                #('do1', nn.Dropout(0.2)),
             ])))
         else:
             assert listen_vec_size == rnn_hidden_size
@@ -128,10 +134,15 @@ class Listener(nn.Module):
         h = self.feature(x)
         h = h.view(-1, h.size(1) * h.size(2), h.size(3))  # Collapse feature dimension
         y = h.transpose(1, 2).contiguous()  # NxTxH
-        for i in range(self.rnn_num_layers):
-            y, _ = self.rnns[i](y, seq_lens)
+        #for i in range(self.rnn_num_layers):
+        #    y, _ = self.rnns[i](y, seq_lens)
+        ps = nn.utils.rnn.pack_padded_sequence(y, seq_lens.tolist(), batch_first=self.batch_first)
+        ps, _ = self.rnns(ps)
+        y, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
         if not self.skip_fc:
             y = self.fc(y)
+        elif self.bidirectional:
+            y = y.view(y.size(0), y.size(1), 2, -1).sum(2).view(y.size(0), y.size(1), -1)
         return y, seq_lens
 
 
@@ -146,12 +157,12 @@ class Attention(nn.Module):
             self.phi = SequenceWise(nn.Sequential(OrderedDict([
                 ('ln1', nn.LayerNorm(state_vec_size, elementwise_affine=False)),
                 ('fc1', nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=False)),
-                ('do1', nn.Dropout(0.2)),
+                #('do1', nn.Dropout(0.2)),
             ])))
             self.psi = SequenceWise(nn.Sequential(OrderedDict([
                 ('ln1', nn.LayerNorm(state_vec_size, elementwise_affine=False)),
                 ('fc1', nn.Linear(listen_vec_size, proj_hidden_size, bias=False)),
-                ('do1', nn.Dropout(0.2)),
+                #('do1', nn.Dropout(0.2)),
             ])))
         else:
             assert state_vec_size == listen_vec_size * num_heads
@@ -163,7 +174,7 @@ class Attention(nn.Module):
             self.reduce = SequenceWise(nn.Sequential(OrderedDict([
                 ('ln1', nn.LayerNorm(input_size, elementwise_affine=False)),
                 ('fc1', nn.Linear(input_size, listen_vec_size, bias=False)),
-                ('do1', nn.Dropout(0.2)),
+                #('do1', nn.Dropout(0.2)),
             ])))
 
     def score(self, m, n):
@@ -195,6 +206,18 @@ class Attention(nn.Module):
         # c: context (Bx1xHh), a: Bxheadsx1xTh
         return c, a
 
+
+#class LabelSmoother(nn.Module):
+#
+#    def __init__(self, floor=0.01):
+#        super().__init__()
+#        self.floor = floor
+#
+#    def forward(self, x):
+#        y = (1.0 - self.floor) * x + self.floor / x.size(-1)
+#        return y
+
+
 class Speller(nn.Module):
 
     def __init__(self, listen_vec_size, label_vec_size, rnn_type=nn.LSTM,
@@ -225,6 +248,12 @@ class Speller(nn.Module):
             ('fc1', nn.Linear(Hs + Hc, label_vec_size, bias=False)),
         ])))
 
+        #self.softmax = SequenceWise(nn.Sequential(OrderedDict([
+        #    ('sm1', nn.Softmax(dim=-1)),
+        #    ('ls1', LabelSmoother(floor=0.01)),
+        #])))
+        self.softmax = nn.Softmax(dim=-1)
+
     def forward(self, h, y=None):
         batch_size = h.size(0)
         sos = int2onehot(h.new_full((batch_size, 1), self.sos), num_classes=self.label_vec_size).float()
@@ -241,6 +270,7 @@ class Speller(nn.Module):
                 x, hidden[l] = rnn(x, unit_len, hidden[l])
             c, a = self.attention(x, h)
             y_hat = self.chardist(torch.cat([x, c], dim=-1))
+            y_hat = self.softmax(y_hat)
 
             y_hats.append(y_hat)
             attentions.append(a)
@@ -304,7 +334,8 @@ class TFRScheduler(object):
 class ListenAttendSpell(nn.Module):
 
     def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=512,
-                 state_vec_size=512, num_attend_heads=1, max_seq_len=256, input_folding=2):
+                 state_vec_size=512, num_attend_heads=1, max_seq_len=256,
+                 input_folding=2, smoothing=0.01):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
@@ -322,9 +353,13 @@ class ListenAttendSpell(nn.Module):
 
         self.attentions = None
         self.softmax = nn.LogSoftmax(dim = -1)
+        self.smoothing = smoothing
 
     def _is_teacher_force(self):
         return np.random.random_sample() < self.tfr
+
+    def smooth_labels(self, x):
+        return (1.0 - self.smoothing) * x + self.smoothing / x.size(-1)
 
     def forward(self, x, x_seq_lens, y=None, y_seq_lens=None):
         # listener
@@ -340,7 +375,7 @@ class ListenAttendSpell(nn.Module):
             ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=eos)
             # speller with teach force rate
             if self._is_teacher_force():
-                yss = int2onehot(ys, num_classes=self.label_vec_size).float() * 2. - 1.
+                yss = int2onehot(ys, num_classes=self.label_vec_size, floor=1e-5).float()
                 y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss)
             else:
                 y_hats, y_hats_seq_lens, self.attentions = self.spell(h)
@@ -354,12 +389,14 @@ class ListenAttendSpell(nn.Module):
             elif s1 > s2:
                 ys = F.pad(ys, (0, s1 - s2), value=eos)
             # return with seq lens
+            y_hats = self.smooth_labels(y_hats)
             return y_hats, y_hats_seq_lens, ys
         else:
             # do spell
             y_hats, y_hats_seq_lens, _ = self.spell(h)
             y_hats = self.softmax(y_hats[:, :, :-2])
             # return with seq lens
+            y_hats = self.smooth_labels(y_hats)
             return y_hats, y_hats_seq_lens
 
 

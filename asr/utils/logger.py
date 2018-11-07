@@ -258,7 +258,7 @@ class TensorboardLogger:
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots()
         fig.patch.set_color('white')
-        ax.imshow(tensor.detach().numpy())
+        ax.imshow(tensor.detach().cpu().numpy())
         fig.tight_layout()
         self.writer.add_figure(title, fig, x)
 

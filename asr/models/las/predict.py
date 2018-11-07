@@ -44,7 +44,7 @@ def predict(argv):
         logger.error("model name is missing: add '--continue-from <model-name>' in options")
         sys.exit(1)
 
-    input_folding = 3
+    input_folding = 2
     model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
     predictor = LASPredictor(model, **vars(args))
 

@@ -31,9 +31,6 @@ please see [here](https://github.com/jinserk/pytorch-asr/blob/master/asr/models/
 We recommend [pyenv](https://github.com/pyenv/pyenv).
 Do not forget to set `pyenv local <python-version>` in the local repo if you're using pyenv.
 
-If you want to use AdamW as your optimizer, you need to patch [PR #4429](https://github.com/pytorch/pytorch/pull/4429) to PyTorch source by yourself.
-CosineAnnealingWithRestartLR for SGDR from [PR #7821](https://github.com/pytorch/pytorch/pull/7821) is included in `asr/utils/lr_scheduler.py` as a part of this project.
-
 To avoid the `-fPIC` related compile error, you have to configure Kaldi with `--shared` option when you install it.
 
 Download:

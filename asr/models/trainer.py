@@ -27,6 +27,7 @@ OPTIMIZER_TYPES = set([
     "sgd",
     "sgdr",
     "adam",
+    "adamw",
     "adamwr",
     "rmsprop",
 ])
@@ -128,6 +129,7 @@ class Trainer:
         self.opt_type = opt_type
         self.epoch = 0
         self.states = None
+        self.global_step = 0    # for tensorboard
 
         # load from pre-trained model if needed
         if continue_from is not None:
@@ -140,34 +142,34 @@ class Trainer:
             self.model.cuda()
 
         # setup loss
-        self.loss = nn.CTCLoss(blank=0, reduction='none')
+        self.loss = nn.CTCLoss(blank=0, reduction='mean')
         #self.loss = wp.CTCLoss(blank=0, length_average=True)
 
         # setup optimizer
-        if opt_type is None:
-            # for test only
-            self.optimizer = None
-            self.lr_scheduler = None
-        else:
+        self.optimizer = None
+        self.lr_scheduler = None
+        if opt_type is not None:
             assert opt_type in OPTIMIZER_TYPES
             parameters = self.model.parameters()
             if opt_type == "sgdr":
                 logger.debug("using SGDR")
-                self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9, weight_decay=5e-4)
+                self.optimizer = torch.optim.SGD(parameters, lr=self.init_lr, momentum=0.9, weight_decay=1e-4)
                 #self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=1, gamma=0.5)
                 self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
+            elif opt_type == "adamw":
+                logger.debug("using AdamW")
+                from asr.utils.adamw import AdamW
+                self.optimizer = AdamW(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-4, amsgrad=True)
             elif opt_type == "adamwr":
                 logger.debug("using AdamWR")
-                self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=5e-4)
-                self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=2, T_mult=2)
+                self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-4)
+                self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
             elif opt_type == "adam":
                 logger.debug("using Adam")
-                self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=5e-4)
-                self.lr_scheduler = None
+                self.optimizer = torch.optim.Adam(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-4)
             elif opt_type == "rmsprop":
                 logger.debug("using RMSprop")
-                self.optimizer = torch.optim.RMSprop(parameters, lr=self.init_lr, alpha=0.95, eps=1e-8, weight_decay=5e-4, centered=True)
-                self.lr_scheduler = None
+                self.optimizer = torch.optim.RMSprop(parameters, lr=self.init_lr, alpha=0.95, eps=1e-8, weight_decay=1e-4, centered=True)
 
         # setup decoder for test
         self.decoder = LatGenCTCDecoder()
@@ -216,31 +218,37 @@ class Trainer:
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
         #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
 
-        def plot_scalar(i, loss, title="train"):
-            #if self.lr_scheduler is not None:
-            #    self.lr_scheduler.step()
-            x = self.epoch + i / len(data_loader)
-            if logger.visdom is not None:
-                opts = { 'xlabel': 'epoch', 'ylabel': 'loss', }
-                logger.visdom.add_point(title=title, x=x, y=loss, **opts)
-            if logger.tensorboard is not None:
-                step = int(x * 10)
-                #logger.tensorboard.add_graph(self.model, xs)
-                #xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
-                #logger.tensorboard.add_image('xs', x, xs_img)
-                #ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
-                #logger.tensorboard.add_image('ys_hat', x, ys_hat_img)
-                logger.tensorboard.add_scalars(title, step, { 'loss': loss, })
-
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
             logger.debug(f"current lr = {self.optimizer.param_groups[0]['lr']:.3e}")
         if is_distributed() and data_loader.sampler is not None:
             data_loader.sampler.set_epoch(self.epoch)
-        ckpts = iter(len(data_loader) * np.arange(0.1, 1.1, 0.1))
-        ckpt = next(ckpts)
+
+        ckpt_step = 0.1
+        ckpts = iter(len(data_loader) * np.arange(ckpt_step, 1 + ckpt_step, ckpt_step))
+
+        def plot_graphs(loss, data_iter=0, title="train", stats=False):
+            #if self.lr_scheduler is not None:
+            #    self.lr_scheduler.step()
+            x = self.epoch + data_iter / len(data_loader)
+            self.global_step = int(x / ckpt_step)
+            if logger.visdom is not None:
+                opts = { 'xlabel': 'epoch', 'ylabel': 'loss', }
+                logger.visdom.add_point(title=title, x=x, y=loss, **opts)
+            if logger.tensorboard is not None:
+                #logger.tensorboard.add_graph(self.model, xs)
+                #xs_img = tvu.make_grid(xs[0, 0], normalize=True, scale_each=True)
+                #logger.tensorboard.add_image('xs', self.global_step, xs_img)
+                #ys_hat_img = tvu.make_grid(ys_hat[0].transpose(0, 1), normalize=True, scale_each=True)
+                #logger.tensorboard.add_image('ys_hat', self.global_step, ys_hat_img)
+                logger.tensorboard.add_scalars(title, self.global_step, { 'loss': loss, })
+                if stats:
+                    for name, param in self.model.named_parameters():
+                        logger.tensorboard.add_histogram(name, self.global_step, param.clone().cpu().data.numpy())
+
         self.train_loop_before_hook()
-        # count the number of supervised batches seen in this epoch
+
+        ckpt = next(ckpts)
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training", ncols=p.NCOLS)
         for i, (data) in t:
             loss_value = self.unit_train(data)
@@ -251,7 +259,7 @@ class Trainer:
             #self.meter_accuracy.add(ys_int, ys)
             #self.meter_confusion.add(ys_int, ys)
             if i > ckpt:
-                plot_scalar(i, meter_loss.value()[0])
+                plot_graphs(meter_loss.value()[0], i)
                 if self.checkpoint:
                     logger.info(f"training loss at epoch_{self.epoch:03d}_ckpt_{i:07d}: "
                                 f"{meter_loss.value()[0]:5.3f}")
@@ -260,7 +268,6 @@ class Trainer:
                 ckpt = next(ckpts)
             #input("press key to continue")
 
-        plot_scalar(i, meter_loss.value()[0])
         self.epoch += 1
         logger.info(f"epoch {self.epoch:03d}: "
                     f"training loss {meter_loss.value()[0]:5.3f} ")
@@ -268,9 +275,8 @@ class Trainer:
         if not is_distributed() or (is_distributed() and dist.get_rank() == 0):
             self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
             self.__remove_ckpt_files(self.epoch-1)
-        if logger.tensorboard is not None:
-            for name, param in self.model.named_parameters():
-                logger.tensorboard.add_histogram(name, self.epoch, param.clone().cpu().data.numpy())
+        plot_graphs(meter_loss.value()[0], stats=True)
+
         self.train_loop_after_hook()
 
     def unit_validate(self, data):
@@ -298,7 +304,7 @@ class Trainer:
                 opts = { 'xlabel': 'epoch', 'ylabel': 'LER', }
                 logger.visdom.add_point(title=title, x=x, y=ler, **opts)
             if logger.tensorboard is not None:
-                logger.tensorboard.add_scalars(title, x, { 'LER': ler, })
+                logger.tensorboard.add_scalars(title, self.global_step, { 'LER': ler, })
 
     def unit_test(self, data):
         raise NotImplementedError
@@ -376,6 +382,7 @@ class Trainer:
 
     def restore_state(self):
         self.epoch = self.states["epoch"]
+        self.global_step = self.epoch * 10
         if is_distributed():
             self.model.load_state_dict({f"module.{k}": v for k, v in self.states["model"].items()})
         else:
@@ -404,13 +411,13 @@ class NonSplitTrainer(Trainer):
             #torch.set_printoptions(threshold=5000000)
             #print(ys_hat.shape, frame_lens, ys.shape, label_lens)
             #print(onehot2int(ys_hat).squeeze(), ys)
-            d = frame_lens.float()
+            #d = frame_lens.float()
             #d = frame_lens.sum().float()
-            if self.use_cuda:
-                d = d.cuda()
-            loss = (self.loss(ys_hat, ys, frame_lens, label_lens) / d).mean()
+            #if self.use_cuda:
+            #    d = d.cuda()
+            #loss = (self.loss(ys_hat, ys, frame_lens, label_lens) / d).mean()
             #loss = self.loss(ys_hat, ys, frame_lens, label_lens).div_(d)
-            #loss = self.loss(ys_hat, ys, frame_lens, label_lens)
+            loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             if torch.isnan(loss) or loss.item() == float("inf") or loss.item() == -float("inf"):
                 logger.warning("received an nan/inf loss: probably frame_lens < label_lens or the learning rate is too high")
                 raise RuntimeError

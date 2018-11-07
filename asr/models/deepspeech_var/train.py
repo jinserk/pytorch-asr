@@ -22,7 +22,7 @@ class DeepSpeechTrainer(NonSplitTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        def loss_backward_hook(self, grad_input, grad_output):
+        def backward_hook(self, grad_input, grad_output):
             #print('Inside ' + self.__class__.__name__ + ' backward')
             #print('Inside class:' + self.__class__.__name__)
             #print('grad_input: ', [(gi.min().item(), gi.max().item()) for gi in grad_input])
@@ -30,7 +30,8 @@ class DeepSpeechTrainer(NonSplitTrainer):
             for g in grad_input:
                 g[g != g] = 0   # replace all nan/inf in gradients to zero
 
-        self.loss.register_backward_hook(loss_backward_hook)
+        self.loss.register_backward_hook(backward_hook)
+        self.model.register_backward_hook(backward_hook)
 
 
 def batch_train(argv):
@@ -39,7 +40,7 @@ def batch_train(argv):
     parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
     parser.add_argument('--num-epochs', default=200, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=1e-2, type=float, help="initial learning rate for the optimizer")
-    parser.add_argument('--max-norm', default=1e-2, type=int, help="norm cutoff to prevent explosion of gradients")
+    parser.add_argument('--max-norm', default=0.1, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
@@ -145,8 +146,8 @@ def train(argv):
     parser.add_argument('--batch-size', default=64, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--num-workers', default=32, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
-    parser.add_argument('--init-lr', default=1e-2, type=float, help="initial learning rate for the optimizer")
-    parser.add_argument('--max-norm', default=1e-2, type=int, help="norm cutoff to prevent explosion of gradients")
+    parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for the optimizer")
+    parser.add_argument('--max-norm', default=0.1, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
     parser.add_argument('--fp16', default=False, action='store_true', help="use FP16 model")
@@ -160,7 +161,7 @@ def train(argv):
     parser.add_argument('--model-prefix', default='deepspeech_var', type=str, help="model file prefix to store")
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
-    parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
+    parser.add_argument('--opt-type', default="adamw", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
     args = parser.parse_args(argv)
 
     init_distributed(args.use_cuda)
