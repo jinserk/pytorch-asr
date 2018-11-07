@@ -24,7 +24,6 @@
 #include <sstream>
 
 #include <torch/extension.h>
-#include <torch/tensor.h>
 
 #include "base/kaldi-common.h"
 #include "util/common-utils.h"
