@@ -311,41 +311,51 @@ class ListenAttendSpell(nn.Module):
         return np.random.random_sample() < self.tfr
 
     def forward(self, x, x_seq_lens, y=None, y_seq_lens=None):
-        # listener
-        h, x_seq_lens = self.listen(x, x_seq_lens)
-        # speller
         if self.training:
-            if y_seq_lens.ge(self.max_seq_len).nonzero().numel():
-                return None, None, None
-            # change y to one-hot tensors
-            eos = self.spell.eos
-            eos_tensor = torch.cuda.IntTensor([eos, ]) if y.is_cuda else torch.IntTensor([eos, ])
-            ys = [torch.cat([yb, eos_tensor]) for yb in torch.split(y, y_seq_lens.tolist())]
-            ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=eos)
-            # speller with teach force rate
-            if self._is_teacher_force():
-                yss = int2onehot(ys, num_classes=self.label_vec_size, floor=1e-5).float()
-                y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss)
-            else:
-                y_hats, y_hats_seq_lens, self.attentions = self.spell(h)
-            # match seq lens between y_hats and ys
-            s1, s2 = y_hats.size(1), ys.size(1)
-            if s1 < s2:
-                # append one-hot tensors of eos to y_hats
-                dummy = y_hats.new_full((y_hats.size(0), s2 - s1, ), fill_value=eos)
-                dummy = int2onehot(dummy, num_classes=self.label_vec_size).float()
-                y_hats = torch.cat([y_hats, dummy], dim=1)
-            elif s1 > s2:
-                ys = F.pad(ys, (0, s1 - s2), value=eos)
-            # return with seq lens
-            y_hats = self.log(y_hats)
-            return y_hats, y_hats_seq_lens, ys
+            assert y is not None and y_seq_lens is not None
+            return self.train_forward(x, x_seq_lens, y, y_seq_lens)
         else:
-            # do spell
-            y_hats, y_hats_seq_lens, _ = self.spell(h)
-            # return with seq lens
-            y_hats = self.log(y_hats[:, :, :-2])
-            return y_hats, y_hats_seq_lens
+            return self.eval_forward(x, x_seq_lens)
+
+    def train_forward(self, x, x_seq_lens, y, y_seq_lens):
+        if y_seq_lens.ge(self.max_seq_len).nonzero().numel():
+            # output zero loss for distributed env
+            return torch.zeros((x.size(0), y_seq_lens.max(), self.label_vec_size)), None, None
+        # listen
+        h, _ = self.listen(x, x_seq_lens)
+        # spell
+        # change y to one-hot tensors
+        eos = self.spell.eos
+        eos_tensor = torch.cuda.IntTensor([eos, ]) if y.is_cuda else torch.IntTensor([eos, ])
+        ys = [torch.cat([yb, eos_tensor]) for yb in torch.split(y, y_seq_lens.tolist())]
+        ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=eos)
+        # speller with teach force rate
+        if self._is_teacher_force():
+            yss = int2onehot(ys, num_classes=self.label_vec_size, floor=1e-5).float()
+            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss)
+        else:
+            y_hats, y_hats_seq_lens, self.attentions = self.spell(h)
+        # match seq lens between y_hats and ys
+        s1, s2 = y_hats.size(1), ys.size(1)
+        if s1 < s2:
+            # append one-hot tensors of eos to y_hats
+            dummy = y_hats.new_full((y_hats.size(0), s2 - s1, ), fill_value=eos)
+            dummy = int2onehot(dummy, num_classes=self.label_vec_size).float()
+            y_hats = torch.cat([y_hats, dummy], dim=1)
+        elif s1 > s2:
+            ys = F.pad(ys, (0, s1 - s2), value=eos)
+        # return with seq lens
+        y_hats = self.log(y_hats)
+        return y_hats, y_hats_seq_lens, ys
+
+    def eval_forward(self, x, x_seq_lens):
+        # listen
+        h, _ = self.listen(x, x_seq_lens)
+        # spell
+        y_hats, y_hats_seq_lens, _ = self.spell(h)
+        # return with seq lens
+        y_hats = self.log(y_hats[:, :, :-2])
+        return y_hats, y_hats_seq_lens
 
 
 if __name__ == '__main__':

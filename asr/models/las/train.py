@@ -29,10 +29,6 @@ class LASTrainer(NonSplitTrainer):
         self.loss = nn.NLLLoss()
 
         #def loss_backward_hook(self, grad_input, grad_output):
-        #    #print('Inside ' + self.__class__.__name__ + ' backward')
-        #    #print('Inside class:' + self.__class__.__name__)
-        #    #print('grad_input: ', [(gi.min().item(), gi.max().item()) for gi in grad_input])
-        #    #print('grad_output: ', [(go.min().item(), go.max().item()) for go in grad_output])
         #    for g in grad_input:
         #        g[g != g] = 0   # replace all nan/inf in gradients to zero
         #
@@ -65,13 +61,12 @@ class LASTrainer(NonSplitTrainer):
             if self.use_cuda:
                 xs, ys = xs.cuda(non_blocking=True), ys.cuda(non_blocking=True)
             ys_hat, ys_hat_lens, ys = self.model(xs, frame_lens, ys, label_lens)
-            if ys_hat is None:
-                logger.debug("the batch includes a data with label_lens > max_seq_lens, so skipped")
-                return None
             if self.fp16:
                 ys_hat = ys_hat.float()
-            #print(ys_hat.min().item(), ys_hat.max().item())
             loss = self.loss(ys_hat.transpose(1, 2), ys.long())
+            if ys_hat_lens is None:
+                logger.debug("the batch includes a data with label_lens > max_seq_lens: ignore the entire batch")
+                loss.mul_(0)
             loss_value = loss.item()
             self.optimizer.zero_grad()
             if self.fp16:
@@ -82,8 +77,6 @@ class LASTrainer(NonSplitTrainer):
             else:
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
-            if is_distributed():
-                self.average_gradients()
             self.optimizer.step()
             if self.use_cuda:
                 torch.cuda.synchronize()
@@ -141,7 +134,7 @@ def batch_train(argv):
     set_seed(args.seed)
 
     # prepare trainer object
-    input_folding = 2
+    input_folding = 3
     model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)
@@ -248,7 +241,7 @@ def train(argv):
     set_seed(args.seed)
 
     # prepare trainer object
-    input_folding = 2
+    input_folding = 3
     model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)
@@ -316,7 +309,7 @@ def test(argv):
 
     assert args.continue_from is not None
 
-    input_folding = 2
+    input_folding = 3
     model = ListenAttendSpell(label_vec_size=p.NUM_CTC_LABELS, input_folding=input_folding)
 
     amp_handle = get_amp_handle(args)
