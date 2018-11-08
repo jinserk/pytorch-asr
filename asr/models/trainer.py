@@ -16,6 +16,7 @@ import Levenshtein as Lev
 
 from asr.utils.logger import logger
 from asr.utils.misc import onehot2int, int2onehot, remove_duplicates, get_model_file_path
+from asr.utils.adamw import AdamW
 from asr.utils.lr_scheduler import CosineAnnealingWithRestartsLR
 from asr.utils import params as p
 
@@ -156,7 +157,6 @@ class Trainer:
                 self.lr_scheduler = CosineAnnealingWithRestartsLR(self.optimizer, T_max=5, T_mult=2)
             elif opt_type == "adamw":
                 logger.debug("using AdamW")
-                from asr.utils.adamw import AdamW
                 self.optimizer = AdamW(parameters, lr=self.init_lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-4, amsgrad=True)
             elif opt_type == "adamwr":
                 logger.debug("using AdamWR")
