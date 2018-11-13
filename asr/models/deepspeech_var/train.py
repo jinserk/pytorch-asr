@@ -177,9 +177,9 @@ def train(argv):
     labeler = trainer.decoder.labeler
 
     train_datasets = [
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/train.csv", stride=input_folding),
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/dev.csv", stride=input_folding),
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/test.csv", stride=input_folding),
+        #NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/train.csv", stride=input_folding),
+        #NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/dev.csv", stride=input_folding),
+        #NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/test.csv", stride=input_folding),
         NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/train.csv", stride=input_folding),
     ]
 
