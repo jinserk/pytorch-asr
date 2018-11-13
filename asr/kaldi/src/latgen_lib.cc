@@ -184,7 +184,7 @@ decode(torch::Tensor loglikes, torch::Tensor frame_lens)
 	std::vector<Matrix<BaseFloat> > loglikes_list;
 	std::vector<LatticeDecoderResult> results;
 	for (int b = 0; b < num_batch; b++) {
-		loglikes_list.emplace_back(SubMatrix<BaseFloat>((float*)loglikes[b].data_ptr(), frame_lens[b].item<float>(), num_class, num_class));
+		loglikes_list.emplace_back(SubMatrix<BaseFloat>((float*)loglikes[b].data_ptr(), frame_lens[b].item<int>(), num_class, num_class));
 	}
 
 	// decode
