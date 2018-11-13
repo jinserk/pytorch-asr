@@ -26,6 +26,7 @@
 #include <torch/extension.h>
 
 #include "base/kaldi-common.h"
+#include "util/kaldi-thread.h"
 #include "util/common-utils.h"
 #include "fstext/fstext-lib.h"
 #include "decoder/faster-decoder.h"
@@ -50,8 +51,8 @@ struct LatticeDecoderOptions
 	BaseFloat acoustic_scale_;
 	bool allow_partial_;
 
-	VectorFst<StdArc> *decode_fst_ = NULL;
-	fst::SymbolTable *word_syms_ = NULL;
+	VectorFst<StdArc>* decode_fst_ = NULL;
+	fst::SymbolTable* word_syms_ = NULL;
 
 	LatticeDecoderOptions()
 	: acoustic_scale_(1.0),
@@ -90,66 +91,59 @@ struct LatticeDecoderOptions
 }; // struct LatticeDecoderOptions
 
 
-// global instance
-LatticeDecoderOptions latgen_opts;
-
-
 struct LatticeDecoderResult
 {
 	std::vector<int32> alignments_;
 	std::vector<int32> words_;
-	std::string text_;
+	//std::string text_;
 	bool failed_ = false;
 	bool partial_ = false;
-};
+
+}; // struct LatticeDecoderResult
 
 
 class LatticeDecoder
 {
 	private:
-		LatticeDecoderOptions &opts_;
+		LatticeDecoderOptions& opts_;
 		FasterDecoder decoder_;
 
 	public:
-		LatticeDecoder(LatticeDecoderOptions &opts)
+		LatticeDecoder(LatticeDecoderOptions& opts)
 		: opts_(opts),
 		  decoder_(*opts_.decode_fst_, opts_.decoder_opts_)
 		{}
 
-		int decode(std::vector<Matrix<BaseFloat> > &loglikes_list,
-				   std::vector<LatticeDecoderResult> &result)
+		int decode(Matrix<BaseFloat>& loglikes, LatticeDecoderResult& result)
 		{
 			int num_fail = 0;
 
-			for (auto &loglikes : loglikes_list) {
-				result.emplace_back(LatticeDecoderResult());
-				LatticeDecoderResult &res = result.back();
+			if (loglikes.NumRows() == 0) {
+				num_fail++;
+				result.failed_ = true;
+				return num_fail;
+			}
 
-				if (loglikes.NumRows() == 0) {
-					num_fail++;
-					res.failed_ = true;
-					continue;
-				}
+			DecodableMatrixScaled decodable(loglikes, opts_.acoustic_scale_);
+			decoder_.Decode(&decodable);
 
-				DecodableMatrixScaled decodable(loglikes, opts_.acoustic_scale_);
-				decoder_.Decode(&decodable);
+			VectorFst<LatticeArc> decoded;  // linear FST.
 
-				VectorFst<LatticeArc> decoded;  // linear FST.
-
-				if ((opts_.allow_partial_ || decoder_.ReachedFinal())
-					&& decoder_.GetBestPath(&decoded)) {
-					res.partial_ = !decoder_.ReachedFinal();
-					LatticeWeight weight;
-					GetLinearSymbolSequence(decoded, &res.alignments_, &res.words_, &weight);
-
-					std::stringstream ss;
-					for (auto w : res.words_)
-						ss << opts_.word_syms_->Find(w) << ' ';
-					res.text_ = ss.str().substr(0, ss.str().length()-1);
-				} else {
-					num_fail++;
-					res.failed_ = true;
-				}
+			if ((opts_.allow_partial_ || decoder_.ReachedFinal())
+				&& decoder_.GetBestPath(&decoded)) {
+				result.partial_ = !decoder_.ReachedFinal();
+				LatticeWeight weight;
+				GetLinearSymbolSequence(decoded, &result.alignments_, &result.words_, &weight);
+				/*
+				std::stringstream ss;
+				for (auto w : result.words_)
+					ss << opts_.word_syms_->Find(w) << ' ';
+				result.text_ = ss.str().substr(0, ss.str().length()-1);
+				*/
+			}
+			else {
+				num_fail++;
+				result.failed_ = true;
 			}
 
 			return num_fail;
@@ -158,11 +152,58 @@ class LatticeDecoder
 }; // class LatticeDecoder
 
 
+class DecodingTask
+{
+
+	private:
+		LatticeDecoder decoder_;
+
+	public:
+		Matrix<BaseFloat>& loglikes_;
+		LatticeDecoderResult& result_;
+
+		DecodingTask (LatticeDecoderOptions& opts,
+					  Matrix<BaseFloat>& loglikes,
+					  LatticeDecoderResult& result)
+		: decoder_(opts),
+		  loglikes_(loglikes),
+		  result_(result)
+		{ }
+
+		void operator() ()
+		{
+			decoder_.decode(loglikes_, result_);
+		}
+
+}; // class SttSpeakerTask
+
+
+// global settings
+#define DEFAULT_NJOBS   3
+
+TaskSequencerConfig sequencer_config;
+LatticeDecoderOptions latgen_opts;
+
+
 int
 initialize(float beam, int max_active, int min_active,
            float acoustic_scale, int allow_partial,
            char* fst_in_filename, char* words_in_filename)
 {
+	ParseOptions po ("");
+	sequencer_config.Register (&po);
+
+	// set concurrent number of jobs
+	int njobs = DEFAULT_NJOBS;
+	int n = std::thread::hardware_concurrency () - 1;
+	if (n < njobs)
+		g_num_threads = sequencer_config.num_threads = n;
+	else
+		g_num_threads = sequencer_config.num_threads = njobs;
+
+	sequencer_config.num_threads = g_num_threads;
+	sequencer_config.num_threads_total = g_num_threads;
+
 	latgen_opts.acoustic_scale_ = acoustic_scale;
 	latgen_opts.allow_partial_ = allow_partial;
 
@@ -185,11 +226,22 @@ decode(torch::Tensor loglikes, torch::Tensor frame_lens)
 	std::vector<LatticeDecoderResult> results;
 	for (int b = 0; b < num_batch; b++) {
 		loglikes_list.emplace_back(SubMatrix<BaseFloat>((float*)loglikes[b].data_ptr(), frame_lens[b].item<int>(), num_class, num_class));
+		results.emplace_back(LatticeDecoderResult());
 	}
 
+	/*
 	// decode
 	LatticeDecoder decoder(latgen_opts);
 	decoder.decode(loglikes_list, results);
+	*/
+
+	TaskSequencer<DecodingTask> task_sequencer(sequencer_config);
+	for (int b = 0; b < num_batch; b++) {
+		DecodingTask *task = new DecodingTask(latgen_opts, loglikes_list[b], results[b]);
+		task_sequencer.Run(task);
+	}
+	task_sequencer.Wait();
+
 
 	// get max length
 	int max_words = 0, max_alignments = 0;
