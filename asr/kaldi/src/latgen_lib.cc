@@ -183,8 +183,9 @@ decode(torch::Tensor loglikes, torch::Tensor frame_lens)
 	// convert torch::Tensor to list of kaldi::SubMatrix
 	std::vector<Matrix<BaseFloat> > loglikes_list;
 	std::vector<LatticeDecoderResult> results;
-	for (int b = 0; b < num_batch; b++)
-		loglikes_list.emplace_back(SubMatrix<BaseFloat>((float*)loglikes[b].data_ptr(), num_frame, num_class, num_class));
+	for (int b = 0; b < num_batch; b++) {
+		loglikes_list.emplace_back(SubMatrix<BaseFloat>((float*)loglikes[b].data_ptr(), frame_lens[b].item<float>(), num_class, num_class));
+	}
 
 	// decode
 	LatticeDecoder decoder(latgen_opts);

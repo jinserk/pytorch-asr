@@ -40,7 +40,7 @@ class SequenceWise(nn.Module):
 
 class DeepSpeech(nn.Module):
 
-    def __init__(self, num_classes=p.NUM_CTC_LABELS, input_folding=3, rnn_type=nn.LSTM,
+    def __init__(self, num_classes=p.NUM_CTC_LABELS, input_folding=2, rnn_type=nn.LSTM,
                  rnn_hidden_size=256, rnn_num_layers=4, bidirectional=True, smoothing=0.01):
         super().__init__()
 
