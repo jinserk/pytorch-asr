@@ -39,7 +39,7 @@ def batch_train(argv):
     # for training
     parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
     parser.add_argument('--num-epochs', default=200, type=int, help="number of epochs to run")
-    parser.add_argument('--init-lr', default=1e-2, type=float, help="initial learning rate for the optimizer")
+    parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for the optimizer")
     parser.add_argument('--max-norm', default=0.1, type=int, help="norm cutoff to prevent explosion of gradients")
     # optional
     parser.add_argument('--use-cuda', default=False, action='store_true', help="use cuda")
@@ -54,7 +54,7 @@ def batch_train(argv):
     parser.add_argument('--model-prefix', default='deepspeech_var', type=str, help="model file prefix to store")
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
-    parser.add_argument('--opt-type', default="sgdr", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
+    parser.add_argument('--opt-type', default="adamw", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
     args = parser.parse_args(argv)
 
     init_distributed(args.use_cuda)
@@ -70,44 +70,46 @@ def batch_train(argv):
     labeler = trainer.decoder.labeler
 
     train_datasets = [
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/train.csv", stride=input_folding),
         NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/train.csv", stride=input_folding),
         NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/dev.csv", stride=input_folding),
         NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/test.csv", stride=input_folding),
-        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/train.csv", stride=input_folding),
     ]
 
     datasets = {
-        "train3" : ConcatDataset([AudioSubset(d, max_len=3) for d in train_datasets]),
-        "train5" : ConcatDataset([AudioSubset(d, max_len=5) for d in train_datasets]),
-        "train10": ConcatDataset([AudioSubset(d, max_len=10) for d in train_datasets]),
-        "train15": ConcatDataset([AudioSubset(d, max_len=15) for d in train_datasets]),
-        "dev"    : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv", stride=input_folding),
-        "test"   : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv", stride=input_folding),
+        "warmup5" : AudioSubset(train_datasets[0], max_len=5),
+        "warmup10": AudioSubset(train_datasets[0], max_len=10),
+        "train5"  : ConcatDataset([AudioSubset(d, max_len=5) for d in train_datasets]),
+        "train10" : ConcatDataset([AudioSubset(d, max_len=10) for d in train_datasets]),
+        "train15" : ConcatDataset([AudioSubset(d, max_len=15) for d in train_datasets]),
+        "dev"     : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv", stride=input_folding),
+        "test"    : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv", stride=input_folding),
     }
 
     dataloaders = {
-        "train3" : NonSplitTrainDataLoader(datasets["train3"],
-                                           sampler=(DistributedSampler(datasets["train3"])
-                                                    if is_distributed() else None),
-                                           batch_size=64, num_workers=32,
+        "warmup5" : NonSplitTrainDataLoader(datasets["warmup5"],
+                                           sampler=(DistributedSampler(datasets["warmup5"]) if is_distributed() else None),
+                                           batch_size=32, num_workers=16,
+                                           shuffle=(not is_distributed()),
+                                           pin_memory=args.use_cuda),
+        "warmup10": NonSplitTrainDataLoader(datasets["warmup10"],
+                                           sampler=(DistributedSampler(datasets["warmup10"]) if is_distributed() else None),
+                                           batch_size=16, num_workers=8,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train5" : NonSplitTrainDataLoader(datasets["train5"],
-                                           sampler=(DistributedSampler(datasets["train5"])
-                                                    if is_distributed() else None),
-                                           batch_size=64, num_workers=32,
+                                           sampler=(DistributedSampler(datasets["train5"]) if is_distributed() else None),
+                                           batch_size=32, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train10": NonSplitTrainDataLoader(datasets["train10"],
-                                           sampler=(DistributedSampler(datasets["train10"])
-                                                    if is_distributed() else None),
-                                           batch_size=32, num_workers=16,
+                                           sampler=(DistributedSampler(datasets["train10"]) if is_distributed() else None),
+                                           batch_size=16, num_workers=8,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train15": NonSplitTrainDataLoader(datasets["train15"],
-                                           sampler=(DistributedSampler(datasets["train15"])
-                                                    if is_distributed() else None),
-                                           batch_size=32, num_workers=16,
+                                           sampler=(DistributedSampler(datasets["train15"]) if is_distributed() else None),
+                                           batch_size=8, num_workers=8,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"],
@@ -123,10 +125,13 @@ def batch_train(argv):
         #if i < 2:
         #    trainer.train_epoch(dataloaders["train3"])
         #    trainer.validate(dataloaders["dev"])
-        if i < (5 + 10):
-            trainer.train_epoch(dataloaders["train5"])
+        if i < 3:
+            trainer.train_epoch(dataloaders["warmup5"])
             trainer.validate(dataloaders["dev"])
-        elif i < (5 + 10 + 20):
+        elif i < 8:
+            trainer.train_epoch(dataloaders["warmup10"])
+            trainer.validate(dataloaders["dev"])
+        elif i < 15:
             trainer.train_epoch(dataloaders["train10"])
             trainer.validate(dataloaders["dev"])
         else:
@@ -177,23 +182,28 @@ def train(argv):
     labeler = trainer.decoder.labeler
 
     train_datasets = [
-        #NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/train.csv", stride=input_folding),
-        #NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/dev.csv", stride=input_folding),
-        #NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/test.csv", stride=input_folding),
         NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/train.csv", stride=input_folding),
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/train.csv", stride=input_folding),
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/dev.csv", stride=input_folding),
+        NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/aspire/test.csv", stride=input_folding),
     ]
 
     datasets = {
-        "train": ConcatDataset([AudioSubset(d, data_size=0, min_len=args.min_len, max_len=args.max_len)
-                                for d in train_datasets]),
-        "dev"  : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv", stride=input_folding),
-        "test" : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv", stride=input_folding),
+        "warmup": AudioSubset(train_datasets[0], data_size=0, min_len=args.min_len, max_len=args.max_len),
+        "train" : ConcatDataset([AudioSubset(d, data_size=0, min_len=args.min_len, max_len=args.max_len) for d in train_datasets]),
+        "dev"   : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/eval2000.csv", stride=input_folding),
+        "test"  : NonSplitTrainDataset(labeler=labeler, manifest_file=f"{args.data_path}/swbd/rt03.csv", stride=input_folding),
     }
 
     dataloaders = {
+        "warmup": NonSplitTrainDataLoader(datasets["warmup"],
+                                          sampler=(DistributedSampler(datasets["warmup"]) if is_distributed() else None),
+                                          batch_size=args.batch_size,
+                                          num_workers=args.num_workers,
+                                          shuffle=(not is_distributed()),
+                                          pin_memory=args.use_cuda),
         "train": NonSplitTrainDataLoader(datasets["train"],
-                                         sampler=(DistributedSampler(datasets["train"])
-                                                  if is_distributed() else None),
+                                         sampler=(DistributedSampler(datasets["train"]) if is_distributed() else None),
                                          batch_size=args.batch_size,
                                          num_workers=args.num_workers,
                                          shuffle=(not is_distributed()),

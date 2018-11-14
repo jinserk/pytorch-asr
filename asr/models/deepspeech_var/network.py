@@ -53,43 +53,29 @@ class DeepSpeech(nn.Module):
         # Based on above convolutions and spectrogram size using conv formula (W - F + 2P)/ S+1
         W0 = 129
         C0 = 2 * input_folding
-        W1 = (W0 - 11 + 2*5) // 2 + 1  # 65
+        W1 = (W0 - 3 + 2*1) // 2 + 1  # 65
         C1 = 64
-        W2 = (W1 - 11 + 2*5) // 2 + 1  # 33
+        W2 = (W1 - 3 + 2*1) // 2 + 1  # 33
         C2 = 2 * C1
-        W3 = (W2 - 11 + 2*5) // 2 + 1  # 17
+        W3 = (W2 - 3 + 2*1) // 2 + 1  # 17
         C3 = 2 * C2
-        #W4 = (W3 - 11 + 2*5) // 2 + 1  # 9
-        #C4 = 128
 
         H0 = C3 * W3
         H1 = rnn_hidden_size * 2 if bidirectional else rnn_hidden_size
 
         self.feature = nn.Sequential(OrderedDict([
             ("cv1", nn.Conv2d(C0, C1, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1))),
-            #("nl1", nn.Hardtanh(-5, 5)),
             ("nl1", nn.LeakyReLU()),
-            #("nl1", Swish()),
             ("mp1", nn.AvgPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ("bn1", nn.BatchNorm2d(C1)),
             ("cv2", nn.Conv2d(C1, C2, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1))),
-            #("nl2", nn.Hardtanh(-10, 10)),
             ("nl2", nn.LeakyReLU()),
-            #("nl2", Swish()),
             ("mp2", nn.AvgPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ("bn2", nn.BatchNorm2d(C2)),
             ("cv3", nn.Conv2d(C2, C3, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1))),
-            #("nl3", nn.Hardtanh(-20, 20)),
             ("nl3", nn.LeakyReLU()),
-            #("nl3", Swish()),
             ("mp3", nn.AvgPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ("bn3", nn.BatchNorm2d(C3)),
-            #("cv4", nn.Conv2d(C3, C4, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1))),
-            ##("nl4", nn.Hardtanh(-20, 20)),
-            #("nl4", nn.LeakyReLU()),
-            ##("nl4", Swish()),
-            #("mp4", nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
-            #("bn4", nn.BatchNorm2d(C4)),
         ]))
 
         # using multi-layered nn.LSTM

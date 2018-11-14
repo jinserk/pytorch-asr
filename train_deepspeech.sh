@@ -16,10 +16,10 @@ export MASTER_PORT="23456"
 . .slackbot
 
 srun -o slurmd.%j.%t.out -e slurmd.%j.%t.err --export=ALL --network="MPI,DEVNAME=bond0" \
-  python batch_train.py deepspeech_var \
+  python train.py deepspeech_var \
     --use-cuda \
     --slack \
     --tensorboard \
     --checkpoint \
-    --log-dir logs_20181106_deepspeech_var \
-    --continue-from logs_20181105_deepspeech_var/deepspeech_var_epoch_001.pth.tar
+    --log-dir logs_20181113_deepspeech_var_k3_h256l4 \
+    --continue-from logs_20181113_deepspeech_var_k3_h256l4/deepspeech_var_epoch_008.pth.tar
