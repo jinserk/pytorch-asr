@@ -64,15 +64,16 @@ class DeepSpeech(nn.Module):
         H1 = rnn_hidden_size * 2 if bidirectional else rnn_hidden_size
 
         self.feature = nn.Sequential(OrderedDict([
-            ("cv1", nn.Conv2d(C0, C1, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1))),
+            ("bn0", nn.BatchNorm2d(C0)),
+            ("cv1", nn.Conv2d(C0, C1, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1), bias=False)),
             ("nl1", nn.LeakyReLU()),
             ("mp1", nn.AvgPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ("bn1", nn.BatchNorm2d(C1)),
-            ("cv2", nn.Conv2d(C1, C2, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1))),
+            ("cv2", nn.Conv2d(C1, C2, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1), bias=False)),
             ("nl2", nn.LeakyReLU()),
             ("mp2", nn.AvgPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ("bn2", nn.BatchNorm2d(C2)),
-            ("cv3", nn.Conv2d(C2, C3, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1))),
+            ("cv3", nn.Conv2d(C2, C3, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1), bias=False)),
             ("nl3", nn.LeakyReLU()),
             ("mp3", nn.AvgPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ("bn3", nn.BatchNorm2d(C3)),
