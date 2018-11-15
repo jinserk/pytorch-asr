@@ -88,6 +88,7 @@ class DeepSpeech(nn.Module):
             ("ln1", nn.LayerNorm(H1, elementwise_affine=False)),
             ("fc1", nn.Linear(H1, num_classes, bias=False)),
         ])))
+        #self.fc = nn.Linear(H1, num_classes, bias=True)
 
         #self.softmax = InferenceBatchSoftmax()
         self.softmax = nn.Softmax(dim=-1)

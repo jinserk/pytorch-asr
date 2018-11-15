@@ -40,43 +40,37 @@ class SequenceWise(nn.Module):
 class Listener(nn.Module):
 
     def __init__(self, listen_vec_size, input_folding=2, rnn_type=nn.LSTM,
-                 rnn_hidden_size=256, rnn_num_layers=4, bidirectional=True, skip_fc=False):
+                 rnn_hidden_size=256, rnn_num_layers=4, bidirectional=True, last_fc=False):
         super().__init__()
 
         self.rnn_num_layers = rnn_num_layers
         self.bidirectional = bidirectional
-        self.skip_fc = skip_fc
 
         # Based on above convolutions and spectrogram size using conv formula (W - F + 2P)/ S+1
         W0 = 129
         C0 = 2 * input_folding
-        W1 = (W0 - 41 + 2*20) // 2 + 1  # 65
-        C1 = 16
-        W2 = (W1 - 21 + 2*10) // 2 + 1  # 33
+        W1 = (W0 - 3 + 2*1) // 2 + 1  # 65
+        C1 = 64
+        W2 = (W1 - 3 + 2*1) // 2 + 1  # 33
         C2 = C1 * 2
-        W3 = (W2 - 11 + 2*5) // 2 + 1   # 17
+        W3 = (W2 - 3 + 2*1) // 2 + 1  # 17
         C3 = C2 * 2
         H0 = C3 * W3
 
         self.feature = nn.Sequential(OrderedDict([
-            ('cv1', nn.Conv2d(C0, C1, kernel_size=(41, 7), stride=(2, 1), padding=(20, 3))),
-            #('nl1', nn.Hardtanh(-10, 10)),
-            ('nl1', nn.ReLU()),
-            #('nl1', Swish()),
+            ('bn0', nn.BatchNorm2d(C0)),
+            ('cv1', nn.Conv2d(C0, C1, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1), bias=False)),
+            ('nl1', nn.LeakyReLU()),
+            ('mp1', nn.AvgPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ('bn1', nn.BatchNorm2d(C1)),
-            #('mp1', nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
-            ('cv2', nn.Conv2d(C1, C2, kernel_size=(21, 7), stride=(2, 1), padding=(10, 3))),
-            #('nl2', nn.Hardtanh(-10, 10)),
-            ('nl2', nn.ReLU()),
-            #('nl2', Swish()),
+            ('cv2', nn.Conv2d(C1, C2, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1), bias=False)),
+            ('nl2', nn.LeakyReLU()),
+            ('mp2', nn.AvgPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ('bn2', nn.BatchNorm2d(C2)),
-            #('mp2', nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
-            ('cv3', nn.Conv2d(C2, C3, kernel_size=(11, 7), stride=(2, 1), padding=(5, 3))),
-            #('nl3', nn.Hardtanh(-10, 10)),
-            ('nl3', nn.ReLU()),
-            #('nl3', Swish()),
+            ('cv3', nn.Conv2d(C2, C3, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1), bias=False)),
+            ('nl3', nn.LeakyReLU()),
+            ('mp3', nn.AvgPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ('bn3', nn.BatchNorm2d(C3)),
-            #('mp3', nn.MaxPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
         ]))
 
         # using multi-layered nn.LSTM
@@ -84,13 +78,14 @@ class Listener(nn.Module):
         self.rnns = rnn_type(input_size=H0, hidden_size=rnn_hidden_size, num_layers=rnn_num_layers,
                              bias=True, bidirectional=bidirectional, batch_first=self.batch_first)
 
-        if not skip_fc:
+        if last_fc:
             self.fc = SequenceWise(nn.Sequential(OrderedDict([
                 ('ln1', nn.LayerNorm(rnn_hidden_size, elementwise_affine=False)),
                 ('fc1', nn.Linear(rnn_hidden_size, listen_vec_size, bias=False)),
             ])))
         else:
             assert listen_vec_size == rnn_hidden_size
+            self.fc = None
 
     def forward(self, x, seq_lens):
         h = self.feature(x)
@@ -101,10 +96,10 @@ class Listener(nn.Module):
         ps, _ = self.rnns(ps)
         y, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
 
-        if not self.skip_fc:
-            y = self.fc(y)
-        elif self.bidirectional:
+        if self.bidirectional:
             y = y.view(y.size(0), y.size(1), 2, -1).sum(2).view(y.size(0), y.size(1), -1)
+        if self.fc is not None:
+            y = self.fc(y)
 
         return y, seq_lens
 
@@ -117,14 +112,8 @@ class Attention(nn.Module):
         self.num_heads = num_heads
 
         if apply_proj:
-            self.phi = SequenceWise(nn.Sequential(OrderedDict([
-                ('ln1', nn.LayerNorm(state_vec_size, elementwise_affine=False)),
-                ('fc1', nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=False)),
-            ])))
-            self.psi = SequenceWise(nn.Sequential(OrderedDict([
-                ('ln1', nn.LayerNorm(state_vec_size, elementwise_affine=False)),
-                ('fc1', nn.Linear(listen_vec_size, proj_hidden_size, bias=False)),
-            ])))
+            self.phi = SequenceWise(nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=True))
+            self.psi = SequenceWise(nn.Linear(listen_vec_size, proj_hidden_size, bias=True))
         else:
             assert state_vec_size == listen_vec_size * num_heads
 
@@ -132,10 +121,7 @@ class Attention(nn.Module):
 
         if num_heads > 1:
             input_size = listen_vec_size * num_heads
-            self.reduce = SequenceWise(nn.Sequential(OrderedDict([
-                ('ln1', nn.LayerNorm(input_size, elementwise_affine=False)),
-                ('fc1', nn.Linear(input_size, listen_vec_size, bias=False)),
-            ])))
+            self.reduce = SequenceWise(nn.Linear(input_size, listen_vec_size, bias=True))
 
     def score(self, m, n):
         """ dot product as score function """
@@ -298,7 +284,7 @@ class ListenAttendSpell(nn.Module):
 
         self.listen = Listener(listen_vec_size=listen_vec_size, input_folding=input_folding, rnn_type=nn.LSTM,
                                rnn_hidden_size=listen_vec_size, rnn_num_layers=4, bidirectional=True,
-                               skip_fc=True)
+                               last_fc=True)
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
                              rnn_hidden_size=state_vec_size, rnn_num_layers=1, max_seq_len=max_seq_len,
