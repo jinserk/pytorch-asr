@@ -204,6 +204,9 @@ class Trainer:
     def train_loop_before_hook(self):
         pass
 
+    def train_loop_checkpoint_hook(self):
+        pass
+
     def train_loop_after_hook(self):
         pass
 
@@ -245,7 +248,6 @@ class Trainer:
                         logger.tensorboard.add_histogram(name, self.global_step, param.clone().cpu().data.numpy())
 
         self.train_loop_before_hook()
-
         ckpt = next(ckpts)
         t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training", ncols=p.NCOLS)
         for i, (data) in t:
@@ -263,6 +265,7 @@ class Trainer:
                                 f"{meter_loss.value()[0]:5.3f}")
                     if not is_distributed() or (is_distributed() and dist.get_rank() == 0):
                         self.save(self.__get_model_name(f"epoch_{self.epoch:03d}_ckpt_{i:07d}"))
+                    self.train_loop_checkpoint_hook()
                 ckpt = next(ckpts)
 
         self.epoch += 1
@@ -273,7 +276,6 @@ class Trainer:
             self.save(self.__get_model_name(f"epoch_{self.epoch:03d}"))
             self.__remove_ckpt_files(self.epoch-1)
         plot_graphs(meter_loss.value()[0], stats=True)
-
         self.train_loop_after_hook()
 
     def unit_validate(self, data):
