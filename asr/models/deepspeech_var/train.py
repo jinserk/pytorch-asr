@@ -78,7 +78,7 @@ def batch_train(argv):
 
     datasets = {
         "warmup5" : AudioSubset(train_datasets[0], max_len=5),
-        "warmup10": AudioSubset(train_datasets[0], max_len=10),
+        "warmup15": AudioSubset(train_datasets[0], max_len=15),
         "train5"  : ConcatDataset([AudioSubset(d, max_len=5) for d in train_datasets]),
         "train10" : ConcatDataset([AudioSubset(d, max_len=10) for d in train_datasets]),
         "train15" : ConcatDataset([AudioSubset(d, max_len=15) for d in train_datasets]),
@@ -92,9 +92,9 @@ def batch_train(argv):
                                            batch_size=16, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
-        "warmup10": NonSplitTrainDataLoader(datasets["warmup10"],
-                                           sampler=(DistributedSampler(datasets["warmup10"]) if is_distributed() else None),
-                                           batch_size=16, num_workers=8,
+        "warmup15": NonSplitTrainDataLoader(datasets["warmup15"],
+                                           sampler=(DistributedSampler(datasets["warmup15"]) if is_distributed() else None),
+                                           batch_size=16, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train5" : NonSplitTrainDataLoader(datasets["train5"],
@@ -104,7 +104,7 @@ def batch_train(argv):
                                            pin_memory=args.use_cuda),
         "train10": NonSplitTrainDataLoader(datasets["train10"],
                                            sampler=(DistributedSampler(datasets["train10"]) if is_distributed() else None),
-                                           batch_size=16, num_workers=8,
+                                           batch_size=16, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train15": NonSplitTrainDataLoader(datasets["train15"],
@@ -125,15 +125,15 @@ def batch_train(argv):
         #if i < 2:
         #    trainer.train_epoch(dataloaders["train3"])
         #    trainer.validate(dataloaders["dev"])
-        if i < 3:
+        if i < 10:
             trainer.train_epoch(dataloaders["warmup5"])
             trainer.validate(dataloaders["dev"])
-        elif i < 8:
-            trainer.train_epoch(dataloaders["warmup10"])
+        elif i < 20:
+            trainer.train_epoch(dataloaders["warmup15"])
             trainer.validate(dataloaders["dev"])
-        elif i < 15:
-            trainer.train_epoch(dataloaders["train10"])
-            trainer.validate(dataloaders["dev"])
+        #elif i < 15:
+        #    trainer.train_epoch(dataloaders["train10"])
+        #    trainer.validate(dataloaders["dev"])
         else:
             trainer.train_epoch(dataloaders["train15"])
             trainer.validate(dataloaders["dev"])

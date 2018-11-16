@@ -58,16 +58,15 @@ class Listener(nn.Module):
         H0 = C3 * W3
 
         self.feature = nn.Sequential(OrderedDict([
-            ('bn0', nn.BatchNorm2d(C0)),
-            ('cv1', nn.Conv2d(C0, C1, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1), bias=False)),
+            ('cv1', nn.Conv2d(C0, C1, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1), bias=True)),
             ('nl1', nn.LeakyReLU()),
             ('mp1', nn.AvgPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ('bn1', nn.BatchNorm2d(C1)),
-            ('cv2', nn.Conv2d(C1, C2, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1), bias=False)),
+            ('cv2', nn.Conv2d(C1, C2, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1), bias=True)),
             ('nl2', nn.LeakyReLU()),
             ('mp2', nn.AvgPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ('bn2', nn.BatchNorm2d(C2)),
-            ('cv3', nn.Conv2d(C2, C3, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1), bias=False)),
+            ('cv3', nn.Conv2d(C2, C3, kernel_size=(11, 3), stride=(1, 1), padding=(5, 1), bias=True)),
             ('nl3', nn.LeakyReLU()),
             ('mp3', nn.AvgPool2d(kernel_size=(3, 1), stride=(2, 1), padding=(1, 0))),
             ('bn3', nn.BatchNorm2d(C3)),
@@ -272,9 +271,9 @@ class LogWithLabelSmoothing(nn.Module):
 
 class ListenAttendSpell(nn.Module):
 
-    def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=512,
-                 state_vec_size=512, num_attend_heads=1, max_seq_len=256,
-                 input_folding=2, smoothing=0.01):
+    def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=256,
+                 state_vec_size=256, num_attend_heads=2, max_seq_len=256,
+                 input_folding=2, smoothing=0.001):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
@@ -284,11 +283,11 @@ class ListenAttendSpell(nn.Module):
 
         self.listen = Listener(listen_vec_size=listen_vec_size, input_folding=input_folding, rnn_type=nn.LSTM,
                                rnn_hidden_size=listen_vec_size, rnn_num_layers=4, bidirectional=True,
-                               last_fc=True)
+                               last_fc=False)
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
                              rnn_hidden_size=state_vec_size, rnn_num_layers=1, max_seq_len=max_seq_len,
-                             apply_attend_proj=True, proj_hidden_size=256, num_attend_heads=num_attend_heads)
+                             apply_attend_proj=True, proj_hidden_size=128, num_attend_heads=num_attend_heads)
 
         self.attentions = None
         self.log = LogWithLabelSmoothing(floor=smoothing)

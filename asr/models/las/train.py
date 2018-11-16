@@ -291,7 +291,7 @@ def train(argv):
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
-        trainer.train_epoch(dataloaders["train"])
+        trainer.train_epoch(dataloaders["warmup"])
         trainer.validate(dataloaders["dev"])
 
     # final test to know WER
