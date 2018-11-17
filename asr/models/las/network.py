@@ -304,9 +304,9 @@ class ListenAttendSpell(nn.Module):
             return self.eval_forward(x, x_seq_lens)
 
     def train_forward(self, x, x_seq_lens, y, y_seq_lens):
-        if y_seq_lens.ge(x_seq_lens).any():
-            # output zero loss for distributed env
-            return torch.zeros((x.size(0), y_seq_lens.max(), self.label_vec_size)), None, None
+        # to remove the case of x_seq_lens < y_seq_lens
+        bi = x_seq_lens.ge(y_seq_lens)
+        x, x_seq_lens = x[bi], x_seq_lens[bi]
 
         # listen
         h, _ = self.listen(x, x_seq_lens)
@@ -315,6 +315,8 @@ class ListenAttendSpell(nn.Module):
         eos_t = y.new_full((1, ), self.eos)
         ys = [torch.cat((yb, eos_t)) for yb in torch.split(y, y_seq_lens.tolist())]
         ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.eos)
+        ys, y_seq_lens = ys[bi], y_seq_lens[bi]
+
         # speller with teach force rate
         if self._is_teacher_force():
             yss = int2onehot(ys, num_classes=self.label_vec_size).float()
