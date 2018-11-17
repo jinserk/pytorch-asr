@@ -155,13 +155,11 @@ class Attention(nn.Module):
 
 class Speller(nn.Module):
 
-    def __init__(self, listen_vec_size, label_vec_size, rnn_type=nn.LSTM,
-                 rnn_hidden_size=512, rnn_num_layers=1, max_seq_len=100,
-                 apply_attend_proj=False, proj_hidden_size=256, num_attend_heads=1,
-                 sos=None, eos=None):
+    def __init__(self, listen_vec_size, label_vec_size, sos=None, eos=None,
+                 rnn_type=nn.LSTM, rnn_hidden_size=512, rnn_num_layers=1,
+                 apply_attend_proj=False, proj_hidden_size=256, num_attend_heads=1):
         super().__init__()
 
-        self.max_seq_len = max_seq_len
         self.label_vec_size = label_vec_size
         assert sos is not None and 0 <= sos < label_vec_size
         assert eos is not None and 0 <= eos < label_vec_size
@@ -194,7 +192,7 @@ class Speller(nn.Module):
         y_hats = list()
         attentions = list()
 
-        max_seq_len = self.max_seq_len if y is None else y.size(1)
+        max_seq_len = h.size(1) if y is None else y.size(1)
         unit_len = torch.ones((batch_size, ))
 
         x = torch.cat([sos, h.narrow(1, 0, 1)], dim=-1)
@@ -274,15 +272,13 @@ class LogWithLabelSmoothing(nn.Module):
 class ListenAttendSpell(nn.Module):
 
     def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=256,
-                 state_vec_size=256, num_attend_heads=1, max_seq_len=256,
-                 input_folding=2, smoothing=0.001):
+                 state_vec_size=256, num_attend_heads=1, input_folding=2, smoothing=0.001):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
         self.sos = label_vec_size - 2
         self.eos = label_vec_size - 1
 
-        self.max_seq_len = max_seq_len
         self.num_heads = num_attend_heads
         self.tfr = 1.
 
@@ -291,9 +287,8 @@ class ListenAttendSpell(nn.Module):
                                last_fc=False)
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
-                             rnn_hidden_size=state_vec_size, rnn_num_layers=2, max_seq_len=max_seq_len,
-                             apply_attend_proj=True, proj_hidden_size=128, num_attend_heads=num_attend_heads,
-                             sos=self.sos, eos=self.eos)
+                             sos=self.sos, eos=self.eos, rnn_hidden_size=state_vec_size, rnn_num_layers=2,
+                             apply_attend_proj=True, proj_hidden_size=128, num_attend_heads=num_attend_heads)
 
         self.attentions = None
         self.log = LogWithLabelSmoothing(floor=smoothing)
@@ -309,7 +304,7 @@ class ListenAttendSpell(nn.Module):
             return self.eval_forward(x, x_seq_lens)
 
     def train_forward(self, x, x_seq_lens, y, y_seq_lens):
-        if y_seq_lens.ge(self.max_seq_len).any():
+        if y_seq_lens.ge(x_seq_lens).any():
             # output zero loss for distributed env
             return torch.zeros((x.size(0), y_seq_lens.max(), self.label_vec_size)), None, None
 
