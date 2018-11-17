@@ -272,7 +272,7 @@ class LogWithLabelSmoothing(nn.Module):
 class ListenAttendSpell(nn.Module):
 
     def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=256,
-                 state_vec_size=256, num_attend_heads=1, input_folding=2, smoothing=0.001):
+                 state_vec_size=512, num_attend_heads=2, input_folding=2, smoothing=0.001):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
