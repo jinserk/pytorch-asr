@@ -34,7 +34,7 @@ class LASTrainer(NonSplitTrainer):
         #
         #self.loss.register_backward_hook(loss_backward_hook)
 
-        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=0, epochs=25)
+        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=4, epochs=26)
         if self.states is not None and "tfr_scheduler" in self.states:
             self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
@@ -166,34 +166,41 @@ def batch_train(argv):
 
     dataloaders = {
         "warmup5" : NonSplitTrainDataLoader(datasets["warmup5"],
-                                           sampler=(DistributedSampler(datasets["warmup5"]) if is_distributed() else None),
-                                           batch_size=32, num_workers=16,
-                                           shuffle=(not is_distributed()),
-                                           pin_memory=args.use_cuda),
+                                            sort=False,
+                                            sampler=(DistributedSampler(datasets["warmup5"]) if is_distributed() else None),
+                                            batch_size=32, num_workers=16,
+                                            shuffle=(not is_distributed()),
+                                            pin_memory=args.use_cuda),
         "warmup10": NonSplitTrainDataLoader(datasets["warmup10"],
-                                           sampler=(DistributedSampler(datasets["warmup10"]) if is_distributed() else None),
-                                           batch_size=16, num_workers=16,
-                                           shuffle=(not is_distributed()),
-                                           pin_memory=args.use_cuda),
+                                            sort=False,
+                                            sampler=(DistributedSampler(datasets["warmup10"]) if is_distributed() else None),
+                                            batch_size=16, num_workers=16,
+                                            shuffle=(not is_distributed()),
+                                            pin_memory=args.use_cuda),
         "train5" : NonSplitTrainDataLoader(datasets["train5"],
+                                           sort=False,
                                            sampler=(DistributedSampler(datasets["train5"]) if is_distributed() else None),
                                            batch_size=32, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train10": NonSplitTrainDataLoader(datasets["train10"],
+                                           sort=False,
                                            sampler=(DistributedSampler(datasets["train10"]) if is_distributed() else None),
                                            batch_size=16, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train15": NonSplitTrainDataLoader(datasets["train15"],
+                                           sort=False,
                                            sampler=(DistributedSampler(datasets["train15"]) if is_distributed() else None),
-                                           batch_size=16, num_workers=16,
+                                           batch_size=8, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"],
+                                           sort=False,
                                            batch_size=32, num_workers=16,
                                            shuffle=False, pin_memory=args.use_cuda),
         "test"   : NonSplitTrainDataLoader(datasets["test"],
+                                           sort=False,
                                            batch_size=32, num_workers=16,
                                            shuffle=False, pin_memory=args.use_cuda),
     }
@@ -203,13 +210,13 @@ def batch_train(argv):
         #if i < 2:
         #    trainer.train_epoch(dataloaders["train3"])
         #    trainer.validate(dataloaders["dev"])
-        if i < 5:
+        if i < 2:
             trainer.train_epoch(dataloaders["warmup5"])
             trainer.validate(dataloaders["dev"])
-        elif i < 10:
+        elif i < 5:
             trainer.train_epoch(dataloaders["warmup10"])
             trainer.validate(dataloaders["dev"])
-        elif i < 20:
+        elif i < 30:
             trainer.train_epoch(dataloaders["train10"])
             trainer.validate(dataloaders["dev"])
         else:
@@ -225,7 +232,7 @@ def train(argv):
     # for training
     parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
-    parser.add_argument('--max-len', default=15., type=float, help="max length of utterance to use in secs")
+    parser.add_argument('--max-len', default=5., type=float, help="max length of utterance to use in secs")
     parser.add_argument('--batch-size', default=32, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--num-workers', default=16, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
@@ -276,21 +283,25 @@ def train(argv):
 
     dataloaders = {
         "warmup": NonSplitTrainDataLoader(datasets["warmup"],
+                                          sort=False,
                                           sampler=(DistributedSampler(datasets["warmup"]) if is_distributed() else None),
                                           batch_size=args.batch_size,
                                           num_workers=args.num_workers,
                                           shuffle=(not is_distributed()),
                                           pin_memory=args.use_cuda),
         "train": NonSplitTrainDataLoader(datasets["train"],
+                                         sort=False,
                                          sampler=(DistributedSampler(datasets["train"]) if is_distributed() else None),
                                          batch_size=args.batch_size,
                                          num_workers=args.num_workers,
                                          shuffle=(not is_distributed()),
                                          pin_memory=args.use_cuda),
         "dev"  : NonSplitTrainDataLoader(datasets["dev"],
+                                         sort=False,
                                          batch_size=16, num_workers=8,
                                          shuffle=False, pin_memory=args.use_cuda),
         "test" : NonSplitTrainDataLoader(datasets["test"],
+                                         sort=False,
                                          batch_size=16, num_workers=8,
                                          shuffle=False, pin_memory=args.use_cuda),
     }
@@ -338,7 +349,7 @@ def test(argv):
 
     dataset = AudioSubset(NonSplitTrainDataset(labeler=labeler, manifest_file=manifest, stride=input_folding),
                           max_len=args.max_len, min_len=args.min_len)
-    dataloader = NonSplitTrainDataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,
+    dataloader = NonSplitTrainDataLoader(dataset, sort=False, batch_size=args.batch_size, num_workers=args.num_workers,
                                          shuffle=True, pin_memory=args.use_cuda)
 
     if args.validate:

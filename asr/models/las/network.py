@@ -91,16 +91,17 @@ class Listener(nn.Module):
         h = h.view(-1, h.size(1) * h.size(2), h.size(3))  # Collapse feature dimension
         y = h.transpose(1, 2).contiguous()  # NxTxH
 
-        ps = nn.utils.rnn.pack_padded_sequence(y, seq_lens.tolist(), batch_first=self.batch_first)
-        ps, _ = self.rnns(ps)
-        y, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
+        #ps = nn.utils.rnn.pack_padded_sequence(y, seq_lens.tolist(), batch_first=self.batch_first)
+        #ps, _ = self.rnns(ps)
+        #y, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
+        y, _ = self.rnns(y)
 
         if self.bidirectional:
             y = y.view(y.size(0), y.size(1), 2, -1).sum(2).view(y.size(0), y.size(1), -1)
         if self.fc is not None:
             y = self.fc(y)
 
-        return y, seq_lens
+        return y
 
 
 class Attention(nn.Module):
@@ -225,7 +226,7 @@ class Speller(nn.Module):
 
 class TFRScheduler(object):
 
-    def __init__(self, model, ranges=(0.9, 0.1), warm_up=5, epochs=25):
+    def __init__(self, model, ranges=(0.9, 0.1), warm_up=4, epochs=26):
         self.model = model
 
         self.upper, self.lower = ranges
@@ -309,7 +310,7 @@ class ListenAttendSpell(nn.Module):
         x, x_seq_lens = x[bi], x_seq_lens[bi]
 
         # listen
-        h, _ = self.listen(x, x_seq_lens)
+        h = self.listen(x, x_seq_lens)
 
         # split y according to batch, and padding with eos
         eos_t = y.new_full((1, ), self.eos)
@@ -340,7 +341,7 @@ class ListenAttendSpell(nn.Module):
 
     def eval_forward(self, x, x_seq_lens):
         # listen
-        h, _ = self.listen(x, x_seq_lens)
+        h = self.listen(x, x_seq_lens)
         # spell
         y_hats, y_hats_seq_lens, _ = self.spell(h)
 
