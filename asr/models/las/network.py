@@ -112,14 +112,8 @@ class Attention(nn.Module):
         self.num_heads = num_heads
 
         if apply_proj:
-            self.phi = nn.Sequential(OrderedDict([
-                ('bn1', nn.BatchNorm1d(1, affine=False)),
-                ('fc1', nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=True)),
-            ]))
-            self.psi = nn.Sequential(OrderedDict([
-                ('bn1', nn.LayerNorm(listen_vec_size, elementwise_affine=False)),
-                ('fc1', nn.Linear(listen_vec_size, proj_hidden_size, bias=True)),
-            ]))
+            self.phi = nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=True)
+            self.psi = nn.Linear(listen_vec_size, proj_hidden_size, bias=True)
         else:
             assert state_vec_size == listen_vec_size * num_heads
 
@@ -127,10 +121,7 @@ class Attention(nn.Module):
 
         if num_heads > 1:
             input_size = listen_vec_size * num_heads
-            self.reduce = nn.Sequential(OrderedDict([
-                ('bn1', nn.BatchNorm1d(1, affine=False)),
-                ('fc1', nn.Linear(input_size, listen_vec_size, bias=True)),
-            ]))
+            self.reduce = nn.Linear(input_size, listen_vec_size, bias=True)
 
     def score(self, m, n):
         """ dot product as score function """
@@ -179,8 +170,6 @@ class Speller(nn.Module):
 
         Hs, Hc, Hy = rnn_hidden_size, listen_vec_size, label_vec_size
 
-        self.norm = nn.BatchNorm1d(1, affine=False)
-
         self.rnn_num_layers = rnn_num_layers
         self.rnns = rnn_type(input_size=(Hy + Hc), hidden_size=Hs, num_layers=rnn_num_layers,
                              bias=True, bidirectional=False, batch_first=True)
@@ -190,8 +179,8 @@ class Speller(nn.Module):
                                    num_heads=num_attend_heads)
 
         self.chardist = nn.Sequential(OrderedDict([
-            ('bn1', nn.BatchNorm1d(1, affine=False)),
-            ('fc1', nn.Linear(Hs + Hc, label_vec_size, bias=False)),
+            ('fc1', nn.Linear(Hs + Hc, 128, bias=True)),
+            ('fc2', nn.Linear(128, label_vec_size, bias=False)),
         ]))
 
     def forward(self, h, y=None):
@@ -208,7 +197,6 @@ class Speller(nn.Module):
         x = torch.cat([sos, h.narrow(1, 0, 1)], dim=-1)
         seq_lens = torch.full((batch_size,), max_seq_len, dtype=torch.int)
         for t in range(max_seq_len):
-            x = self.norm(x)
             x, hidden = self.rnns(x, hidden)
             c, a = self.attention(x, h)
             y_hat = self.chardist(torch.cat([x, c], dim=-1))
@@ -330,11 +318,10 @@ class ListenAttendSpell(nn.Module):
         # speller with teach force rate
         if self._is_teacher_force():
             yss = int2onehot(ys, num_classes=self.label_vec_size).float()
-            a_noise = torch.rand((yss.size(0), yss.size(1), 1))
-            m_noise = torch.rand((yss.size(0), yss.size(1), 1))
+            noise = torch.rand((yss.size(0), yss.size(1), 1)) * 2. - 1.
             if yss.is_cuda:
-                a_noise, m_noise = a_noise.cuda(), m_noise.cuda()
-            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, (yss - m_noise) * a_noise)
+                noise = noise.cuda()
+            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss * noise)
         else:
             y_hats, y_hats_seq_lens, self.attentions = self.spell(h)
 
