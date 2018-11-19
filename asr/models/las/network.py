@@ -116,7 +116,7 @@ class Attention(nn.Module):
         else:
             assert state_vec_size == listen_vec_size * num_heads
 
-        self.normal = nn.Softmax(dim=-1)
+        self.softmax = nn.Softmax(dim=-1)
 
         if num_heads > 1:
             input_size = listen_vec_size * num_heads
@@ -126,7 +126,14 @@ class Attention(nn.Module):
         """ dot product as score function """
         return torch.bmm(m, n.transpose(1, 2))
 
-    def forward(self, s, h):
+    def normal(self, e, mask):
+        """ softmax only within the masked lengths per batch """
+        tmp = [self.softmax(ei[m]) for ei, m in zip(e, mask)]
+        y = nn.utils.rnn.pad_sequence(tmp, batch_first=True, padding_value=0)
+        y = y.unsqueeze(dim=1)  # temporary -- how to keep dim with masked_select?
+        return y
+
+    def forward(self, s, h, mask):
         # s: Bx1xHs -> m: Bx1xHe
         # h: BxThxHh -> n: BxThxHe
         if self.apply_proj:
@@ -135,17 +142,20 @@ class Attention(nn.Module):
         else:
             m = s
             n = h
+        # masking
+        n = n * mask
 
         # <m, n> -> a, e: Bx1xTh -> c: Bx1xHh
+        mask = mask.byte().transpose(1, 2)
         if self.num_heads > 1:
             proj_hidden_size = m.size(-1) // self.num_heads
             ee = [self.score(mi, n) for mi in torch.split(m, proj_hidden_size, dim=-1)]
-            aa = [self.normal(e) for e in ee]
+            aa = [self.normal(e, mask) for e in ee]
             c = self.reduce(torch.cat([torch.bmm(a, h) for a in aa], dim=-1))
             a = torch.stack(aa).transpose(0, 1)
         else:
             e = self.score(m, n)
-            a = self.normal(e)
+            a = self.normal(e, mask)
             c = torch.bmm(a, h)
             a = a.unsqueeze(dim=1)
         # c: context (Bx1xHh), a: Bxheadsx1xTh
@@ -183,6 +193,13 @@ class Speller(nn.Module):
 
         self.softmax = nn.Softmax(dim=-1)
 
+    def get_mask(self, h, seq_lens):
+        bs, ts, hs = h.size()
+        mask = h.new_ones((bs, ts, 1), dtype=torch.float)
+        for b in range(bs):
+            mask[b, seq_lens[b]:] = 0.
+        return mask
+
     def forward(self, h, x_seq_lens, y=None, y_seq_lens=None):
         batch_size = h.size(0)
         sos = int2onehot(h.new_full((batch_size, 1), self.sos), num_classes=self.label_vec_size).float()
@@ -192,13 +209,13 @@ class Speller(nn.Module):
         attentions = list()
 
         max_seq_len = h.size(1) if y is None else y.size(1)
-        unit_len = torch.ones((batch_size, ))
+        len_mask = self.get_mask(h, x_seq_lens)
 
         x = torch.cat([sos, h.narrow(1, 0, 1)], dim=-1)
         seq_lens = torch.full((batch_size,), max_seq_len, dtype=torch.int)
         for t in range(max_seq_len):
             x, hidden = self.rnns(x, hidden)
-            c, a = self.attention(x, h)
+            c, a = self.attention(x, h, len_mask)
             y_hat = self.chardist(torch.cat([x, c], dim=-1))
             y_hat = self.softmax(y_hat)
 
