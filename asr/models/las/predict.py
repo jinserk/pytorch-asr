@@ -49,7 +49,7 @@ def predict(argv):
     predictor = LASPredictor(model, **vars(args))
 
     dataset = NonSplitPredictDataset(wav_files=args.wav_files, stride=input_folding)
-    dataloader = NonSplitPredictDataLoader(dataset=dataset, sort=False, batch_size=args.batch_size,
+    dataloader = NonSplitPredictDataLoader(dataset=dataset, sort=True, batch_size=args.batch_size,
                                            pin_memory=args.use_cuda)
 
     # run prediction

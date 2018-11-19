@@ -91,10 +91,9 @@ class Listener(nn.Module):
         h = h.view(-1, h.size(1) * h.size(2), h.size(3))  # Collapse feature dimension
         y = h.transpose(1, 2).contiguous()  # NxTxH
 
-        #ps = nn.utils.rnn.pack_padded_sequence(y, seq_lens.tolist(), batch_first=self.batch_first)
-        #ps, _ = self.rnns(ps)
-        #y, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
-        y, _ = self.rnns(y)
+        ps = nn.utils.rnn.pack_padded_sequence(y, seq_lens.tolist(), batch_first=self.batch_first)
+        ps, _ = self.rnns(ps)
+        y, _ = nn.utils.rnn.pad_packed_sequence(ps, batch_first=self.batch_first)
 
         if self.bidirectional:
             y = y.view(y.size(0), y.size(1), 2, -1).sum(2).view(y.size(0), y.size(1), -1)
@@ -137,7 +136,7 @@ class Attention(nn.Module):
             m = s
             n = h
 
-        # <m, n> -> e: Bx1xTh -> c: Bx1xHh
+        # <m, n> -> a, e: Bx1xTh -> c: Bx1xHh
         if self.num_heads > 1:
             proj_hidden_size = m.size(-1) // self.num_heads
             ee = [self.score(mi, n) for mi in torch.split(m, proj_hidden_size, dim=-1)]
@@ -151,7 +150,6 @@ class Attention(nn.Module):
             a = a.unsqueeze(dim=1)
         # c: context (Bx1xHh), a: Bxheadsx1xTh
         return c, a
-
 
 
 class Speller(nn.Module):
@@ -185,7 +183,7 @@ class Speller(nn.Module):
 
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, h, y=None):
+    def forward(self, h, x_seq_lens, y=None, y_seq_lens=None):
         batch_size = h.size(0)
         sos = int2onehot(h.new_full((batch_size, 1), self.sos), num_classes=self.label_vec_size).float()
 
@@ -324,9 +322,9 @@ class ListenAttendSpell(nn.Module):
             yss = int2onehot(ys, num_classes=self.label_vec_size, floor=floor).float()
             noise = torch.rand_like(yss) * 0.1
             yss = yss * noise
-            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss)
+            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, x_seq_lens, yss, y_seq_lens)
         else:
-            y_hats, y_hats_seq_lens, self.attentions = self.spell(h)
+            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, x_seq_lens)
 
         # match seq lens between y_hats and ys
         s1, s2 = y_hats.size(1), ys.size(1)
@@ -346,7 +344,7 @@ class ListenAttendSpell(nn.Module):
         # listen
         h = self.listen(x, x_seq_lens)
         # spell
-        y_hats, y_hats_seq_lens, _ = self.spell(h)
+        y_hats, y_hats_seq_lens, _ = self.spell(h, x_seq_lens)
 
         # return with seq lens without sos and eos
         y_hats = self.log(y_hats[:, :, :-2])
