@@ -320,7 +320,8 @@ class ListenAttendSpell(nn.Module):
 
         # speller with teach force rate
         if self._is_teacher_force():
-            yss = int2onehot(ys, num_classes=self.label_vec_size).float()
+            floor = np.random.random_sample() * 1e-2
+            yss = int2onehot(ys, num_classes=self.label_vec_size, floor=floor).float()
             y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss)
         else:
             y_hats, y_hats_seq_lens, self.attentions = self.spell(h)
