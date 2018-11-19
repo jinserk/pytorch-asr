@@ -28,13 +28,14 @@ class LASTrainer(NonSplitTrainer):
 
         self.loss = nn.NLLLoss(ignore_index=self.model.eos)
 
-        #def loss_backward_hook(self, grad_input, grad_output):
-        #    for g in grad_input:
-        #        g[g != g] = 0   # replace all nan/inf in gradients to zero
+        def backward_hook(self, grad_input, grad_output):
+            for g in grad_input:
+                g[g != g] = 0   # replace all nan/inf in gradients to zero
 
-        #self.loss.register_backward_hook(loss_backward_hook)
+        self.loss.register_backward_hook(backward_hook)
+        self.model.register_backward_hook(backward_hook)
 
-        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=4, epochs=26)
+        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=5, epochs=25)
         if self.states is not None and "tfr_scheduler" in self.states:
             self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 

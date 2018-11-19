@@ -128,10 +128,9 @@ class Attention(nn.Module):
     def normal(self, e, mask, epsilon=1e-5):
         # masked softmax
         # e: Bx1xTh, mask: BxTh
-        exps = torch.exp(e.squeeze())
-        masked_exps = exps * mask
-        masked_sums = masked_exps.sum(dim=-1, keepdim=True) + epsilon
-        return (masked_exps / masked_sums).unsqueeze(1)
+        exps = torch.exp(e.squeeze()) * mask
+        sums = exps.sum(dim=-1, keepdim=True) + epsilon
+        return (exps / sums).unsqueeze(1)
 
     def forward(self, s, h, len_mask):
         # s: Bx1xHs -> m: Bx1xHe
@@ -216,14 +215,14 @@ class Speller(nn.Module):
             y_hat = self.chardist(torch.cat([x, c], dim=-1))
             y_hat = self.softmax(y_hat)
 
+            y_hats.append(y_hat)
+            attentions.append(a)
+
             # if eos occurs in all batch, stop iteration
             bi = onehot2int(y_hat.squeeze()).eq(self.eos)
             seq_lens[bi] = t
             if bi.all():
                 break
-
-            y_hats.append(y_hat)
-            attentions.append(a)
 
             if y is None:
                 x = torch.cat([y_hat, c], dim=-1)
