@@ -322,6 +322,8 @@ class ListenAttendSpell(nn.Module):
         if self._is_teacher_force():
             floor = np.random.random_sample() * 1e-2
             yss = int2onehot(ys, num_classes=self.label_vec_size, floor=floor).float()
+            noise = torch.rand_like(yss) * 0.1
+            yss = yss * noise
             y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss)
         else:
             y_hats, y_hats_seq_lens, self.attentions = self.spell(h)
