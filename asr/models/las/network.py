@@ -183,6 +183,8 @@ class Speller(nn.Module):
             ('fc2', nn.Linear(128, label_vec_size, bias=False)),
         ]))
 
+        self.softmax = nn.Softmax(dim=-1)
+
     def forward(self, h, y=None):
         batch_size = h.size(0)
         sos = int2onehot(h.new_full((batch_size, 1), self.sos), num_classes=self.label_vec_size).float()
@@ -200,6 +202,7 @@ class Speller(nn.Module):
             x, hidden = self.rnns(x, hidden)
             c, a = self.attention(x, h)
             y_hat = self.chardist(torch.cat([x, c], dim=-1))
+            y_hat = self.softmax(y_hat)
 
             # if eos occurs in all batch, stop iteration
             bi = onehot2int(y_hat.squeeze()).eq(self.eos)
@@ -289,7 +292,7 @@ class ListenAttendSpell(nn.Module):
                              apply_attend_proj=True, proj_hidden_size=128, num_attend_heads=num_attend_heads)
 
         self.attentions = None
-        self.softmax = nn.LogSoftmax(dim=-1)
+        self.log = LogWithLabelSmoothing(floor=smoothing)
 
     def _is_teacher_force(self):
         return np.random.random_sample() < self.tfr
@@ -318,10 +321,7 @@ class ListenAttendSpell(nn.Module):
         # speller with teach force rate
         if self._is_teacher_force():
             yss = int2onehot(ys, num_classes=self.label_vec_size).float()
-            noise = torch.rand((yss.size(0), yss.size(1), 1)) * 2. - 1.
-            if yss.is_cuda:
-                noise = noise.cuda()
-            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss * noise)
+            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss)
         else:
             y_hats, y_hats_seq_lens, self.attentions = self.spell(h)
 
@@ -336,7 +336,7 @@ class ListenAttendSpell(nn.Module):
             # pad ys with eos, to be ignored in NLLLoss
             ys = F.pad(ys, (0, s1 - s2), value=self.eos)
 
-        y_hats = self.softmax(y_hats)
+        y_hats = self.log(y_hats)
         return y_hats, y_hats_seq_lens, ys
 
     def eval_forward(self, x, x_seq_lens):
@@ -346,7 +346,7 @@ class ListenAttendSpell(nn.Module):
         y_hats, y_hats_seq_lens, _ = self.spell(h)
 
         # return with seq lens without sos and eos
-        y_hats = self.softmax(y_hats[:, :, :-2])
+        y_hats = self.log(y_hats[:, :, :-2])
         return y_hats, y_hats_seq_lens
 
 
