@@ -57,9 +57,12 @@ class LASTrainer(NonSplitTrainer):
                 a = self.model.attentions[0, head, :, :]
                 logger.visdom.plot_heatmap(title=f'attention_head{head}', tensor=a)
         if logger.tensorboard is not None and self.model.attentions is not None:
-            logger.tensorboard.add_heatmap(f'attention batch0', self.global_step, self.model.attentions[0])
-            if self.model.attentions.size(0) > 1:
-                logger.tensorboard.add_heatmap(f'attention batch1', self.global_step, self.model.attentions[1])
+            if self.model.attentions.size(0) == 1:
+                logger.tensorboard.add_heatmap('attention', self.global_step, self.model.attentions[0])
+            else:
+                batch_size = self.model.attentions.size(0)
+                logger.tensorboard.add_heatmap('attention batch0', self.global_step, self.model.attentions[0])
+                logger.tensorboard.add_heatmap(f'attention batch{batch_size-1}', self.global_step, self.model.attentions[-1])
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
