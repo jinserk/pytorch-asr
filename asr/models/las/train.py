@@ -13,6 +13,7 @@ import torchvision.utils as vutils
 from asr.utils.dataset import NonSplitTrainDataset, AudioSubset
 from asr.utils.dataloader import NonSplitTrainDataLoader
 from asr.utils.logger import logger, init_logger
+from asr.utils.misc import register_nan_checks
 from asr.utils import params as p
 from asr.kaldi.latgen import LatGenCTCDecoder
 
@@ -28,16 +29,19 @@ class LASTrainer(NonSplitTrainer):
 
         self.loss = nn.NLLLoss(ignore_index=self.model.eos)
 
-        def backward_hook(self, grad_input, grad_output):
-            for g in grad_input:
-                g[g != g] = 0   # replace all nan/inf in gradients to zero
+        #def check_grad(module, grad_input, grad_output):
+        #    for go in grad_output:
+        #        if go is not None:
+        #            d = torch.isnan(go)
+        #            if d.any():
+        #                go[d] = 0
 
-        self.loss.register_backward_hook(backward_hook)
-        self.model.register_backward_hook(backward_hook)
+        #register_nan_checks(self.loss)
+        #register_nan_checks(self.model)
 
         self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=5, epochs=25)
-        if self.states is not None and "tfr_scheduler" in self.states:
-            self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
+        #if self.states is not None and "tfr_scheduler" in self.states:
+        #    self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
     def train_loop_before_hook(self):
         self.tfr_scheduler.step()

@@ -13,6 +13,22 @@ def get_model_file_path(log_dir, prefix, desc):
     return path / f"{prefix}_{desc}.{p.MODEL_SUFFIX}"
 
 
+def register_nan_checks(model, func=None):
+    def check_grad(module, grad_input, grad_output):
+        for gi in grad_input:
+            if gi is not None and torch.isnan(gi).any():
+                print(f'NaN grad_input in {module.__class__.__name__}')
+                breakpoint()
+        for go in grad_output:
+            if go is not None and torch.isnan(go).any():
+                print(f'NaN grad_output in {module.__class__.__name__}')
+                breakpoint()
+    if func is None:
+        model.apply(lambda module: module.register_backward_hook(check_grad))
+    else:
+        model.apply(lambda module: module.register_backward_hook(func))
+
+
 def get_num_lines(filename):
     #import mmap
     #with open(filename, "r+") as f:
