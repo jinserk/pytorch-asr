@@ -229,9 +229,11 @@ class Speller(nn.Module):
 
             # check eos occurrence
             bi = onehot2int(y_hat.squeeze()).eq(self.eos)
-            ri = y_seq_lens.gt(t).cuda() if bi.is_cuda else y_seq_lens.gt(t)
-            y_seq_lens[bi * ri] = t
-            if bi.all():
+            ri = y_seq_lens.ge(t)
+            if bi.is_cuda:
+                ri = ri.cuda()
+            y_seq_lens[bi * ri] = t + 1
+            if y_seq_lens.le(t).all():
                 break
 
             if y is None:
@@ -242,6 +244,7 @@ class Speller(nn.Module):
         y_hats = torch.cat(y_hats, dim=1)
         attentions = torch.cat(attentions, dim=2)
 
+        #print(x_seq_lens, y_seq_lens)
         #print([(x.item(), y.item()) for x, y in zip(x_seq_lens, y_seq_lens)])
         out_mask = self.get_mask(y_hats, y_seq_lens).unsqueeze(-1)
         y_hats = y_hats * out_mask
@@ -304,8 +307,8 @@ class ListenAttendSpell(nn.Module):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
-        self.sos = label_vec_size - 2
-        self.eos = label_vec_size - 1
+        self.sos = self.label_vec_size - 2
+        self.eos = self.label_vec_size - 1
 
         self.num_heads = num_attend_heads
         self.tfr = 1.
@@ -365,7 +368,7 @@ class ListenAttendSpell(nn.Module):
             y_hats = F.pad(y_hats, (0, 0, 0, s2 - s1))
         elif s1 > s2:
             # pad ys with eos, to be ignored in NLLLoss
-            ys = F.pad(ys, (0, s1 - s2), value=self.eos)
+            ys = F.pad(ys, (0, s1 - s2))
 
         y_hats = self.log(y_hats)
         return y_hats, y_hats_seq_lens, ys

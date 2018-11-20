@@ -27,7 +27,7 @@ class LASTrainer(NonSplitTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.loss = nn.NLLLoss(ignore_index=self.model.eos)
+        self.loss = nn.NLLLoss(ignore_index=0)
 
         #def check_grad(module, grad_input, grad_output):
         #    for go in grad_output:
@@ -40,8 +40,8 @@ class LASTrainer(NonSplitTrainer):
         #register_nan_checks(self.model)
 
         self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=5, epochs=25)
-        #if self.states is not None and "tfr_scheduler" in self.states:
-        #    self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
+        if self.states is not None and "tfr_scheduler" in self.states:
+            self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
     def train_loop_before_hook(self):
         self.tfr_scheduler.step()
