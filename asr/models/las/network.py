@@ -121,14 +121,14 @@ class Attention(nn.Module):
             input_size = listen_vec_size * num_heads
             self.reduce = nn.Linear(input_size, listen_vec_size, bias=True)
 
-        def check_grad(module, grad_input, grad_output):
-            for gi in grad_input:
-                if gi is not None:
-                    d = torch.isnan(gi)
-                    if d.any():
-                        gi[d] = 0
+        #def check_grad(module, grad_input, grad_output):
+        #    for gi in grad_input:
+        #        if gi is not None:
+        #            d = torch.isnan(gi)
+        #            if d.any():
+        #                gi[d] = 0
 
-        register_nan_checks(self.psi, func=check_grad)
+        #register_nan_checks(self.psi, func=check_grad)
 
     def score(self, m, n):
         """ dot product as score function """
