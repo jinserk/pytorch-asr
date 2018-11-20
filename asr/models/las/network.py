@@ -180,6 +180,7 @@ class Speller(nn.Module):
         assert sos is not None and eos is not None and sos != eos
         self.sos = label_vec_size - 2 if sos is None else sos
         self.eos = label_vec_size - 1 if eos is None else eos
+        self.max_seq_lens = 256
 
         Hs, Hc, Hy = rnn_hidden_size, listen_vec_size, label_vec_size
 
@@ -205,20 +206,21 @@ class Speller(nn.Module):
             mask[b, seq_lens[b]:] = 0.
         return mask
 
-    def forward(self, h, x_seq_lens, y=None):
+    def forward(self, h, x_seq_lens, y=None, y_seq_lens=None):
         batch_size = h.size(0)
         sos = int2onehot(h.new_full((batch_size, 1), self.sos), num_classes=self.label_vec_size).float()
+        eos = int2onehot(h.new_full((batch_size, 1), self.eos), num_classes=self.label_vec_size).float()
 
         hidden = None
         y_hats = list()
         attentions = list()
 
-        max_seq_len = h.size(1) if y is None else y.size(1)
         in_mask = self.get_mask(h, x_seq_lens)
-
         x = torch.cat([sos, h.narrow(1, 0, 1)], dim=-1)
-        y_seq_lens = x_seq_lens
-        for t in range(max_seq_len):
+
+        y_hats_seq_lens = torch.ones((batch_size, )) * self.max_seq_lens
+
+        for t in range(self.max_seq_lens):
             x, hidden = self.rnns(x, hidden)
             c, a = self.attention(x, h, in_mask)
             y_hat = self.chardist(torch.cat([x, c], dim=-1))
@@ -229,29 +231,24 @@ class Speller(nn.Module):
 
             # check eos occurrence
             bi = onehot2int(y_hat.squeeze()).eq(self.eos)
-            ri = y_seq_lens.ge(t)
+            ri = y_hats_seq_lens.gt(t)
             if bi.is_cuda:
                 ri = ri.cuda()
-            y_seq_lens[bi * ri] = t + 1
-            if y_seq_lens.le(t).all():
+            y_hats_seq_lens[bi * ri] = t + 1
+            if y_hats_seq_lens.le(t + 1).all():
                 break
 
             if y is None:
                 x = torch.cat([y_hat, c], dim=-1)
-            else:  # teach force
+            elif t < y.size(1):  # teach force
                 x = torch.cat([y.narrow(1, t, 1), c], dim=-1)
+            else:
+                x = torch.cat([eos, c], dim=-1)
 
         y_hats = torch.cat(y_hats, dim=1)
         attentions = torch.cat(attentions, dim=2)
 
-        #print(x_seq_lens, y_seq_lens)
-        #print([(x.item(), y.item()) for x, y in zip(x_seq_lens, y_seq_lens)])
-        out_mask = self.get_mask(y_hats, y_seq_lens).unsqueeze(-1)
-        y_hats = y_hats * out_mask
-        out_mask = torch.stack((out_mask, ) * attentions.size(1), dim=1)
-        attentions = attentions * out_mask
-
-        return y_hats, y_seq_lens, attentions
+        return y_hats, y_hats_seq_lens, attentions
 
 
 class TFRScheduler(object):
@@ -335,18 +332,18 @@ class ListenAttendSpell(nn.Module):
             return self.eval_forward(x, x_seq_lens)
 
     def train_forward(self, x, x_seq_lens, y, y_seq_lens):
-        # to remove the case of x_seq_lens < y_seq_lens
-        bi = x_seq_lens.ge(y_seq_lens)
+        # to remove the case of x_seq_lens < y_seq_lens and y_seq_lens > max_seq_lens
+        bi = x_seq_lens.ge(y_seq_lens) * y_seq_lens.le(self.spell.max_seq_lens)
         x, x_seq_lens = x[bi], x_seq_lens[bi]
 
         # listen
         h = self.listen(x, x_seq_lens)
 
-        # split y according to batch, and padding with eos
+        # make ys from y including trailing eos
         eos_t = y.new_full((1, ), self.eos)
         ys = [torch.cat((yb, eos_t)) for yb in torch.split(y, y_seq_lens.tolist())]
         ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.eos)
-        ys, y_seq_lens = ys[bi], y_seq_lens[bi]
+        ys, ys_seq_lens = ys[bi], y_seq_lens[bi] + 1
 
         # speller with teach force rate
         if self._is_teacher_force():
@@ -354,7 +351,7 @@ class ListenAttendSpell(nn.Module):
             yss = int2onehot(ys, num_classes=self.label_vec_size, floor=floor).float()
             noise = torch.rand_like(yss) * 0.1
             yss = yss * noise
-            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, x_seq_lens, yss)
+            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, x_seq_lens, yss, ys_seq_lens)
         else:
             y_hats, y_hats_seq_lens, self.attentions = self.spell(h, x_seq_lens)
 
