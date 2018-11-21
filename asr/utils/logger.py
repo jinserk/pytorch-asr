@@ -8,6 +8,10 @@ import time
 import torch
 import git
 
+import matplotlib
+import matplotlib.pyplot as plt
+matplotlib.use('Agg')
+
 logger = logging.getLogger("pytorch-asr")
 logger.setLevel(logging.DEBUG)
 
@@ -256,7 +260,6 @@ class TensorboardLogger:
 
     def add_heatmap(self, title, x, tensor):
         assert tensor.dim() == 3
-        import matplotlib.pyplot as plt
         if tensor.size(0) == 1:
             fig, ax = plt.subplots()
             ax.imshow(tensor[0].detach().cpu().numpy())

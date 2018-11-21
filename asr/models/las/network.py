@@ -315,7 +315,7 @@ class ListenAttendSpell(nn.Module):
                                last_fc=False)
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
-                             sos=self.sos, eos=self.eos, max_seq_lens=128,
+                             sos=self.sos, eos=self.eos, max_seq_lens=256,
                              rnn_hidden_size=state_vec_size, rnn_num_layers=2,
                              apply_attend_proj=True, proj_hidden_size=128, num_attend_heads=num_attend_heads)
 

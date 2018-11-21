@@ -27,20 +27,20 @@ class LASTrainer(NonSplitTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        #self.loss = nn.NLLLoss(ignore_index=0)
-        self.loss = nn.NLLLoss()
+        self.loss1 = nn.NLLLoss(ignore_index=self.model.eos)    # for label matching
+        self.loss2 = nn.NLLLoss()                               # for seq-len matching
 
-        def check_grad(module, grad_input, grad_output):
-            for gi in grad_input:
-                if gi is not None:
-                    d = torch.isnan(gi)
-                    if d.any():
-                        gi[d] = 0
+        #def check_grad(module, grad_input, grad_output):
+        #    for gi in grad_input:
+        #        if gi is not None:
+        #            d = torch.isnan(gi)
+        #            if d.any():
+        #                gi[d] = 0
 
         #register_nan_checks(self.loss, func=check_grad)
-        register_nan_checks(self.model, func=check_grad)
+        #register_nan_checks(self.model, func=check_grad)
 
-        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=0, epochs=16)
+        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=5, epochs=32)
         if self.states is not None and "tfr_scheduler" in self.states:
             self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
@@ -78,24 +78,25 @@ class LASTrainer(NonSplitTrainer):
             ys_hat, ys_hat_lens, ys = self.model(xs, frame_lens, ys, label_lens)
             if self.fp16:
                 ys_hat = ys_hat.float()
-            loss = self.loss(ys_hat.transpose(1, 2), ys.long())
-            if ys_hat_lens is None:
-                logger.debug("the batch includes a data with label_lens > max_seq_lens: ignore the entire batch")
-                loss.mul_(0)
-            loss_value = loss.item()
+            loss1 = self.loss1(ys_hat.transpose(1, 2), ys.long())
+            loss2 = self.loss2(ys_hat.transpose(1, 2), ys.long())
+            #if ys_hat_lens is None:
+            #    logger.debug("the batch includes a data with label_lens > max_seq_lens: ignore the entire batch")
+            #    loss.mul_(0)
+            loss_value = loss1.item() + loss2.item()
             self.optimizer.zero_grad()
             if self.fp16:
                 #self.optimizer.backward(loss)
                 #self.optimizer.clip_master_grads(self.max_norm)
-                with self.optimizer.scale_loss(loss) as scaled_loss:
+                with self.optimizer.scale_loss(loss1 + loss2) as scaled_loss:
                     scaled_loss.backward()
             else:
-                loss.backward()
+                (loss1 + loss2).backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), self.max_norm)
             self.optimizer.step()
             if self.use_cuda:
                 torch.cuda.synchronize()
-            del loss
+            del loss1, loss2
             return loss_value
         except Exception as e:
             print(e)
