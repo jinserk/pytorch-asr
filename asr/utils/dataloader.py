@@ -38,16 +38,22 @@ class SplitTrainCollateFn(object):
 
 class SplitTrainDataLoader(DataLoader):
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(collate_fn=SplitTrainCollateFn(), *args, **kwargs)
+    def __init__(self, dataset, *args, **kwargs):
+        super().__init__(dataset, collate_fn=SplitTrainCollateFn(), *args, **kwargs)
 
 
 class NonSplitTrainCollateFn(object):
 
+    def __init__(self, sort=True, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sort = sort
+
     def __call__(self, batch):
-        #longest_tensor = max(batch, key=lambda x: x[0].size(3))[0]
-        batch = sorted(batch, key=lambda x: x[0].size(3), reverse=True)
-        longest_tensor = batch[0][0]
+        if self.sort:
+            batch = sorted(batch, key=lambda x: x[0].size(3), reverse=True)
+            longest_tensor = batch[0][0]
+        else:
+            longest_tensor = max(batch, key=lambda x: x[0].size(3))[0]
         tensors = list()
         targets = list()
         tensor_lens = list()
@@ -70,8 +76,8 @@ class NonSplitTrainCollateFn(object):
 
 class NonSplitTrainDataLoader(DataLoader):
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(collate_fn=NonSplitTrainCollateFn(), *args, **kwargs)
+    def __init__(self, dataset, sort=True, *args, **kwargs):
+        super().__init__(dataset, collate_fn=NonSplitTrainCollateFn(sort=sort), *args, **kwargs)
 
 
 class SplitPredictCollateFn(object):
@@ -91,17 +97,23 @@ class SplitPredictCollateFn(object):
 
 class SplitPredictDataLoader(DataLoader):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, dataset, *args, **kwargs):
         kwargs['shuffle'] = False
-        super().__init__(collate_fn=SplitPredictCollateFn(), *args, **kwargs)
+        super().__init__(dataset, collate_fn=SplitPredictCollateFn(), *args, **kwargs)
 
 
 class NonSplitPredictCollateFn(object):
 
+    def __init__(self, sort=True, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sort = sort
+
     def __call__(self, batch):
-        #longest_tensor = max(batch, key=lambda x: x[0].size(3))[0]
-        batch = sorted(batch, key=lambda x: x[0].size(3), reverse=True)
-        longest_tensor = batch[0][0]
+        if self.sort:
+            batch = sorted(batch, key=lambda x: x[0].size(3), reverse=True)
+            longest_tensor = batch[0][0]
+        else:
+            longest_tensor = max(batch, key=lambda x: x[0].size(3))[0]
         tensors = list()
         tensor_lens = list()
         filenames = list()
@@ -116,9 +128,9 @@ class NonSplitPredictCollateFn(object):
 
 class NonSplitPredictDataLoader(DataLoader):
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, dataset, sort=True, *args, **kwargs):
         kwargs['shuffle'] = False
-        super().__init__(collate_fn=NonSplitPredictCollateFn(), *args, **kwargs)
+        super().__init__(dataset, collate_fn=NonSplitPredictCollateFn(sort=sort), *args, **kwargs)
 
 
 def test_plot():

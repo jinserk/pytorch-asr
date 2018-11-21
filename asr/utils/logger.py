@@ -255,10 +255,21 @@ class TensorboardLogger:
         self.writer.add_histogram(title, y, x)
 
     def add_heatmap(self, title, x, tensor):
+        assert tensor.dim() == 3
         import matplotlib.pyplot as plt
-        fig, ax = plt.subplots()
+        if tensor.size(0) == 1:
+            fig, ax = plt.subplots()
+            ax.imshow(tensor[0].detach().cpu().numpy())
+            ax.invert_yaxis()
+            ax.label_outer()
+        else:
+            fig, axs = plt.subplots(tensor.size(0), sharex=True)
+            for i, a in enumerate(axs):
+                a.imshow(tensor[i].detach().cpu().numpy())
+                a.invert_yaxis()
+                a.label_outer()
+            fig.subplots_adjust(hspace=2)
         fig.patch.set_color('white')
-        ax.imshow(tensor.detach().cpu().numpy())
         fig.tight_layout()
         self.writer.add_figure(title, fig, x)
 

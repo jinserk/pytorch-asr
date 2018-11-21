@@ -13,6 +13,7 @@ import torchvision.utils as vutils
 from asr.utils.dataset import NonSplitTrainDataset, AudioSubset
 from asr.utils.dataloader import NonSplitTrainDataLoader
 from asr.utils.logger import logger, init_logger
+from asr.utils.misc import register_nan_checks
 from asr.utils import params as p
 from asr.kaldi.latgen import LatGenCTCDecoder
 
@@ -26,15 +27,19 @@ class LASTrainer(NonSplitTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.loss = nn.NLLLoss()
+        self.loss = nn.NLLLoss(ignore_index=0)
 
-        #def loss_backward_hook(self, grad_input, grad_output):
-        #    for g in grad_input:
-        #        g[g != g] = 0   # replace all nan/inf in gradients to zero
-        #
-        #self.loss.register_backward_hook(loss_backward_hook)
+        def check_grad(module, grad_input, grad_output):
+            for gi in grad_input:
+                if gi is not None:
+                    d = torch.isnan(gi)
+                    if d.any():
+                        gi[d] = 0
 
-        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=0, epochs=25)
+        #register_nan_checks(self.loss, func=check_grad)
+        register_nan_checks(self.model, func=check_grad)
+
+        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=5, epochs=32)
         if self.states is not None and "tfr_scheduler" in self.states:
             self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
@@ -42,7 +47,13 @@ class LASTrainer(NonSplitTrainer):
         self.tfr_scheduler.step()
         logger.debug(f"current tfr = {self.model.tfr:.3e}")
 
+    def train_loop_checkpoint_hook(self):
+        self.plot_attention_heatmap()
+
     def train_loop_after_hook(self):
+        self.plot_attention_heatmap()
+
+    def plot_attention_heatmap(self):
         if is_distributed() and dist.get_rank > 0:
             return
         if logger.visdom is not None and self.model.attentions is not None:
@@ -51,9 +62,12 @@ class LASTrainer(NonSplitTrainer):
                 a = self.model.attentions[0, head, :, :]
                 logger.visdom.plot_heatmap(title=f'attention_head{head}', tensor=a)
         if logger.tensorboard is not None and self.model.attentions is not None:
-            for head in range(self.model.num_heads):
-                a = self.model.attentions[0, head, :, :]
-                logger.tensorboard.add_heatmap(f'attention_head{head}', self.global_step, a)
+            if self.model.attentions.size(0) == 1:
+                logger.tensorboard.add_heatmap('attention', self.global_step, self.model.attentions[0])
+            else:
+                batch_size = self.model.attentions.size(0)
+                logger.tensorboard.add_heatmap('attention batch0', self.global_step, self.model.attentions[0])
+                logger.tensorboard.add_heatmap(f'attention batch{batch_size-1}', self.global_step, self.model.attentions[-1])
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
@@ -160,34 +174,41 @@ def batch_train(argv):
 
     dataloaders = {
         "warmup5" : NonSplitTrainDataLoader(datasets["warmup5"],
-                                           sampler=(DistributedSampler(datasets["warmup5"]) if is_distributed() else None),
-                                           batch_size=16, num_workers=16,
-                                           shuffle=(not is_distributed()),
-                                           pin_memory=args.use_cuda),
+                                            sort=True,
+                                            sampler=(DistributedSampler(datasets["warmup5"]) if is_distributed() else None),
+                                            batch_size=32, num_workers=16,
+                                            shuffle=(not is_distributed()),
+                                            pin_memory=args.use_cuda),
         "warmup10": NonSplitTrainDataLoader(datasets["warmup10"],
-                                           sampler=(DistributedSampler(datasets["warmup10"]) if is_distributed() else None),
-                                           batch_size=8, num_workers=8,
-                                           shuffle=(not is_distributed()),
-                                           pin_memory=args.use_cuda),
+                                            sort=True,
+                                            sampler=(DistributedSampler(datasets["warmup10"]) if is_distributed() else None),
+                                            batch_size=16, num_workers=16,
+                                            shuffle=(not is_distributed()),
+                                            pin_memory=args.use_cuda),
         "train5" : NonSplitTrainDataLoader(datasets["train5"],
+                                           sort=True,
                                            sampler=(DistributedSampler(datasets["train5"]) if is_distributed() else None),
-                                           batch_size=16, num_workers=16,
+                                           batch_size=32, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train10": NonSplitTrainDataLoader(datasets["train10"],
+                                           sort=True,
                                            sampler=(DistributedSampler(datasets["train10"]) if is_distributed() else None),
-                                           batch_size=8, num_workers=8,
+                                           batch_size=16, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train15": NonSplitTrainDataLoader(datasets["train15"],
+                                           sort=True,
                                            sampler=(DistributedSampler(datasets["train15"]) if is_distributed() else None),
-                                           batch_size=8, num_workers=8,
+                                           batch_size=8, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"],
+                                           sort=True,
                                            batch_size=32, num_workers=16,
                                            shuffle=False, pin_memory=args.use_cuda),
         "test"   : NonSplitTrainDataLoader(datasets["test"],
+                                           sort=True,
                                            batch_size=32, num_workers=16,
                                            shuffle=False, pin_memory=args.use_cuda),
     }
@@ -197,13 +218,13 @@ def batch_train(argv):
         #if i < 2:
         #    trainer.train_epoch(dataloaders["train3"])
         #    trainer.validate(dataloaders["dev"])
-        if i < 5:
+        if i < 2:
             trainer.train_epoch(dataloaders["warmup5"])
             trainer.validate(dataloaders["dev"])
-        elif i < 10:
+        elif i < 5:
             trainer.train_epoch(dataloaders["warmup10"])
             trainer.validate(dataloaders["dev"])
-        elif i < 20:
+        elif i < 30:
             trainer.train_epoch(dataloaders["train10"])
             trainer.validate(dataloaders["dev"])
         else:
@@ -219,9 +240,9 @@ def train(argv):
     # for training
     parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
-    parser.add_argument('--max-len', default=15., type=float, help="max length of utterance to use in secs")
-    parser.add_argument('--batch-size', default=8, type=int, help="number of images (and labels) to be considered in a batch")
-    parser.add_argument('--num-workers', default=8, type=int, help="number of dataloader workers")
+    parser.add_argument('--max-len', default=5., type=float, help="max length of utterance to use in secs")
+    parser.add_argument('--batch-size', default=32, type=int, help="number of images (and labels) to be considered in a batch")
+    parser.add_argument('--num-workers', default=16, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")
     parser.add_argument('--max-norm', default=1e-2, type=int, help="norm cutoff to prevent explosion of gradients")
@@ -270,21 +291,25 @@ def train(argv):
 
     dataloaders = {
         "warmup": NonSplitTrainDataLoader(datasets["warmup"],
+                                          sort=True,
                                           sampler=(DistributedSampler(datasets["warmup"]) if is_distributed() else None),
                                           batch_size=args.batch_size,
                                           num_workers=args.num_workers,
                                           shuffle=(not is_distributed()),
                                           pin_memory=args.use_cuda),
         "train": NonSplitTrainDataLoader(datasets["train"],
+                                         sort=True,
                                          sampler=(DistributedSampler(datasets["train"]) if is_distributed() else None),
                                          batch_size=args.batch_size,
                                          num_workers=args.num_workers,
                                          shuffle=(not is_distributed()),
                                          pin_memory=args.use_cuda),
         "dev"  : NonSplitTrainDataLoader(datasets["dev"],
+                                         sort=True,
                                          batch_size=16, num_workers=8,
                                          shuffle=False, pin_memory=args.use_cuda),
         "test" : NonSplitTrainDataLoader(datasets["test"],
+                                         sort=True,
                                          batch_size=16, num_workers=8,
                                          shuffle=False, pin_memory=args.use_cuda),
     }
@@ -332,7 +357,7 @@ def test(argv):
 
     dataset = AudioSubset(NonSplitTrainDataset(labeler=labeler, manifest_file=manifest, stride=input_folding),
                           max_len=args.max_len, min_len=args.min_len)
-    dataloader = NonSplitTrainDataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers,
+    dataloader = NonSplitTrainDataLoader(dataset, sort=True, batch_size=args.batch_size, num_workers=args.num_workers,
                                          shuffle=True, pin_memory=args.use_cuda)
 
     if args.validate:

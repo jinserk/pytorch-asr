@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from asr.utils import params as p
-from asr.utils.misc import onehot2int, int2onehot, Swish, InferenceBatchSoftmax
+from asr.utils.misc import onehot2int, int2onehot, Swish, InferenceBatchSoftmax, register_nan_checks
 
 
 class SequenceWise(nn.Module):
@@ -39,7 +39,7 @@ class SequenceWise(nn.Module):
 
 class Listener(nn.Module):
 
-    def __init__(self, listen_vec_size, input_folding=2, rnn_type=nn.LSTM,
+    def __init__(self, listen_vec_size, input_folding=3, rnn_type=nn.LSTM,
                  rnn_hidden_size=256, rnn_num_layers=4, bidirectional=True, last_fc=False):
         super().__init__()
 
@@ -100,7 +100,7 @@ class Listener(nn.Module):
         if self.fc is not None:
             y = self.fc(y)
 
-        return y, seq_lens
+        return y
 
 
 class Attention(nn.Module):
@@ -111,22 +111,32 @@ class Attention(nn.Module):
         self.num_heads = num_heads
 
         if apply_proj:
-            self.phi = SequenceWise(nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=True))
-            self.psi = SequenceWise(nn.Linear(listen_vec_size, proj_hidden_size, bias=True))
+            self.phi = nn.Linear(state_vec_size, proj_hidden_size * num_heads, bias=True)
+            # psi should have no bias since h was padded with zero
+            self.psi = nn.Linear(listen_vec_size, proj_hidden_size, bias=False)
         else:
             assert state_vec_size == listen_vec_size * num_heads
 
-        self.normal = nn.Softmax(dim=-1)
-
         if num_heads > 1:
             input_size = listen_vec_size * num_heads
-            self.reduce = SequenceWise(nn.Linear(input_size, listen_vec_size, bias=True))
+            self.reduce = nn.Linear(input_size, listen_vec_size, bias=True)
+
+        self.softmax = nn.Softmax(dim=-1)
 
     def score(self, m, n):
         """ dot product as score function """
         return torch.bmm(m, n.transpose(1, 2))
 
-    def forward(self, s, h):
+    def normal(self, e, mask=None, epsilon=1e-5):
+        # e: Bx1xTh, mask: BxTh
+        if mask is None:
+            return self.softmax(e)
+        else:  # masked softmax only in input_seq_len in batch
+            exps = torch.exp(e.squeeze()) * mask
+            sums = exps.sum(dim=-1, keepdim=True) + epsilon
+            return (exps / sums).unsqueeze(1)
+
+    def forward(self, s, h, len_mask=None):
         # s: Bx1xHs -> m: Bx1xHe
         # h: BxThxHh -> n: BxThxHe
         if self.apply_proj:
@@ -136,34 +146,37 @@ class Attention(nn.Module):
             m = s
             n = h
 
-        # <m, n> -> e: Bx1xTh -> c: Bx1xHh
+        # <m, n> -> a, e: Bx1xTh -> c: Bx1xHh
         if self.num_heads > 1:
             proj_hidden_size = m.size(-1) // self.num_heads
             ee = [self.score(mi, n) for mi in torch.split(m, proj_hidden_size, dim=-1)]
-            aa = [self.normal(e) for e in ee]
+            aa = [self.normal(e, len_mask) for e in ee]
             c = self.reduce(torch.cat([torch.bmm(a, h) for a in aa], dim=-1))
             a = torch.stack(aa).transpose(0, 1)
         else:
             e = self.score(m, n)
-            a = self.normal(e)
+            a = self.normal(e, len_mask)
             c = torch.bmm(a, h)
             a = a.unsqueeze(dim=1)
         # c: context (Bx1xHh), a: Bxheadsx1xTh
         return c, a
 
 
-
 class Speller(nn.Module):
 
-    def __init__(self, listen_vec_size, label_vec_size, rnn_type=nn.LSTM,
-                 rnn_hidden_size=512, rnn_num_layers=1, max_seq_len=100,
-                 apply_attend_proj=False, proj_hidden_size=256, num_attend_heads=1):
+    def __init__(self, listen_vec_size, label_vec_size, sos=None, eos=None,
+                 rnn_type=nn.LSTM, rnn_hidden_size=512, rnn_num_layers=1,
+                 apply_attend_proj=False, proj_hidden_size=256, num_attend_heads=1,
+                 masked_attend=False):
         super().__init__()
 
-        self.max_seq_len = max_seq_len
         self.label_vec_size = label_vec_size
-        self.sos = label_vec_size - 2
-        self.eos = label_vec_size - 1
+        assert sos is not None and 0 <= sos < label_vec_size
+        assert eos is not None and 0 <= eos < label_vec_size
+        assert sos is not None and eos is not None and sos != eos
+        self.sos = label_vec_size - 2 if sos is None else sos
+        self.eos = label_vec_size - 1 if eos is None else eos
+        self.max_seq_lens = 256
 
         Hs, Hc, Hy = rnn_hidden_size, listen_vec_size, label_vec_size
 
@@ -175,57 +188,70 @@ class Speller(nn.Module):
                                    apply_proj=apply_attend_proj, proj_hidden_size=proj_hidden_size,
                                    num_heads=num_attend_heads)
 
-        self.chardist = SequenceWise(nn.Sequential(OrderedDict([
-            ('ln1', nn.LayerNorm(Hs + Hc, elementwise_affine=False)),
-            ('fc1', nn.Linear(Hs + Hc, label_vec_size, bias=False)),
-        ])))
+        self.masked_attend = masked_attend
+
+        self.chardist = nn.Sequential(OrderedDict([
+            ('fc1', nn.Linear(Hs + Hc, 128, bias=True)),
+            ('fc2', nn.Linear(128, label_vec_size, bias=False)),
+        ]))
 
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, h, y=None):
+    def get_mask(self, h, seq_lens):
+        bs, ts, hs = h.size()
+        mask = h.new_ones((bs, ts), dtype=torch.float)
+        for b in range(bs):
+            mask[b, seq_lens[b]:] = 0.
+        return mask
+
+    def forward(self, h, x_seq_lens, y=None, y_seq_lens=None):
         batch_size = h.size(0)
         sos = int2onehot(h.new_full((batch_size, 1), self.sos), num_classes=self.label_vec_size).float()
+        eos = int2onehot(h.new_full((batch_size, 1), self.eos), num_classes=self.label_vec_size).float()
 
         hidden = None
         y_hats = list()
         attentions = list()
-        max_seq_len = self.max_seq_len if y is None else y.size(1)
-        unit_len = torch.ones((batch_size, ))
 
+        in_mask = self.get_mask(h, x_seq_lens) if self.masked_attend else None
         x = torch.cat([sos, h.narrow(1, 0, 1)], dim=-1)
-        for i in range(max_seq_len):
+
+        y_hats_seq_lens = torch.ones((batch_size, ), dtype=torch.int) * self.max_seq_lens
+
+        for t in range(self.max_seq_lens):
             x, hidden = self.rnns(x, hidden)
-            c, a = self.attention(x, h)
+            c, a = self.attention(x, h, in_mask)
             y_hat = self.chardist(torch.cat([x, c], dim=-1))
             y_hat = self.softmax(y_hat)
 
             y_hats.append(y_hat)
             attentions.append(a)
 
-            # if eos occurs in all batch, stop iteration
-            if not onehot2int(y_hat.squeeze()).ne(self.eos).nonzero().numel():
+            # check eos occurrence
+            bi = onehot2int(y_hat.squeeze()).eq(self.eos)
+            ri = y_hats_seq_lens.gt(t)
+            if bi.is_cuda:
+                ri = ri.cuda()
+            y_hats_seq_lens[bi * ri] = t + 1
+            if y_hats_seq_lens.le(t + 1).all():
                 break
 
             if y is None:
                 x = torch.cat([y_hat, c], dim=-1)
-            else:  # teach force
-                x = torch.cat([y.narrow(1, i, 1), c], dim=-1)
+            elif t < y.size(1):  # teach force
+                x = torch.cat([y.narrow(1, t, 1), c], dim=-1)
+            else:
+                x = torch.cat([eos, c], dim=-1)
 
         y_hats = torch.cat(y_hats, dim=1)
         attentions = torch.cat(attentions, dim=2)
 
-        seq_lens = torch.full((batch_size,), max_seq_len, dtype=torch.int)
-        for b, y_hat in enumerate(y_hats):
-            idx = onehot2int(y_hat).eq(self.eos).nonzero()
-            if idx.numel():
-                seq_lens[b] = idx[0][0]
-
-        return y_hats, seq_lens, attentions
+        return y_hats, y_hats_seq_lens, attentions
 
 
 class TFRScheduler(object):
 
-    def __init__(self, model, ranges=(0.9, 0.1), warm_up=5, epochs=25):
+    def __init__(self, model, ranges=(0.9, 0.1), warm_up=5, epochs=32):
         self.model = model
 
         self.upper, self.lower = ranges
@@ -272,12 +298,13 @@ class LogWithLabelSmoothing(nn.Module):
 class ListenAttendSpell(nn.Module):
 
     def __init__(self, label_vec_size=p.NUM_CTC_LABELS, listen_vec_size=256,
-                 state_vec_size=256, num_attend_heads=2, max_seq_len=256,
-                 input_folding=2, smoothing=0.001):
+                 state_vec_size=256, num_attend_heads=1, input_folding=2, smoothing=0.001):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
-        self.max_seq_len = max_seq_len
+        self.sos = self.label_vec_size - 2
+        self.eos = self.label_vec_size - 1
+
         self.num_heads = num_attend_heads
         self.tfr = 1.
 
@@ -286,7 +313,7 @@ class ListenAttendSpell(nn.Module):
                                last_fc=False)
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
-                             rnn_hidden_size=state_vec_size, rnn_num_layers=1, max_seq_len=max_seq_len,
+                             sos=self.sos, eos=self.eos, rnn_hidden_size=state_vec_size, rnn_num_layers=2,
                              apply_attend_proj=True, proj_hidden_size=128, num_attend_heads=num_attend_heads)
 
         self.attentions = None
@@ -303,42 +330,46 @@ class ListenAttendSpell(nn.Module):
             return self.eval_forward(x, x_seq_lens)
 
     def train_forward(self, x, x_seq_lens, y, y_seq_lens):
-        if y_seq_lens.ge(self.max_seq_len).nonzero().numel():
-            # output zero loss for distributed env
-            return torch.zeros((x.size(0), y_seq_lens.max(), self.label_vec_size)), None, None
+        # to remove the case of x_seq_lens < y_seq_lens and y_seq_lens > max_seq_lens
+        bi = x_seq_lens.ge(y_seq_lens) * y_seq_lens.le(self.spell.max_seq_lens)
+        x, x_seq_lens = x[bi], x_seq_lens[bi]
+
         # listen
-        h, _ = self.listen(x, x_seq_lens)
-        # spell
-        # change y to one-hot tensors
-        eos = self.spell.eos
-        eos_tensor = torch.cuda.IntTensor([eos, ]) if y.is_cuda else torch.IntTensor([eos, ])
-        ys = [torch.cat([yb, eos_tensor]) for yb in torch.split(y, y_seq_lens.tolist())]
-        ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=eos)
+        h = self.listen(x, x_seq_lens)
+
+        # make ys from y including trailing eos
+        eos_t = y.new_full((1, ), self.eos)
+        ys = [torch.cat((yb, eos_t)) for yb in torch.split(y, y_seq_lens.tolist())]
+        ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.eos)
+        ys, ys_seq_lens = ys[bi], y_seq_lens[bi] + 1
+
         # speller with teach force rate
         if self._is_teacher_force():
-            yss = int2onehot(ys, num_classes=self.label_vec_size, floor=1e-5).float()
-            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, yss)
+            floor = np.random.random_sample() * 1e-2
+            yss = int2onehot(ys, num_classes=self.label_vec_size, floor=floor).float()
+            noise = torch.rand_like(yss) * 0.1
+            yss = yss * noise
+            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, x_seq_lens, yss, ys_seq_lens)
         else:
-            y_hats, y_hats_seq_lens, self.attentions = self.spell(h)
+            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, x_seq_lens)
+
         # match seq lens between y_hats and ys
         s1, s2 = y_hats.size(1), ys.size(1)
         if s1 < s2:
-            # append one-hot tensors of eos to y_hats
-            dummy = y_hats.new_full((y_hats.size(0), s2 - s1, ), fill_value=eos)
-            dummy = int2onehot(dummy, num_classes=self.label_vec_size).float()
-            y_hats = torch.cat([y_hats, dummy], dim=1)
+            y_hats = F.pad(y_hats, (0, 0, 0, s2 - s1))
         elif s1 > s2:
-            ys = F.pad(ys, (0, s1 - s2), value=eos)
-        # return with seq lens
+            ys = F.pad(ys, (0, s1 - s2))
+
         y_hats = self.log(y_hats)
         return y_hats, y_hats_seq_lens, ys
 
     def eval_forward(self, x, x_seq_lens):
         # listen
-        h, _ = self.listen(x, x_seq_lens)
+        h = self.listen(x, x_seq_lens)
         # spell
-        y_hats, y_hats_seq_lens, _ = self.spell(h)
-        # return with seq lens
+        y_hats, y_hats_seq_lens, _ = self.spell(h, x_seq_lens)
+
+        # return with seq lens without sos and eos
         y_hats = self.log(y_hats[:, :, :-2])
         return y_hats, y_hats_seq_lens
 

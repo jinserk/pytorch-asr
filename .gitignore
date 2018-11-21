@@ -106,6 +106,7 @@ ENV/
 # subdirs
 data/
 logs*/
+logs*
 tsne/
 temp/
 
