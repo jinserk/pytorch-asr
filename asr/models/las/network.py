@@ -121,27 +121,22 @@ class Attention(nn.Module):
             input_size = listen_vec_size * num_heads
             self.reduce = nn.Linear(input_size, listen_vec_size, bias=True)
 
-        #def check_grad(module, grad_input, grad_output):
-        #    for gi in grad_input:
-        #        if gi is not None:
-        #            d = torch.isnan(gi)
-        #            if d.any():
-        #                gi[d] = 0
-
-        #register_nan_checks(self.psi, func=check_grad)
+        self.softmax = nn.Softmax(dim=-1)
 
     def score(self, m, n):
         """ dot product as score function """
         return torch.bmm(m, n.transpose(1, 2))
 
-    def normal(self, e, mask, epsilon=1e-5):
-        # masked softmax
+    def normal(self, e, mask=None, epsilon=1e-5):
         # e: Bx1xTh, mask: BxTh
-        exps = torch.exp(e.squeeze()) * mask
-        sums = exps.sum(dim=-1, keepdim=True) + epsilon
-        return (exps / sums).unsqueeze(1)
+        if mask is None:
+            return self.softmax(e)
+        else:  # masked softmax only in input_seq_len in batch
+            exps = torch.exp(e.squeeze()) * mask
+            sums = exps.sum(dim=-1, keepdim=True) + epsilon
+            return (exps / sums).unsqueeze(1)
 
-    def forward(self, s, h, len_mask):
+    def forward(self, s, h, len_mask=None):
         # s: Bx1xHs -> m: Bx1xHe
         # h: BxThxHh -> n: BxThxHe
         if self.apply_proj:
@@ -171,7 +166,8 @@ class Speller(nn.Module):
 
     def __init__(self, listen_vec_size, label_vec_size, sos=None, eos=None,
                  rnn_type=nn.LSTM, rnn_hidden_size=512, rnn_num_layers=1,
-                 apply_attend_proj=False, proj_hidden_size=256, num_attend_heads=1):
+                 apply_attend_proj=False, proj_hidden_size=256, num_attend_heads=1,
+                 masked_attend=False):
         super().__init__()
 
         self.label_vec_size = label_vec_size
@@ -191,6 +187,8 @@ class Speller(nn.Module):
         self.attention = Attention(state_vec_size=Hs, listen_vec_size=Hc,
                                    apply_proj=apply_attend_proj, proj_hidden_size=proj_hidden_size,
                                    num_heads=num_attend_heads)
+
+        self.masked_attend = masked_attend
 
         self.chardist = nn.Sequential(OrderedDict([
             ('fc1', nn.Linear(Hs + Hc, 128, bias=True)),
@@ -215,7 +213,7 @@ class Speller(nn.Module):
         y_hats = list()
         attentions = list()
 
-        in_mask = self.get_mask(h, x_seq_lens)
+        in_mask = self.get_mask(h, x_seq_lens) if self.masked_attend else None
         x = torch.cat([sos, h.narrow(1, 0, 1)], dim=-1)
 
         y_hats_seq_lens = torch.ones((batch_size, ), dtype=torch.int) * self.max_seq_lens
@@ -253,7 +251,7 @@ class Speller(nn.Module):
 
 class TFRScheduler(object):
 
-    def __init__(self, model, ranges=(0.9, 0.1), warm_up=4, epochs=26):
+    def __init__(self, model, ranges=(0.9, 0.1), warm_up=5, epochs=32):
         self.model = model
 
         self.upper, self.lower = ranges
@@ -358,13 +356,8 @@ class ListenAttendSpell(nn.Module):
         # match seq lens between y_hats and ys
         s1, s2 = y_hats.size(1), ys.size(1)
         if s1 < s2:
-            # pad y_hats with eos one-hot tensors
-            #dummy = y_hats.new_full((y_hats.size(0), s2 - s1, ), fill_value=self.eos, dtype=torch.int)
-            #dummy = int2onehot(dummy, num_classes=self.label_vec_size).float()
-            #y_hats = torch.cat([y_hats, dummy], dim=1)
             y_hats = F.pad(y_hats, (0, 0, 0, s2 - s1))
         elif s1 > s2:
-            # pad ys with eos, to be ignored in NLLLoss
             ys = F.pad(ys, (0, s1 - s2))
 
         y_hats = self.log(y_hats)

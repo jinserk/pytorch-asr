@@ -39,7 +39,7 @@ class LASTrainer(NonSplitTrainer):
         #register_nan_checks(self.loss, func=check_grad)
         register_nan_checks(self.model, func=check_grad)
 
-        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=5, epochs=25)
+        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=5, epochs=32)
         if self.states is not None and "tfr_scheduler" in self.states:
             self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
