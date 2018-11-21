@@ -164,7 +164,7 @@ class Attention(nn.Module):
 
 class Speller(nn.Module):
 
-    def __init__(self, listen_vec_size, label_vec_size, sos=None, eos=None,
+    def __init__(self, listen_vec_size, label_vec_size, max_seq_lens=256, sos=None, eos=None,
                  rnn_type=nn.LSTM, rnn_hidden_size=512, rnn_num_layers=1,
                  apply_attend_proj=False, proj_hidden_size=256, num_attend_heads=1,
                  masked_attend=False):
@@ -176,7 +176,7 @@ class Speller(nn.Module):
         assert sos is not None and eos is not None and sos != eos
         self.sos = label_vec_size - 2 if sos is None else sos
         self.eos = label_vec_size - 1 if eos is None else eos
-        self.max_seq_lens = 256
+        self.max_seq_lens = max_seq_lens
 
         Hs, Hc, Hy = rnn_hidden_size, listen_vec_size, label_vec_size
 
@@ -207,7 +207,7 @@ class Speller(nn.Module):
     def forward(self, h, x_seq_lens, y=None, y_seq_lens=None):
         batch_size = h.size(0)
         sos = int2onehot(h.new_full((batch_size, 1), self.sos), num_classes=self.label_vec_size).float()
-        blk = int2onehot(h.new_full((batch_size, 1), 0), num_classes=self.label_vec_size).float()
+        eos = int2onehot(h.new_full((batch_size, 1), self.eos), num_classes=self.label_vec_size).float()
 
         hidden = None
         y_hats = list()
@@ -233,7 +233,9 @@ class Speller(nn.Module):
             if bi.is_cuda:
                 ri = ri.cuda()
             y_hats_seq_lens[bi * ri] = t + 1
-            if y_hats_seq_lens.le(t + 1).all():
+
+            # early termination in eval mode
+            if not self.training and y_hats_seq_lens.le(t + 1).all():
                 break
 
             if y is None:
@@ -241,7 +243,7 @@ class Speller(nn.Module):
             elif t < y.size(1):  # teach force
                 x = torch.cat([y.narrow(1, t, 1), c], dim=-1)
             else:
-                x = torch.cat([blk, c], dim=-1)
+                x = torch.cat([eos, c], dim=-1)
 
         y_hats = torch.cat(y_hats, dim=1)
         attentions = torch.cat(attentions, dim=2)
@@ -313,7 +315,8 @@ class ListenAttendSpell(nn.Module):
                                last_fc=False)
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
-                             sos=self.sos, eos=self.eos, rnn_hidden_size=state_vec_size, rnn_num_layers=2,
+                             sos=self.sos, eos=self.eos, max_seq_lens=128,
+                             rnn_hidden_size=state_vec_size, rnn_num_layers=2,
                              apply_attend_proj=True, proj_hidden_size=128, num_attend_heads=num_attend_heads)
 
         self.attentions = None
@@ -337,10 +340,10 @@ class ListenAttendSpell(nn.Module):
         # listen
         h = self.listen(x, x_seq_lens)
 
-        # make ys from y including trailing eos and padding with zeros
+        # make ys from y including trailing eos
         eos_t = y.new_full((1, ), self.eos)
         ys = [torch.cat((yb, eos_t)) for yb in torch.split(y, y_seq_lens.tolist())]
-        ys = nn.utils.rnn.pad_sequence(ys, batch_first=True)
+        ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.eos)
         ys, ys_seq_lens = ys[bi], y_seq_lens[bi] + 1
 
         # speller with teach force rate
@@ -358,7 +361,7 @@ class ListenAttendSpell(nn.Module):
         if s1 < s2:
             y_hats = F.pad(y_hats, (0, 0, 0, s2 - s1))
         elif s1 > s2:
-            ys = F.pad(ys, (0, s1 - s2))
+            ys = F.pad(ys, (0, s1 - s2), value=self.eos)
 
         y_hats = self.log(y_hats)
         return y_hats, y_hats_seq_lens, ys

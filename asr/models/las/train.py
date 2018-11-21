@@ -27,7 +27,8 @@ class LASTrainer(NonSplitTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.loss = nn.NLLLoss(ignore_index=0)
+        #self.loss = nn.NLLLoss(ignore_index=0)
+        self.loss = nn.NLLLoss()
 
         def check_grad(module, grad_input, grad_output):
             for gi in grad_input:
@@ -39,7 +40,7 @@ class LASTrainer(NonSplitTrainer):
         #register_nan_checks(self.loss, func=check_grad)
         register_nan_checks(self.model, func=check_grad)
 
-        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=5, epochs=32)
+        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=0, epochs=16)
         if self.states is not None and "tfr_scheduler" in self.states:
             self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
