@@ -207,7 +207,7 @@ class Speller(nn.Module):
     def forward(self, h, x_seq_lens, y=None, y_seq_lens=None):
         batch_size = h.size(0)
         sos = int2onehot(h.new_full((batch_size, 1), self.sos), num_classes=self.label_vec_size).float()
-        eos = int2onehot(h.new_full((batch_size, 1), self.eos), num_classes=self.label_vec_size).float()
+        blk = int2onehot(h.new_full((batch_size, 1), 0), num_classes=self.label_vec_size).float()
 
         hidden = None
         y_hats = list()
@@ -241,7 +241,7 @@ class Speller(nn.Module):
             elif t < y.size(1):  # teach force
                 x = torch.cat([y.narrow(1, t, 1), c], dim=-1)
             else:
-                x = torch.cat([eos, c], dim=-1)
+                x = torch.cat([blk, c], dim=-1)
 
         y_hats = torch.cat(y_hats, dim=1)
         attentions = torch.cat(attentions, dim=2)
@@ -337,10 +337,10 @@ class ListenAttendSpell(nn.Module):
         # listen
         h = self.listen(x, x_seq_lens)
 
-        # make ys from y including trailing eos
+        # make ys from y including trailing eos and padding with zeros
         eos_t = y.new_full((1, ), self.eos)
         ys = [torch.cat((yb, eos_t)) for yb in torch.split(y, y_seq_lens.tolist())]
-        ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.eos)
+        ys = nn.utils.rnn.pad_sequence(ys, batch_first=True)
         ys, ys_seq_lens = ys[bi], y_seq_lens[bi] + 1
 
         # speller with teach force rate
