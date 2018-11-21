@@ -218,7 +218,7 @@ class Speller(nn.Module):
         in_mask = self.get_mask(h, x_seq_lens)
         x = torch.cat([sos, h.narrow(1, 0, 1)], dim=-1)
 
-        y_hats_seq_lens = torch.ones((batch_size, )) * self.max_seq_lens
+        y_hats_seq_lens = torch.ones((batch_size, ), dtype=torch.int) * self.max_seq_lens
 
         for t in range(self.max_seq_lens):
             x, hidden = self.rnns(x, hidden)
