@@ -30,16 +30,6 @@ class LASTrainer(NonSplitTrainer):
         self.loss1 = nn.NLLLoss(ignore_index=self.model.eos)    # for label matching
         self.loss2 = nn.NLLLoss()                               # for seq-len matching
 
-        #def check_grad(module, grad_input, grad_output):
-        #    for gi in grad_input:
-        #        if gi is not None:
-        #            d = torch.isnan(gi)
-        #            if d.any():
-        #                gi[d] = 0
-
-        #register_nan_checks(self.loss, func=check_grad)
-        #register_nan_checks(self.model, func=check_grad)
-
         self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=5, epochs=32)
         if self.states is not None and "tfr_scheduler" in self.states:
             self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])

@@ -23,10 +23,10 @@ class SequenceWise(nn.Module):
         super().__init__()
         self.module = module
 
-    def forward(self, x):
+    def forward(self, x, *args, **kwargs):
         t, n = x.size(0), x.size(1)
         x = x.contiguous().view(t * n, -1)
-        x = self.module(x)
+        x = self.module(x, *args, **kwargs)
         x = x.contiguous().view(t, n, -1)
         return x
 
@@ -103,6 +103,28 @@ class Listener(nn.Module):
         return y
 
 
+class MaskedSoftmax(nn.Module):
+
+    def __init__(self, dim=-1, epsilon=1e-5):
+        super().__init__()
+        self.dim = dim
+        self.epsilon = epsilon
+
+        self.softmax = nn.Softmax(dim=dim)
+
+    def forward(self, e, mask=None):
+        # e: Bx1xTh, mask: BxTh
+        if mask is None:
+            return self.softmax(e)
+        else:
+            # masked softmax only in input_seq_len in batch
+            # for stability, refered to https://eli.thegreenplace.net/2016/the-softmax-function-and-its-derivative/
+            shift_e = e - e.max()
+            exps = torch.exp(shift_e) * mask
+            sums = exps.sum(dim=self.dim, keepdim=True) + self.epsilon
+            return (exps / sums)
+
+
 class Attention(nn.Module):
 
     def __init__(self, state_vec_size, listen_vec_size, apply_proj=True, proj_hidden_size=256, num_heads=1):
@@ -121,20 +143,11 @@ class Attention(nn.Module):
             input_size = listen_vec_size * num_heads
             self.reduce = nn.Linear(input_size, listen_vec_size, bias=True)
 
-        self.softmax = nn.Softmax(dim=-1)
+        self.normal = SequenceWise(MaskedSoftmax(dim=-1))
 
     def score(self, m, n):
         """ dot product as score function """
         return torch.bmm(m, n.transpose(1, 2))
-
-    def normal(self, e, mask=None, epsilon=1e-5):
-        # e: Bx1xTh, mask: BxTh
-        if mask is None:
-            return self.softmax(e)
-        else:  # masked softmax only in input_seq_len in batch
-            exps = torch.exp(e.squeeze()) * mask
-            sums = exps.sum(dim=-1, keepdim=True) + epsilon
-            return (exps / sums).unsqueeze(1)
 
     def forward(self, s, h, len_mask=None):
         # s: Bx1xHs -> m: Bx1xHe
@@ -167,7 +180,7 @@ class Speller(nn.Module):
     def __init__(self, listen_vec_size, label_vec_size, max_seq_lens=256, sos=None, eos=None,
                  rnn_type=nn.LSTM, rnn_hidden_size=512, rnn_num_layers=1,
                  apply_attend_proj=False, proj_hidden_size=256, num_attend_heads=1,
-                 masked_attend=False):
+                 masked_attend=True):
         super().__init__()
 
         self.label_vec_size = label_vec_size
