@@ -10,6 +10,7 @@ from torch.autograd import Variable
 
 from asr.utils import params as p
 from asr.utils.misc import onehot2int, int2onehot, Swish, InferenceBatchSoftmax, register_nan_checks
+from asr.utils.logger import logger
 
 
 class SequenceWise(nn.Module):
@@ -247,8 +248,8 @@ class Speller(nn.Module):
                 ri = ri.cuda()
             y_hats_seq_lens[bi * ri] = t + 1
 
-            # early termination in eval mode
-            if not self.training and y_hats_seq_lens.le(t + 1).all():
+            # early termination
+            if y_hats_seq_lens.le(t + 1).all():
                 break
 
             if y is None:
@@ -317,6 +318,7 @@ class ListenAttendSpell(nn.Module):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
+        self.blk = 0
         self.sos = self.label_vec_size - 2
         self.eos = self.label_vec_size - 1
 
@@ -347,7 +349,9 @@ class ListenAttendSpell(nn.Module):
 
     def train_forward(self, x, x_seq_lens, y, y_seq_lens):
         # to remove the case of x_seq_lens < y_seq_lens and y_seq_lens > max_seq_lens
-        bi = x_seq_lens.ge(y_seq_lens) * y_seq_lens.le(self.spell.max_seq_lens)
+        bi = x_seq_lens.gt(y_seq_lens) * y_seq_lens.lt(self.spell.max_seq_lens)
+        if ~bi.any():
+            logger.warn("there are samples of x_seq_lens < y_seq_lens or y_seq_lens > max_seq_lens")
         x, x_seq_lens = x[bi], x_seq_lens[bi]
 
         # listen
@@ -372,9 +376,12 @@ class ListenAttendSpell(nn.Module):
         # match seq lens between y_hats and ys
         s1, s2 = y_hats.size(1), ys.size(1)
         if s1 < s2:
-            y_hats = F.pad(y_hats, (0, 0, 0, s2 - s1))
+            dummy = y_hats.new_full((y_hats.size(0), s2 - s1, ), fill_value=self.blk, dtype=torch.int)
+            dummy = int2onehot(dummy, num_classes=self.label_vec_size).float()
+            y_hats = torch.cat([y_hats, dummy], dim=1)
+            #y_hats = F.pad(y_hats, (0, 0, 0, s2 - s1))
         elif s1 > s2:
-            ys = F.pad(ys, (0, s1 - s2), value=self.eos)
+            ys = F.pad(ys, (0, s1 - s2), value=self.blk)
 
         y_hats = self.log(y_hats)
         return y_hats, y_hats_seq_lens, ys
