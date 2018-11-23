@@ -80,8 +80,9 @@ class Listener(nn.Module):
 
         if last_fc:
             self.fc = SequenceWise(nn.Sequential(OrderedDict([
-                ('ln1', nn.LayerNorm(rnn_hidden_size, elementwise_affine=False)),
                 ('fc1', nn.Linear(rnn_hidden_size, listen_vec_size, bias=False)),
+                ('nl1', nn.LeakyReLU()),
+                ('ln1', nn.LayerNorm(listen_vec_size, elementwise_affine=False)),
             ])))
         else:
             assert listen_vec_size == rnn_hidden_size
@@ -327,7 +328,7 @@ class ListenAttendSpell(nn.Module):
 
         self.listen = Listener(listen_vec_size=listen_vec_size, input_folding=input_folding, rnn_type=nn.LSTM,
                                rnn_hidden_size=listen_vec_size, rnn_num_layers=4, bidirectional=True,
-                               last_fc=False)
+                               last_fc=True)
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
                              sos=self.sos, eos=self.eos, max_seq_lens=256,
