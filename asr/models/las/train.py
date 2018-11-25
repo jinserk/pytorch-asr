@@ -29,7 +29,8 @@ class LASTrainer(NonSplitTrainer):
 
         self.loss = nn.NLLLoss()
 
-        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.1), warm_up=5, epochs=32)
+        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.0), warm_up=0, epochs=9)
+        #self.tfr_scheduler.step(12)
         if self.states is not None and "tfr_scheduler" in self.states:
             self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
@@ -303,7 +304,8 @@ def train(argv):
 
     # run inference for a certain number of epochs
     for i in range(trainer.epoch, args.num_epochs):
-        trainer.train_epoch(dataloaders["warmup"])
+        #trainer.train_epoch(dataloaders["warmup"])
+        trainer.train_epoch(dataloaders["train"])
         trainer.validate(dataloaders["dev"])
 
     # final test to know WER

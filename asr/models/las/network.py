@@ -272,7 +272,7 @@ class TFRScheduler(object):
         self.model = model
 
         self.upper, self.lower = ranges
-        assert 0. < self.lower < self.upper < 1.
+        assert 0. <= self.lower <= self.upper < 1.
         self.warm_up = warm_up
         self.end_epochs = epochs + warm_up
         self.slope = (self.lower - self.upper) / epochs
