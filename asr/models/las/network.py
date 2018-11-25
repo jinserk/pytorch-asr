@@ -361,7 +361,7 @@ class ListenAttendSpell(nn.Module):
         # make ys from y including trailing eos
         eos_t = y.new_full((1, ), self.eos)
         ys = [torch.cat((yb, eos_t)) for yb in torch.split(y, y_seq_lens.tolist())]
-        ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.eos)
+        ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.blk)
         ys, ys_seq_lens = ys[bi], y_seq_lens[bi] + 1
 
         # speller with teach force rate
