@@ -338,17 +338,17 @@ class ListenAttendSpell(nn.Module):
         self.attentions = None
         self.log = LogWithLabelSmoothing(floor=smoothing)
 
-    def _is_teacher_force(self):
-        return np.random.random_sample() < self.tfr
-
     def forward(self, x, x_seq_lens, y=None, y_seq_lens=None):
         if self.training:
             assert y is not None and y_seq_lens is not None
-            return self.train_forward(x, x_seq_lens, y, y_seq_lens)
+            return self._train_forward(x, x_seq_lens, y, y_seq_lens)
         else:
-            return self.eval_forward(x, x_seq_lens)
+            return self._eval_forward(x, x_seq_lens)
 
-    def train_forward(self, x, x_seq_lens, y, y_seq_lens):
+    def _is_teacher_force(self):
+        return np.random.random_sample() < self.tfr
+
+    def _train_forward(self, x, x_seq_lens, y, y_seq_lens):
         # to remove the case of x_seq_lens < y_seq_lens and y_seq_lens > max_seq_lens
         bi = x_seq_lens.gt(y_seq_lens) * y_seq_lens.lt(self.spell.max_seq_lens)
         if ~bi.any():
@@ -364,8 +364,8 @@ class ListenAttendSpell(nn.Module):
         ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.blk)
         ys, ys_seq_lens = ys[bi], y_seq_lens[bi] + 1
 
-        # speller with teach force rate
         if self._is_teacher_force():
+            # speller with teach force rate including noise
             floor = np.random.random_sample() * 1e-2
             yss = int2onehot(ys, num_classes=self.label_vec_size, floor=floor).float()
             noise = torch.rand_like(yss) * 0.1
@@ -387,7 +387,7 @@ class ListenAttendSpell(nn.Module):
         y_hats = self.log(y_hats)
         return y_hats, y_hats_seq_lens, ys
 
-    def eval_forward(self, x, x_seq_lens):
+    def _eval_forward(self, x, x_seq_lens):
         # listen
         h = self.listen(x, x_seq_lens)
         # spell
