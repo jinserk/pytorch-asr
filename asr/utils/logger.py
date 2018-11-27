@@ -10,6 +10,7 @@ import git
 
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 matplotlib.use('Agg')
 
 logger = logging.getLogger("pytorch-asr")
@@ -258,20 +259,26 @@ class TensorboardLogger:
     def add_histogram(self, title, x, y):
         self.writer.add_histogram(title, y, x)
 
-    def add_heatmap(self, title, x, tensor):
+    def add_heatmap(self, title, x, tensor, drawbox=None):
         assert tensor.dim() == 3
-        if tensor.size(0) == 1:
-            fig, ax = plt.subplots()
-            ax.imshow(tensor[0].detach().cpu().numpy())
+
+        def plot_heatmap(ax, tensor, drawbox=None):
+            ax.imshow(tensor.detach().cpu().numpy())
             ax.invert_yaxis()
             ax.label_outer()
+            if drawbox is not None:
+                rect = patches.Rectangle((0, 0), *drawbox.tolist(), linewidth=1, edgecolor='b', facecolor='none')
+                ax.add_patch(rect)
+
+        if tensor.size(0) == 1:
+            fig, ax = plt.subplots()
+            plot_heatmap(ax, tensor[0], drawbox)
         else:
             fig, axs = plt.subplots(tensor.size(0), sharex=True)
-            for i, a in enumerate(axs):
-                a.imshow(tensor[i].detach().cpu().numpy())
-                a.invert_yaxis()
-                a.label_outer()
+            for i, ax in enumerate(axs):
+                plot_heatmap(ax, tensor[i], drawbox[i])
             fig.subplots_adjust(hspace=2)
+
         fig.patch.set_color('white')
         fig.tight_layout()
         self.writer.add_figure(title, fig, x)

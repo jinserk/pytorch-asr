@@ -55,7 +55,8 @@ class LASTrainer(NonSplitTrainer):
                 logger.visdom.plot_heatmap(title=f'attention_head{head}', tensor=a)
         if logger.tensorboard is not None and self.model.attentions is not None:
             b = np.random.randint(self.model.attentions.size(0))
-            logger.tensorboard.add_heatmap('attention', self.global_step, self.model.attentions[b])
+            logger.tensorboard.add_heatmap('attention', self.global_step, self.model.attentions[b],
+                                           drawbox=self.model.regions[b])
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data

@@ -185,10 +185,11 @@ class Speller(nn.Module):
                  masked_attend=True):
         super().__init__()
 
-        self.label_vec_size = label_vec_size
         assert sos is not None and 0 <= sos < label_vec_size
         assert eos is not None and 0 <= eos < label_vec_size
         assert sos is not None and eos is not None and sos != eos
+
+        self.label_vec_size = label_vec_size
         self.sos = label_vec_size - 2 if sos is None else sos
         self.eos = label_vec_size - 1 if eos is None else eos
         self.max_seq_lens = max_seq_lens
@@ -338,6 +339,7 @@ class ListenAttendSpell(nn.Module):
                              apply_attend_proj=True, proj_hidden_size=128, num_attend_heads=num_attend_heads)
 
         self.attentions = None
+        self.regions = None
         self.log = LogWithLabelSmoothing(floor=smoothing)
 
     def forward(self, x, x_seq_lens, y=None, y_seq_lens=None):
@@ -375,6 +377,9 @@ class ListenAttendSpell(nn.Module):
             y_hats, y_hats_seq_lens, self.attentions = self.spell(h, x_seq_lens, yss, ys_seq_lens)
         else:
             y_hats, y_hats_seq_lens, self.attentions = self.spell(h, x_seq_lens)
+
+        # add regions to attentions
+        self.regions = torch.IntTensor([(frames - 1, labels - 1) for frames, labels in zip(x_seq_lens, ys_seq_lens)])
 
         # match seq lens between y_hats and ys
         s1, s2 = y_hats.size(1), ys.size(1)
