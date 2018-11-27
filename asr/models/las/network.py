@@ -180,7 +180,7 @@ class Attention(nn.Module):
 class Speller(nn.Module):
 
     def __init__(self, listen_vec_size, label_vec_size, max_seq_lens=256, sos=None, eos=None,
-                 rnn_type=nn.LSTM, rnn_hidden_size=512, rnn_num_layers=1,
+                 rnn_type=nn.LSTM, rnn_hidden_size=512, rnn_num_layers=[1, 1],
                  apply_attend_proj=False, proj_hidden_size=256, num_attend_heads=1,
                  masked_attend=True):
         super().__init__()
@@ -196,7 +196,10 @@ class Speller(nn.Module):
         Hs, Hc, Hy = rnn_hidden_size, listen_vec_size, label_vec_size
 
         self.rnn_num_layers = rnn_num_layers
-        self.rnns = rnn_type(input_size=(Hy + Hc), hidden_size=Hs, num_layers=rnn_num_layers,
+        self.rnns1 = rnn_type(input_size=(Hy + Hc), hidden_size=Hs, num_layers=rnn_num_layers[0],
+                             bias=True, bidirectional=False, batch_first=True)
+        self.norm = nn.LayerNorm(Hs)
+        self.rnns2 = rnn_type(input_size=(Hs + Hc), hidden_size=Hs, num_layers=rnn_num_layers[1],
                              bias=True, bidirectional=False, batch_first=True)
 
         self.attention = Attention(state_vec_size=Hs, listen_vec_size=Hc,
@@ -206,7 +209,7 @@ class Speller(nn.Module):
         self.masked_attend = masked_attend
 
         self.chardist = nn.Sequential(OrderedDict([
-            ('fc1', nn.Linear(Hs + Hc, 128, bias=True)),
+            ('fc1', nn.Linear(Hs, 128, bias=True)),
             ('fc2', nn.Linear(128, label_vec_size, bias=False)),
         ]))
 
@@ -224,7 +227,7 @@ class Speller(nn.Module):
         sos = int2onehot(h.new_full((batch_size, 1), self.sos), num_classes=self.label_vec_size).float()
         eos = int2onehot(h.new_full((batch_size, 1), self.eos), num_classes=self.label_vec_size).float()
 
-        hidden = None
+        hidden1, hidden2 = None, None
         y_hats = list()
         attentions = list()
 
@@ -234,9 +237,11 @@ class Speller(nn.Module):
         y_hats_seq_lens = torch.ones((batch_size, ), dtype=torch.int) * self.max_seq_lens
 
         for t in range(self.max_seq_lens):
-            x, hidden = self.rnns(x, hidden)
-            c, a = self.attention(x, h, in_mask)
-            y_hat = self.chardist(torch.cat([x, c], dim=-1))
+            s, hidden1 = self.rnns1(x, hidden1)
+            s = self.norm(s)
+            c, a = self.attention(s, h, in_mask)
+            s, hidden2 = self.rnns2(torch.cat([s, c], dim=-1), hidden2)
+            y_hat = self.chardist(s)
             y_hat = self.softmax(y_hat)
 
             y_hats.append(y_hat)
@@ -332,7 +337,7 @@ class ListenAttendSpell(nn.Module):
 
         self.spell = Speller(listen_vec_size=listen_vec_size, label_vec_size=self.label_vec_size,
                              sos=self.sos, eos=self.eos, max_seq_lens=256,
-                             rnn_hidden_size=state_vec_size, rnn_num_layers=2,
+                             rnn_hidden_size=state_vec_size, rnn_num_layers=[1, 1],
                              apply_attend_proj=True, proj_hidden_size=128, num_attend_heads=num_attend_heads)
 
         self.attentions = None
@@ -385,7 +390,7 @@ class ListenAttendSpell(nn.Module):
             ys = F.pad(ys, (0, s1 - s2), value=self.blk)
 
         y_hats = self.log(y_hats)
-        return y_hats, y_hats_seq_lens, ys
+        return y_hats, y_hats_seq_lens, ys, ys_seq_lens
 
     def _eval_forward(self, x, x_seq_lens):
         # listen
