@@ -29,10 +29,10 @@ class LASTrainer(NonSplitTrainer):
 
         self.loss = nn.NLLLoss(reduction='none', ignore_index=self.model.blk)
 
-        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.0), warm_up=0, epochs=9)
+        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.0), warm_up=1, epochs=9, restart=True)
         #self.tfr_scheduler.step(12)
-        if self.states is not None and "tfr_scheduler" in self.states:
-            self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
+        #if self.states is not None and "tfr_scheduler" in self.states:
+        #    self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
     def train_loop_before_hook(self):
         self.tfr_scheduler.step()
@@ -209,10 +209,10 @@ def batch_train(argv):
         #if i < 2:
         #    trainer.train_epoch(dataloaders["train3"])
         #    trainer.validate(dataloaders["dev"])
-        if i < 2:
+        if i < 10:
             trainer.train_epoch(dataloaders["warmup5"])
             trainer.validate(dataloaders["dev"])
-        elif i < 5:
+        elif i < 20:
             trainer.train_epoch(dataloaders["warmup10"])
             trainer.validate(dataloaders["dev"])
         elif i < 30:

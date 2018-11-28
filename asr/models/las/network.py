@@ -271,8 +271,9 @@ class Speller(nn.Module):
 
 class TFRScheduler(object):
 
-    def __init__(self, model, ranges=(0.9, 0.1), warm_up=5, epochs=32):
+    def __init__(self, model, ranges=(0.9, 0.1), warm_up=5, epochs=32, restart=False):
         self.model = model
+        self.restart = restart
 
         self.upper, self.lower = ranges
         assert 0. <= self.lower <= self.upper < 1.
@@ -298,6 +299,8 @@ class TFRScheduler(object):
             return self.lower
 
     def step(self, epoch=None):
+        if self.restart and self.last_epoch == self.end_epochs:
+            self.last_epoch = -1
         if epoch is None:
             epoch = self.last_epoch + 1
         self.last_epoch = epoch
