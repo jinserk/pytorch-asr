@@ -30,9 +30,9 @@ class LASTrainer(NonSplitTrainer):
         self.loss = nn.NLLLoss(reduction='none', ignore_index=self.model.blk)
 
         self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.0), warm_up=1, epochs=9, restart=True)
-        #self.tfr_scheduler.step(12)
-        #if self.states is not None and "tfr_scheduler" in self.states:
-        #    self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
+        #self.tfr_scheduler.step(9)
+        if self.states is not None and "tfr_scheduler" in self.states:
+            self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
     def train_loop_before_hook(self):
         self.tfr_scheduler.step()
@@ -173,7 +173,7 @@ def batch_train(argv):
         "warmup10": NonSplitTrainDataLoader(datasets["warmup10"],
                                             sort=True,
                                             sampler=(DistributedSampler(datasets["warmup10"]) if is_distributed() else None),
-                                            batch_size=16, num_workers=16,
+                                            batch_size=32, num_workers=16,
                                             shuffle=(not is_distributed()),
                                             pin_memory=args.use_cuda),
         "train5" : NonSplitTrainDataLoader(datasets["train5"],
@@ -185,13 +185,13 @@ def batch_train(argv):
         "train10": NonSplitTrainDataLoader(datasets["train10"],
                                            sort=True,
                                            sampler=(DistributedSampler(datasets["train10"]) if is_distributed() else None),
-                                           batch_size=16, num_workers=16,
+                                           batch_size=32, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "train15": NonSplitTrainDataLoader(datasets["train15"],
                                            sort=True,
                                            sampler=(DistributedSampler(datasets["train15"]) if is_distributed() else None),
-                                           batch_size=8, num_workers=16,
+                                           batch_size=24, num_workers=16,
                                            shuffle=(not is_distributed()),
                                            pin_memory=args.use_cuda),
         "dev"    : NonSplitTrainDataLoader(datasets["dev"],
