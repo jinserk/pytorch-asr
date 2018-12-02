@@ -193,6 +193,7 @@ class Speller(nn.Module):
         self.sos = label_vec_size - 2 if sos is None else sos
         self.eos = label_vec_size - 1 if eos is None else eos
         self.max_seq_lens = max_seq_lens
+        self.num_eos = 3
 
         Hs, Hc, Hy = rnn_hidden_size, listen_vec_size, label_vec_size
 
@@ -235,6 +236,10 @@ class Speller(nn.Module):
 
         y_hats_seq_lens = torch.ones((batch_size, ), dtype=torch.int) * self.max_seq_lens
 
+        bi = torch.zeros((self.num_eos, batch_size, )).byte()
+        if x.is_cuda:
+            bi = bi.cuda()
+
         for t in range(self.max_seq_lens):
             s, hidden = self.rnns(x, hidden)
             s = self.norm(s)
@@ -245,12 +250,12 @@ class Speller(nn.Module):
             y_hats.append(y_hat)
             attentions.append(a)
 
-            # check eos occurrence
-            bi = onehot2int(y_hat.squeeze()).eq(self.eos)
+            # check 3 conjecutive eos occurrences
+            bi[t % self.num_eos] = onehot2int(y_hat.squeeze()).eq(self.eos)
             ri = y_hats_seq_lens.gt(t)
             if bi.is_cuda:
                 ri = ri.cuda()
-            y_hats_seq_lens[bi * ri] = t + 1
+            y_hats_seq_lens[bi.prod(dim=0, dtype=torch.uint8) * ri] = t + 1
 
             # early termination
             if y_hats_seq_lens.le(t + 1).all():
@@ -366,7 +371,7 @@ class ListenAttendSpell(nn.Module):
         h = self.listen(x, x_seq_lens)
 
         # make ys from y including trailing eos
-        eos_t = y.new_full((1, ), self.eos)
+        eos_t = y.new_full((self.spell.num_eos, ), self.eos)
         ys = [torch.cat((yb, eos_t)) for yb in torch.split(y, y_seq_lens.tolist())]
         ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.blk)
         ys, ys_seq_lens = ys[bi], y_seq_lens[bi] + 1
@@ -402,6 +407,7 @@ class ListenAttendSpell(nn.Module):
         h = self.listen(x, x_seq_lens)
         # spell
         y_hats, y_hats_seq_lens, _ = self.spell(h, x_seq_lens)
+        y_hats_seq_lens[y_hats.seq_lens.ne(self.spell.max_seq_lens)].sub_(self.spell.num_eos)
 
         # return with seq lens without sos and eos
         y_hats = self.log(y_hats[:, :, :-2])

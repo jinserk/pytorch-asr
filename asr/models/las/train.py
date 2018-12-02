@@ -29,7 +29,7 @@ class LASTrainer(NonSplitTrainer):
 
         self.loss = nn.NLLLoss(reduction='none', ignore_index=self.model.blk)
 
-        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.0), warm_up=1, epochs=9, restart=True)
+        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.0), warm_up=0, epochs=9, restart=True)
         #self.tfr_scheduler.step(9)
         if self.states is not None and "tfr_scheduler" in self.states:
             self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
