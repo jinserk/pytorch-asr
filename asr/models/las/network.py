@@ -200,7 +200,7 @@ class Speller(nn.Module):
         self.rnn_num_layers = rnn_num_layers
         self.rnns = rnn_type(input_size=(Hy + Hc), hidden_size=Hs, num_layers=rnn_num_layers,
                              bias=True, bidirectional=False, batch_first=True)
-        #self.norm = nn.LayerNorm(Hs, elementwise_affine=False)
+        self.norm = nn.LayerNorm(Hs, elementwise_affine=False)
 
         self.attention = Attention(state_vec_size=Hs, listen_vec_size=Hc,
                                    apply_proj=apply_attend_proj, proj_hidden_size=proj_hidden_size,
@@ -242,7 +242,7 @@ class Speller(nn.Module):
 
         for t in range(self.max_seq_lens):
             s, hidden = self.rnns(x, hidden)
-            #s = self.norm(s)
+            s = self.norm(s)
             c, a = self.attention(s, h, in_mask)
             y_hat = self.chardist(torch.cat([s, c], dim=-1))
             y_hat = self.softmax(y_hat)
@@ -407,7 +407,7 @@ class ListenAttendSpell(nn.Module):
         h = self.listen(x, x_seq_lens)
         # spell
         y_hats, y_hats_seq_lens, _ = self.spell(h, x_seq_lens)
-        y_hats_seq_lens[y_hats.seq_lens.ne(self.spell.max_seq_lens)].sub_(self.spell.num_eos)
+        y_hats_seq_lens[y_hats_seq_lens.ne(self.spell.max_seq_lens)].sub_(self.spell.num_eos)
 
         # return with seq lens without sos and eos
         y_hats = self.log(y_hats[:, :, :-2])

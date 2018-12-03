@@ -27,7 +27,7 @@ class LASTrainer(NonSplitTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.loss = nn.NLLLoss(reduction='none', ignore_index=self.model.blk)
+        self.loss = nn.NLLLoss(reduction='mean', ignore_index=self.model.blk)
 
         self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.0), warm_up=0, epochs=9, restart=True)
         #self.tfr_scheduler.step(9)
@@ -68,7 +68,8 @@ class LASTrainer(NonSplitTrainer):
                 ys_hat = ys_hat.float()
             if self.use_cuda:
                 ys_lens = ys_lens.cuda()
-            loss = self.loss(ys_hat.transpose(1, 2), ys.long()).sum(dim=-1).div(ys_lens.float()).mean()
+            loss = self.loss(ys_hat.transpose(1, 2), ys.long())
+            #loss = self.loss(ys_hat.transpose(1, 2), ys.long()).sum(dim=-1).div(ys_lens.float()).mean()
             #if ys_hat_lens is None:
             #    logger.debug("the batch includes a data with label_lens > max_seq_lens: ignore the entire batch")
             #    loss.mul_(0)
