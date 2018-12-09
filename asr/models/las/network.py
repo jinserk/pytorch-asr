@@ -374,7 +374,7 @@ class ListenAttendSpell(nn.Module):
         eos_t = y.new_full((self.spell.num_eos, ), self.eos)
         ys = [torch.cat((yb, eos_t)) for yb in torch.split(y, y_seq_lens.tolist())]
         ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.blk)
-        ys, ys_seq_lens = ys[bi], y_seq_lens[bi] + 1
+        ys, ys_seq_lens = ys[bi], y_seq_lens[bi] + self.spell.num_eos
 
         if self._is_teacher_force():
             # speller with teach force rate including noise
