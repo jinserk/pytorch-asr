@@ -20,6 +20,8 @@ from asr.kaldi.latgen import LatGenCTCDecoder
 from ..trainer import *
 from .network import TFRScheduler, ListenAttendSpell
 
+#from .loss import EditDistanceLoss
+
 
 class LASTrainer(NonSplitTrainer):
     """Trainer for ListenAttendSpell model"""
@@ -27,16 +29,17 @@ class LASTrainer(NonSplitTrainer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.loss = nn.NLLLoss(reduction='mean', ignore_index=self.model.blk)
+        self.loss = nn.NLLLoss(reduction='none', ignore_index=self.model.blk)
+        #self.loss = EditDistanceLoss()
 
-        self.tfr_scheduler = TFRScheduler(self.model, ranges=(0.9, 0.0), warm_up=0, epochs=9, restart=True)
+        self.tfr_scheduler = TFRScheduler(self.model.spell, ranges=(0.9, 0.0), warm_up=0, epochs=9, restart=True)
         #self.tfr_scheduler.step(9)
         if self.states is not None and "tfr_scheduler" in self.states:
             self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
     def train_loop_before_hook(self):
         self.tfr_scheduler.step()
-        logger.debug(f"current tfr = {self.model.tfr:.3e}")
+        logger.debug(f"current tfr = {self.model.spell.tfr:.3e}")
 
     def train_loop_checkpoint_hook(self):
         self.plot_attention_heatmap()
@@ -68,8 +71,9 @@ class LASTrainer(NonSplitTrainer):
                 ys_hat = ys_hat.float()
             if self.use_cuda:
                 ys_lens = ys_lens.cuda()
-            loss = self.loss(ys_hat.transpose(1, 2), ys.long())
-            #loss = self.loss(ys_hat.transpose(1, 2), ys.long()).sum(dim=-1).div(ys_lens.float()).mean()
+            #loss = self.loss(ys_hat.transpose(1, 2), ys.long())
+            loss = self.loss(ys_hat.transpose(1, 2), ys.long()).sum(dim=-1).div(ys_lens.float()).mean()
+            #loss = self.loss(ys_hat, ys.long(), ys_hat_lens, ys_lens)
             #if ys_hat_lens is None:
             #    logger.debug("the batch includes a data with label_lens > max_seq_lens: ignore the entire batch")
             #    loss.mul_(0)
@@ -210,13 +214,13 @@ def batch_train(argv):
         #if i < 2:
         #    trainer.train_epoch(dataloaders["train3"])
         #    trainer.validate(dataloaders["dev"])
-        if i < 10:
+        if i < 30:
             trainer.train_epoch(dataloaders["warmup5"])
             trainer.validate(dataloaders["dev"])
-        elif i < 20:
+        elif i < 50:
             trainer.train_epoch(dataloaders["warmup10"])
             trainer.validate(dataloaders["dev"])
-        elif i < 30:
+        elif i < 60:
             trainer.train_epoch(dataloaders["train10"])
             trainer.validate(dataloaders["dev"])
         else:

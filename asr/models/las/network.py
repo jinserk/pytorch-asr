@@ -194,6 +194,7 @@ class Speller(nn.Module):
         self.eos = label_vec_size - 1 if eos is None else eos
         self.max_seq_lens = max_seq_lens
         self.num_eos = 3
+        self.tfr = 1.
 
         Hs, Hc, Hy = rnn_hidden_size, listen_vec_size, label_vec_size
 
@@ -221,6 +222,9 @@ class Speller(nn.Module):
         for b in range(bs):
             mask[b, seq_lens[b]:] = 0.
         return mask
+
+    def _is_sample_step(self):
+        return np.random.random_sample() < self.tfr
 
     def forward(self, h, x_seq_lens, y=None, y_seq_lens=None):
         batch_size = h.size(0)
@@ -261,9 +265,9 @@ class Speller(nn.Module):
             if y_hats_seq_lens.le(t + 1).all():
                 break
 
-            if y is None:
+            if y is None or not self._is_sample_step():     # non sampling step
                 x = torch.cat([y_hat, c], dim=-1)
-            elif t < y.size(1):  # teach force
+            elif t < y.size(1):                             # scheduled sampling step
                 x = torch.cat([y.narrow(1, t, 1), c], dim=-1)
             else:
                 x = torch.cat([eos, c], dim=-1)
@@ -335,7 +339,6 @@ class ListenAttendSpell(nn.Module):
         self.eos = self.label_vec_size - 1
 
         self.num_heads = num_attend_heads
-        self.tfr = 1.
 
         self.listen = Listener(listen_vec_size=listen_vec_size, input_folding=input_folding, rnn_type=nn.LSTM,
                                rnn_hidden_size=listen_vec_size, rnn_num_layers=4, bidirectional=True,
@@ -357,9 +360,6 @@ class ListenAttendSpell(nn.Module):
         else:
             return self._eval_forward(x, x_seq_lens)
 
-    def _is_teacher_force(self):
-        return np.random.random_sample() < self.tfr
-
     def _train_forward(self, x, x_seq_lens, y, y_seq_lens):
         # to remove the case of x_seq_lens < y_seq_lens and y_seq_lens > max_seq_lens
         bi = x_seq_lens.gt(y_seq_lens) * y_seq_lens.lt(self.spell.max_seq_lens)
@@ -376,15 +376,11 @@ class ListenAttendSpell(nn.Module):
         ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.blk)
         ys, ys_seq_lens = ys[bi], y_seq_lens[bi] + self.spell.num_eos
 
-        if self._is_teacher_force():
-            # speller with teach force rate including noise
-            floor = np.random.random_sample() * 1e-2
-            yss = int2onehot(ys, num_classes=self.label_vec_size, floor=floor).float()
-            noise = torch.rand_like(yss) * 0.1
-            yss = yss * noise
-            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, x_seq_lens, yss, ys_seq_lens)
-        else:
-            y_hats, y_hats_seq_lens, self.attentions = self.spell(h, x_seq_lens)
+        floor = np.random.random_sample() * 0.1
+        yss = int2onehot(ys, num_classes=self.label_vec_size, floor=floor).float()
+        noise = torch.rand_like(yss) * 0.1
+        yss = F.softmax(yss * noise, dim=-1)
+        y_hats, y_hats_seq_lens, self.attentions = self.spell(h, x_seq_lens, yss, ys_seq_lens)
 
         # add regions to attentions
         self.regions = torch.IntTensor([(frames - 1, labels - 1) for frames, labels in zip(x_seq_lens, ys_seq_lens)])
