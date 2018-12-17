@@ -276,7 +276,7 @@ class TensorboardLogger:
         else:
             fig, axs = plt.subplots(tensor.size(0), sharex=True)
             for i, ax in enumerate(axs):
-                plot_heatmap(ax, tensor[i], drawbox[i])
+                plot_heatmap(ax, tensor[i], drawbox)
             fig.subplots_adjust(hspace=2)
 
         fig.patch.set_color('white')
