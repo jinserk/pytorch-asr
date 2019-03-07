@@ -2,7 +2,7 @@ import sys
 import argparse
 from pathlib import Path
 
-from ..utils.logger import logger, init_logger
+from asr.utils.logger import logger, init_logger
 from ._common import KALDI_PATH, KaldiDataImporter
 
 

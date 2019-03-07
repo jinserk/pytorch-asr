@@ -1,15 +1,15 @@
 numpy
 scipy
 #torch_nightly --find-links https://download.pytorch.org/whl/nightly/cpu/torch_nightly.html
-torch -f https://download.pytorch.org/whl/cu100/torch-1.0.0-cp37-cp37m-linux_x86_64.whl
-git+https://github.com/pytorch/audio
+#torch -f https://download.pytorch.org/whl/cu100/torch-1.0.0-cp37-cp37m-linux_x86_64.whl
+#git+https://github.com/pytorch/audio
 #git+https://github.com/pytorch/vision
-torchvision
-git+https://github.com/pytorch/text
-git+https://github.com/pytorch/tnt
-git+https://github.com/NVIDIA/apex
-pyro-ppl
-cffi
+#torchvision
+#git+https://github.com/pytorch/text
+#git+https://github.com/pytorch/tnt
+#git+https://github.com/NVIDIA/apex
+#pyro-ppl
+#cffi
 pyyaml
 wheel
 scikit-learn

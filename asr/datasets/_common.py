@@ -9,11 +9,11 @@ import numpy as np
 from tqdm import tqdm
 import torch
 
-from ..utils.kaldi_io import smart_open, read_string, read_vec_int
-from ..utils.logger import logger
-from ..utils.misc import get_num_lines, remove_duplicates
-from ..utils import params as p
-from ..kaldi._path import KALDI_ROOT
+from asr.utils.kaldi_io import smart_open, read_string, read_vec_int
+from asr.utils.logger import logger
+from asr.utils.misc import get_num_lines, remove_duplicates
+from asr.utils import params
+from asr.kaldi._path import KALDI_ROOT
 
 
 """
@@ -27,9 +27,9 @@ SPH2PIPE_PATH = KALDI_PATH.joinpath("tools", "sph2pipe_v2.5", "sph2pipe")
 assert KALDI_PATH.exists(), f"no such path \"{str(KALDI_PATH)}\" found"
 assert SPH2PIPE_PATH.exists(), f"no such path \"{str(SPH2PIPE_PATH)}\" found"
 
-WIN_SAMP_SIZE = p.SAMPLE_RATE * p.WINDOW_SIZE
-WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
-#SAMPLE_MARGIN = WIN_SAMP_SHIFT * p.FRAME_MARGIN  # samples
+WIN_SAMP_SIZE = params.SAMPLE_RATE * params.WINDOW_SIZE
+WIN_SAMP_SHIFT = params.SAMPLE_RATE * params.WINDOW_SHIFT
+#SAMPLE_MARGIN = WIN_SAMP_SHIFT * params.FRAME_MARGIN  # samples
 SAMPLE_MARGIN = 0
 
 
@@ -46,7 +46,7 @@ class KaldiDataImporter:
         logger.info(f"processing {str(segments_file)} file ...")
         segments = dict()
         with smart_open(segments_file, "r") as f:
-            for line in tqdm(f, total=get_num_lines(segments_file), ncols=p.NCOLS):
+            for line in tqdm(f, total=get_num_lines(segments_file), ncols=params.NCOLS):
                 split = line.strip().split()
                 uttid, wavid, start, end = split[0], split[1], float(split[2]), float(split[3])
                 if wavid in segments:
@@ -58,7 +58,7 @@ class KaldiDataImporter:
         logger.info(f"processing {str(wav_scp)} file ...")
         manifest = dict()
         with smart_open(wav_scp, "r") as rf:
-            for line in tqdm(rf, total=get_num_lines(wav_scp), ncols=p.NCOLS):
+            for line in tqdm(rf, total=get_num_lines(wav_scp), ncols=params.NCOLS):
                 wavid, cmd = line.strip().split(" ", 1)
                 if not wavid in segments:
                     continue
@@ -100,7 +100,7 @@ class KaldiDataImporter:
         manifest = dict()
         with smart_open(texts_file, "r") as f:
             with open(self.target_path.joinpath(f"{mode}_convert.txt"), "w") as wf:
-                for line in tqdm(f, total=get_num_lines(texts_file), ncols=p.NCOLS):
+                for line in tqdm(f, total=get_num_lines(texts_file), ncols=params.NCOLS):
                     try:
                         uttid, text = line.strip().split(" ", 1)
                         managed_text = self.strip_text(text)
@@ -137,7 +137,7 @@ class KaldiDataImporter:
         logger.info(f"using the trained kaldi model: {model}")
         manifest = dict()
         alis = [x for x in exp_dir.glob("ali.*.gz")]
-        for ali in tqdm(alis, ncols=p.NCOLS):
+        for ali in tqdm(alis, ncols=params.NCOLS):
             cmd = [ str(Path(KALDI_PATH, "src", "bin", "ali-to-phones")),
                     "--per-frame", f"{model}", f"ark:-", f"ark,f:-" ]
             with gzip.GzipFile(ali, "rb") as a:
@@ -170,7 +170,7 @@ class KaldiDataImporter:
         logger.info(f"finding *.phn files under {str(self.target_path)}")
         phn_files = [str(x) for x in self.target_path.rglob("*.phn")]
         # convert
-        for phn_file in tqdm(phn_files, ncols=p.NCOLS):
+        for phn_file in tqdm(phn_files, ncols=params.NCOLS):
             phns = np.loadtxt(phn_file, dtype="int", ndmin=1)
             # make ctc labelings by removing duplications
             ctcs = np.array([x for x in remove_duplicates(phns)])
@@ -197,7 +197,7 @@ class KaldiDataImporter:
             phn_files = [str(x) for x in self.target_path.rglob("*.phn")]
         # count
         counts = [0] * len(labels)
-        for phn_file in tqdm(phn_files, ncols=p.NCOLS):
+        for phn_file in tqdm(phn_files, ncols=params.NCOLS):
             phns = np.loadtxt(phn_file, dtype="int", ndmin=1)
             # count labels for priors
             for c in phns:
@@ -246,14 +246,14 @@ class KaldiDataImporter:
         histo = [0] * 31
         total = 0
         with open(self.target_path.joinpath(f"{mode}.csv"), "w") as f:
-            for k, v in tqdm(wav_manifest.items(), ncols=p.NCOLS):
+            for k, v in tqdm(wav_manifest.items(), ncols=params.NCOLS):
                 if not k in txt_manifest:
                     continue
                 wav_file, samples = v
                 txt_file, _ = txt_manifest[k]
                 f.write(f"{k},{wav_file},{samples},{txt_file}\n")
                 total += 1
-                sec = float(samples) / p.SAMPLE_RATE
+                sec = float(samples) / params.SAMPLE_RATE
                 if sec < min_len:
                     min_len = sec
                 if sec > max_len:
