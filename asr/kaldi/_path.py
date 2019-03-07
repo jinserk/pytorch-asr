@@ -1,2 +1,2 @@
 
-KALDI_ROOT = "/u3/jbaik/kaldi"
+KALDI_ROOT = "/home/jinserk/works/asr/kaldi"

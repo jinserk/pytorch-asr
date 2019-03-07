@@ -76,7 +76,7 @@ def prepare(argv):
     assert not (args.text_only and args.rebuild), "options --text-only and --rebuild cannot together. choose either of them."
 
     log_file = Path(args.target_dir, 'prepare.log').resolve()
-    set_logfile(log_file)
+    init_logger(log_file="prepare.log")
 
     target_path = Path(args.target_dir).resolve()
     logger.info(f"target data path : {target_path}")
