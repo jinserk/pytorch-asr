@@ -2,7 +2,7 @@ import sys
 import argparse
 from pathlib import Path
 
-from ..utils.logger import logger, set_logfile
+from asr.utils.logger import logger, init_logger
 from ._common import KALDI_PATH, KaldiDataImporter
 
 
@@ -39,7 +39,7 @@ CORRECT_TABLE = {
 class KaldiSwbdImporter(KaldiDataImporter):
 
     def __init__(self, target_dir):
-        recipe_path = Path(KALDI_PATH, "egs", "swbd", "ics").resolve()
+        recipe_path = Path(KALDI_PATH, "egs", "swbd", "mgh").resolve()
         assert recipe_path.exists(), f"no such path \"{str(recipe_path)}\" found"
         super().__init__(recipe_path, target_dir)
 

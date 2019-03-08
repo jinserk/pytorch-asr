@@ -37,7 +37,7 @@ class DeepSpeechTrainer(NonSplitTrainer):
 def batch_train(argv):
     parser = argparse.ArgumentParser(description="DeepSpeech AM with batch training")
     # for training
-    parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
+    parser.add_argument('--data-path', default='./data', type=str, help="dataset path to use in training")
     parser.add_argument('--num-epochs', default=200, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for the optimizer")
     parser.add_argument('--max-norm', default=0.1, type=int, help="norm cutoff to prevent explosion of gradients")
@@ -145,7 +145,7 @@ def batch_train(argv):
 def train(argv):
     parser = argparse.ArgumentParser(description="DeepSpeech AM with fully supervised training")
     # for training
-    parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
+    parser.add_argument('--data-path', default='./data', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
     parser.add_argument('--max-len', default=15., type=float, help="max length of utterance to use in secs")
     parser.add_argument('--batch-size', default=16, type=int, help="number of images (and labels) to be considered in a batch")
