@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 import torchaudio
 
 from .logger import logger
-from . import params as p
+from . import params
 
 
 class SplitTrainCollateFn(object):
@@ -150,7 +150,7 @@ def test_plot():
             import matplotlib.pyplot as plt
 
             for tensor, target in zip(tensors, targets):
-                tensor = tensor.view(-1, p.CHANNEL, p.WIDTH, p.HEIGHT)
+                tensor = tensor.view(-1, params.CHANNEL, params.WIDTH, params.HEIGHT)
                 t = np.arange(0, tensor.size(3)) / 8000
                 f = np.linspace(0, 4000, tensor.size(2))
 
@@ -166,7 +166,7 @@ def test_plot():
 if __name__ == "__main__":
     # test Augment
     if False:
-        transformer = Augment(resample=True, sample_rate=p.SAMPLE_RATE)
+        transformer = Augment(resample=True, sample_rate=params.SAMPLE_RATE)
         wav_file = Path("/home/jbaik/src/enf/stt/test/conan1-8k.wav")
         audio = transformer(wav_file)
 
@@ -177,8 +177,8 @@ if __name__ == "__main__":
         matplotlib.interactive(True)
         import matplotlib.pyplot as plt
 
-        nperseg = int(p.SAMPLE_RATE * p.WINDOW_SIZE)
-        noverlap = int(p.SAMPLE_RATE * (p.WINDOW_SIZE - p.WINDOW_SHIFT))
+        nperseg = int(params.SAMPLE_RATE * params.WINDOW_SIZE)
+        noverlap = int(params.SAMPLE_RATE * (params.WINDOW_SIZE - params.WINDOW_SHIFT))
 
         wav_file = Path("../data/aspire/000/fe_03_00047-A-025005-025135.wav")
         audio, _ = torchaudio.load(wav_file)
@@ -186,11 +186,11 @@ if __name__ == "__main__":
         # pyplot specgram
         audio = torch.squeeze(audio)
         fig = plt.figure(0)
-        plt.specgram(audio, Fs=p.SAMPLE_RATE, NFFT=p.NFFT, noverlap=noverlap, cmap='plasma')
+        plt.specgram(audio, Fs=params.SAMPLE_RATE, NFFT=params.NFFT, noverlap=noverlap, cmap='plasma')
 
         # implemented transformer - scipy stft
-        transformer = Spectrogram(sample_rate=p.SAMPLE_RATE, window_stride=p.WINDOW_SHIFT,
-                                  window_size=p.WINDOW_SIZE, nfft=p.NFFT)
+        transformer = Spectrogram(sample_rate=params.SAMPLE_RATE, window_stride=params.WINDOW_SHIFT,
+                                  window_size=params.WINDOW_SIZE, nfft=params.NFFT)
         data, f, t = transformer(audio)
         print(data.shape)
         mag = data[0]
@@ -202,8 +202,8 @@ if __name__ == "__main__":
         #print(max(data[1].view(257*601)), min(data[1].view(257*601)))
 
         # scipy spectrogram
-        f, t, z = sp.signal.spectrogram(audio, fs=p.SAMPLE_RATE, nperseg=nperseg, noverlap=noverlap,
-                                        nfft=p.NFFT, mode='complex')
+        f, t, z = sp.signal.spectrogram(audio, fs=params.SAMPLE_RATE, nperseg=nperseg, noverlap=noverlap,
+                                        nfft=params.NFFT, mode='complex')
         spect, phase = np.abs(z), np.angle(z)
         fig = plt.figure(3)
         plt.pcolormesh(t, f, 20*np.log10(spect), cmap='plasma')

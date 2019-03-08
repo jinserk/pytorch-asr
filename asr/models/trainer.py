@@ -18,7 +18,7 @@ from asr.utils.logger import logger
 from asr.utils.misc import onehot2int, int2onehot, remove_duplicates, get_model_file_path
 from asr.utils.adamw import AdamW
 from asr.utils.lr_scheduler import CosineAnnealingWithRestartsLR
-from asr.utils import params as p
+from asr.utils import params
 
 from asr.kaldi.latgen import LatGenCTCDecoder
 
@@ -35,13 +35,14 @@ OPTIMIZER_TYPES = set([
 
 torch.backends.cudnn.enabled = True
 torch.backends.cudnn.deterministic = False
+torch.multiprocessing.freeze_support()
 
 
 def init_distributed(use_cuda, backend="nccl", init="slurm"):
-    try:
-        mp.set_start_method('forkserver')  # spawn, forkserver, and fork
-    except RuntimeError:
-        pass
+    #try:
+    #    mp.set_start_method('spawn')  # spawn, forkserver, and fork
+    #except RuntimeError:
+    #    pass
 
     try:
         if init == "slurm":
@@ -217,7 +218,7 @@ class Trainer:
         self.model.train()
         meter_loss = tnt.meter.MovingAverageValueMeter(len(data_loader) // 100 + 1)
         #meter_accuracy = tnt.meter.ClassErrorMeter(accuracy=True)
-        #meter_confusion = tnt.meter.ConfusionMeter(p.NUM_CTC_LABELS, normalized=True)
+        #meter_confusion = tnt.meter.ConfusionMeter(params.NUM_CTC_LABELS, normalized=True)
 
         if self.lr_scheduler is not None:
             self.lr_scheduler.step()
@@ -249,7 +250,7 @@ class Trainer:
 
         self.train_loop_before_hook()
         ckpt = next(ckpts)
-        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training", ncols=p.NCOLS)
+        t = tqdm(enumerate(data_loader), total=len(data_loader), desc="training", ncols=params.NCOLS)
         for i, (data) in t:
             loss_value = self.unit_train(data)
             if loss_value is not None:
@@ -286,7 +287,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             N, D = 0, 0
-            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating", ncols=p.NCOLS)
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="validating", ncols=params.NCOLS)
             for i, (data) in t:
                 hyps, refs = self.unit_validate(data)
                 # calculate ler
@@ -313,7 +314,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             N, D = 0, 0
-            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing", ncols=p.NCOLS)
+            t = tqdm(enumerate(data_loader), total=len(data_loader), desc="testing", ncols=params.NCOLS)
             for i, (data) in t:
                 hyps, refs = self.unit_test(data)
                 # calculate wer
@@ -413,7 +414,8 @@ class NonSplitTrainer(Trainer):
             loss = self.loss(ys_hat, ys, frame_lens, label_lens)
             if torch.isnan(loss) or loss.item() == float("inf") or loss.item() == -float("inf"):
                 logger.warning("received an nan/inf loss: probably frame_lens < label_lens or the learning rate is too high")
-                raise RuntimeError
+                #raise RuntimeError
+                return None
             if frame_lens.cpu().lt(2*label_lens).nonzero().numel():
                 logger.debug("the batch includes a data with frame_lens < 2*label_lens: set loss to zero")
                 loss.mul_(0)
@@ -445,6 +447,7 @@ class NonSplitTrainer(Trainer):
         if self.fp16:
             ys_hat = ys_hat.float()
         # convert likes to ctc labels
+        print(ys_hat)
         hyps = [onehot2int(yh[:s]).squeeze() for yh, s in zip(ys_hat, frame_lens)]
         hyps = [remove_duplicates(h, blank=0) for h in hyps]
         # slice the targets

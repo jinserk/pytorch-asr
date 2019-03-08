@@ -15,15 +15,15 @@ from torch.utils.data import Dataset, Subset
 import torchaudio
 
 from .logger import logger
-from . import params as p
+from . import params
 
 
-WIN_SAMP_SIZE = p.SAMPLE_RATE * p.WINDOW_SIZE
-WIN_SAMP_SHIFT = p.SAMPLE_RATE * p.WINDOW_SHIFT
-#SAMPLE_MARGIN = WIN_SAMP_SHIFT * p.FRAME_MARGIN  # samples
+WIN_SAMP_SIZE = params.SAMPLE_RATE * params.WINDOW_SIZE
+WIN_SAMP_SHIFT = params.SAMPLE_RATE * params.WINDOW_SHIFT
+#SAMPLE_MARGIN = WIN_SAMP_SHIFT * params.FRAME_MARGIN  # samples
 SAMPLE_MARGIN = 0
 
-#np.seterr(all='raise')
+np.seterr(all='raise')
 
 # transformer: resampling and augmentation
 class Augment(object):
@@ -86,7 +86,10 @@ class Augment(object):
         # normalize audio power
         gain = 0.1
         wav_energy = np.sqrt(np.sum(np.power(wav, 2)) / wav.size)
-        wav = gain * wav / wav_energy
+        try:
+            wav = gain * wav / wav_energy
+        except:
+            wav = gain * wav
 
         # sample-domain padding
         if self.padding:
@@ -183,18 +186,18 @@ class Int2OneHot(object):
 class BatchTransformer(torchaudio.transforms.Compose):
 
     def __init__(self,
-                 resample=True, sample_rate=p.SAMPLE_RATE,
-                 tempo=True, tempo_range=p.TEMPO_RANGE,
-                 pitch=True, pitch_range=p.PITCH_RANGE,
-                 noise=True, noise_range=p.NOISE_RANGE,
+                 resample=True, sample_rate=params.SAMPLE_RATE,
+                 tempo=True, tempo_range=params.TEMPO_RANGE,
+                 pitch=True, pitch_range=params.PITCH_RANGE,
+                 noise=True, noise_range=params.NOISE_RANGE,
                  offset=True, offset_range=None,
                  padding=True, num_padding=None,
-                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
-                 unit_frames=p.WIDTH, stride=2, split=False):
+                 window_shift=params.WINDOW_SHIFT, window_size=params.WINDOW_SIZE, nfft=params.NFFT,
+                 unit_frames=params.WIDTH, stride=2, split=False):
         if offset and offset_range is None:
             offset_range = (0, stride * WIN_SAMP_SHIFT)
         if padding and num_padding is None:
-            pad = int(((p.WIDTH * stride) // 2 - 1) * WIN_SAMP_SHIFT)
+            pad = int(((params.WIDTH * stride) // 2 - 1) * WIN_SAMP_SHIFT)
             num_padding = (pad, pad)
         super().__init__([
             Augment(resample=resample, sample_rate=sample_rate,
@@ -297,12 +300,12 @@ class NonSplitTrainDataset(TrainDataset):
 
     def __init__(self,
                  transformer=None, target_transformer=None,
-                 resample=True, sample_rate=p.SAMPLE_RATE,
-                 tempo=True, tempo_range=p.TEMPO_RANGE,
-                 pitch=True, pitch_range=p.PITCH_RANGE,
-                 noise=True, noise_range=p.NOISE_RANGE,
+                 resample=True, sample_rate=params.SAMPLE_RATE,
+                 tempo=True, tempo_range=params.TEMPO_RANGE,
+                 pitch=True, pitch_range=params.PITCH_RANGE,
+                 noise=True, noise_range=params.NOISE_RANGE,
                  offset=True, padding=True,
-                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
+                 window_shift=params.WINDOW_SHIFT, window_size=params.WINDOW_SIZE, nfft=params.NFFT,
                  stride=2,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -323,10 +326,10 @@ class NonSplitPredictDataset(PredictDataset):
 
     def __init__(self,
                  transformer=None, target_transformer=None,
-                 resample=True, sample_rate=p.SAMPLE_RATE,
+                 resample=True, sample_rate=params.SAMPLE_RATE,
                  noise=True, noise_range=(-20, -20),
                  padding=False,
-                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
+                 window_shift=params.WINDOW_SHIFT, window_size=params.WINDOW_SIZE, nfft=params.NFFT,
                  stride=2,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -335,7 +338,7 @@ class NonSplitPredictDataset(PredictDataset):
                                                 tempo=False, pitch=False,
                                                 noise=noise, noise_range=noise_range,
                                                 offset=False, padding=padding,
-                                                window_shift=p.WINDOW_SHIFT, window_size=window_size, nfft=nfft,
+                                                window_shift=params.WINDOW_SHIFT, window_size=window_size, nfft=nfft,
                                                 unit_frames=1, stride=stride, split=False)
         else:
             self.transformer = transformer
@@ -346,13 +349,13 @@ class SplitTrainDataset(TrainDataset):
 
     def __init__(self,
                  transformer=None, target_transformer=None,
-                 resample=True, sample_rate=p.SAMPLE_RATE,
-                 tempo=True, tempo_range=p.TEMPO_RANGE,
-                 pitch=True, pitch_range=p.PITCH_RANGE,
-                 noise=True, noise_range=p.NOISE_RANGE,
+                 resample=True, sample_rate=params.SAMPLE_RATE,
+                 tempo=True, tempo_range=params.TEMPO_RANGE,
+                 pitch=True, pitch_range=params.PITCH_RANGE,
+                 noise=True, noise_range=params.NOISE_RANGE,
                  offset=True, padding=True,
-                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
-                 unit_frames=p.WIDTH, stride=2,
+                 window_shift=params.WINDOW_SHIFT, window_size=params.WINDOW_SIZE, nfft=params.NFFT,
+                 unit_frames=params.WIDTH, stride=2,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transformer is None:
@@ -372,11 +375,11 @@ class SplitPredictDataset(PredictDataset):
 
     def __init__(self,
                  transformer=None, target_transformer=None,
-                 resample=True, sample_rate=p.SAMPLE_RATE,
+                 resample=True, sample_rate=params.SAMPLE_RATE,
                  noise=True, noise_range=(-20, -20),
                  padding=False,
-                 window_shift=p.WINDOW_SHIFT, window_size=p.WINDOW_SIZE, nfft=p.NFFT,
-                 unit_frames=p.WIDTH, stride=2,
+                 window_shift=params.WINDOW_SHIFT, window_size=params.WINDOW_SIZE, nfft=params.NFFT,
+                 unit_frames=params.WIDTH, stride=2,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
         if transformer is None:
@@ -384,7 +387,7 @@ class SplitPredictDataset(PredictDataset):
                                                 tempo=False, pitch=False,
                                                 noise=noise, noise_range=noise_range,
                                                 offset=False, padding=padding,
-                                                window_shift=p.WINDOW_SHIFT, window_size=window_size, nfft=nfft,
+                                                window_shift=params.WINDOW_SHIFT, window_size=window_size, nfft=nfft,
                                                 unit_frames=unit_frames, stride=stride, split=True)
         else:
             self.transformer = transformer
@@ -400,8 +403,8 @@ class AudioSubset(Subset):
     def _pick_indices(self, entries, data_size, min_len, max_len):
         full_indices = range(len(entries))
         # pick up entries of time length from min_len to max_len secs
-        MIN_FRAME = min_len / p.WINDOW_SHIFT
-        MAX_FRAME = max_len / p.WINDOW_SHIFT
+        MIN_FRAME = min_len / params.WINDOW_SHIFT
+        MAX_FRAME = max_len / params.WINDOW_SHIFT
         indices = [i for i in full_indices if MIN_FRAME < _smp2frm(int(entries[i][2])) < MAX_FRAME ]
         # randomly choose a number of data_size
         size = min(data_size, len(indices)) if data_size > 0 else len(indices)
@@ -428,8 +431,8 @@ if __name__ == "__main__":
         matplotlib.interactive(True)
         import matplotlib.pyplot as plt
 
-        nperseg = int(p.SAMPLE_RATE * p.WINDOW_SIZE)
-        noverlap = int(p.SAMPLE_RATE * (p.WINDOW_SIZE - p.WINDOW_SHIFT))
+        nperseg = int(params.SAMPLE_RATE * params.WINDOW_SIZE)
+        noverlap = int(params.SAMPLE_RATE * (params.WINDOW_SIZE - params.WINDOW_SHIFT))
 
         wav_file = Path("../data/aspire/000/fe_03_00047-A-025005-025135.wav")
         audio, _ = torchaudio.load(wav_file)
@@ -437,11 +440,11 @@ if __name__ == "__main__":
         # pyplot specgram
         audio = torch.squeeze(audio)
         fig = plt.figure(0)
-        plt.specgram(audio, Fs=p.SAMPLE_RATE, NFFT=p.NFFT, noverlap=noverlap, cmap='plasma')
+        plt.specgram(audio, Fs=params.SAMPLE_RATE, NFFT=params.NFFT, noverlap=noverlap, cmap='plasma')
 
         # implemented transformer - scipy stft
-        transformer = Spectrogram(sample_rate=p.SAMPLE_RATE, window_stride=p.WINDOW_SHIFT,
-                                  window_size=p.WINDOW_SIZE, nfft=p.NFFT)
+        transformer = Spectrogram(sample_rate=params.SAMPLE_RATE, window_stride=params.WINDOW_SHIFT,
+                                  window_size=params.WINDOW_SIZE, nfft=params.NFFT)
         data, f, t = transformer(audio)
         mag = data[0]
         fig = plt.figure(1)
@@ -452,8 +455,8 @@ if __name__ == "__main__":
         #print(max(data[1].view(257*601)), min(data[1].view(257*601)))
 
         # scipy spectrogram
-        f, t, z = sp.signal.spectrogram(audio, fs=p.SAMPLE_RATE, nperseg=nperseg, noverlap=noverlap,
-                                        nfft=p.NFFT, mode='complex')
+        f, t, z = sp.signal.spectrogram(audio, fs=params.SAMPLE_RATE, nperseg=nperseg, noverlap=noverlap,
+                                        nfft=params.NFFT, mode='complex')
         spect, phase = np.abs(z), np.angle(z)
         fig = plt.figure(3)
         plt.pcolormesh(t, f, 20*np.log10(spect), cmap='plasma')

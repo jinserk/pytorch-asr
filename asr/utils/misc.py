@@ -5,12 +5,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from . import params as p
+from . import params
 
 
 def get_model_file_path(log_dir, prefix, desc):
     path = Path(log_dir).resolve()
-    return path / f"{prefix}_{desc}.{p.MODEL_SUFFIX}"
+    return path / f"{prefix}_{desc}.{params.MODEL_SUFFIX}"
 
 
 def register_nan_checks(model, func=None):
