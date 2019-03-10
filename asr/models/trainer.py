@@ -75,7 +75,6 @@ def init_distributed(use_cuda, backend="nccl", init="slurm", local_rank=-1):
             dist.init_process_group(backend=backend, init_method="env://")
             print(f"initialized as {dist.get_rank()}/{dist.get_world_size()} via env://")
     except Exception as e:
-        raise e
         print(f"initialized as single process")
 
 

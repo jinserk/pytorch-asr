@@ -16,7 +16,6 @@ try:
     model = model[0]
     argv = sys.argv[1:]
     argv.remove(model)
-    print(model, argv)
     #model, argv = sys.argv[1], sys.argv[2:]
     if model not in models:
         raise
