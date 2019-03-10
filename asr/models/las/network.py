@@ -382,7 +382,7 @@ class ListenAttendSpell(nn.Module):
         super().__init__()
 
         self.label_vec_size = label_vec_size + 2  # to add <sos>, <eos>
-        self.blk = 0
+        self.blank = 0
         self.sos = self.label_vec_size - 2
         self.eos = self.label_vec_size - 1
 
@@ -421,7 +421,7 @@ class ListenAttendSpell(nn.Module):
         # make ys from y including trailing eos
         eos_t = y.new_full((self.spell.num_eos, ), self.eos)
         ys = [torch.cat((yb, eos_t)) for yb in torch.split(y, y_seq_lens.tolist())]
-        ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.blk)
+        ys = nn.utils.rnn.pad_sequence(ys, batch_first=True, padding_value=self.blank)
         ys, ys_seq_lens = ys[bi], y_seq_lens[bi] + self.spell.num_eos
 
         floor = np.random.random_sample() * 0.1
@@ -436,12 +436,12 @@ class ListenAttendSpell(nn.Module):
         # match seq lens between y_hats and ys
         s1, s2 = y_hats.size(1), ys.size(1)
         if s1 < s2:
-            dummy = y_hats.new_full((y_hats.size(0), s2 - s1, ), fill_value=self.blk, dtype=torch.int)
+            dummy = y_hats.new_full((y_hats.size(0), s2 - s1, ), fill_value=self.blank, dtype=torch.int)
             dummy = int2onehot(dummy, num_classes=self.label_vec_size).float()
             y_hats = torch.cat([y_hats, dummy], dim=1)
             #y_hats = F.pad(y_hats, (0, 0, 0, s2 - s1))
         elif s1 > s2:
-            ys = F.pad(ys, (0, s1 - s2), value=self.blk)
+            ys = F.pad(ys, (0, s1 - s2), value=self.blank)
 
         y_hats = self.log(y_hats)
         return y_hats, y_hats_seq_lens, ys, ys_seq_lens

@@ -150,7 +150,9 @@ class Trainer:
             self.model.cuda()
 
         # setup loss
-        self.loss = nn.CTCLoss(blank=0, reduction='mean')
+        loss = kwargs.get('loss', None)
+        self.loss = (nn.CTCLoss(blank=0, reduction='mean') if loss is None
+                     else loss)
 
         # setup optimizer
         self.optimizer = None

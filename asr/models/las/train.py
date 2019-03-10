@@ -26,20 +26,22 @@ from .network import TFRScheduler, ListenAttendSpell
 class LASTrainer(NonSplitTrainer):
     """Trainer for ListenAttendSpell model"""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, model, *args, **kwargs):
+        loss = nn.NLLLoss(reduction='none', ignore_index=model.blank)
+        #loss = EditDistanceLoss()
 
-        self.loss = nn.NLLLoss(reduction='none', ignore_index=self.model.blk)
-        #self.loss = EditDistanceLoss()
+        super().__init__(model, loss=loss, *args, **kwargs)
 
-        self.tfr_scheduler = TFRScheduler(self.model.spell, ranges=(0.9, 0.0), warm_up=0, epochs=9, restart=True)
+        self.model_ref = self.model.module if is_distributed() else self.model
+
+        self.tfr_scheduler = TFRScheduler(self.model_ref.spell, ranges=(0.9, 0.0), warm_up=0, epochs=9, restart=True)
         #self.tfr_scheduler.step(9)
         if self.states is not None and "tfr_scheduler" in self.states:
             self.tfr_scheduler.load_state_dict(self.states["tfr_scheduler"])
 
     def train_loop_before_hook(self):
         self.tfr_scheduler.step()
-        logger.debug(f"current tfr = {self.model.spell.tfr:.3e}")
+        logger.debug(f"current tfr = {self.model_ref.spell.tfr:.3e}")
 
     def train_loop_checkpoint_hook(self):
         self.plot_attention_heatmap()
@@ -50,16 +52,16 @@ class LASTrainer(NonSplitTrainer):
     def plot_attention_heatmap(self):
         if is_distributed() and dist.get_rank > 0:
             return
-        if logger.visdom is not None and self.model.attentions is not None:
+        if logger.visdom is not None and self.model_ref.attentions is not None:
             # pick up random attention in batch size, plot each of num of heads
-            b = np.random.randint(self.model.attentions.size(0))
-            for head in range(self.model.num_heads):
-                a = self.model.attentions[b, head, :, :]
+            b = np.random.randint(self.model_ref.attentions.size(0))
+            for head in range(self.model_ref.num_heads):
+                a = self.model_ref.attentions[b, head, :, :]
                 logger.visdom.plot_heatmap(title=f'attention_head{head}', tensor=a)
-        if logger.tensorboard is not None and self.model.attentions is not None:
-            b = np.random.randint(self.model.attentions.size(0))
-            logger.tensorboard.add_heatmap('attention', self.global_step, self.model.attentions[b],
-                                           drawbox=self.model.regions[b])
+        if logger.tensorboard is not None and self.model_ref.attentions is not None:
+            b = np.random.randint(self.model_ref.attentions.size(0))
+            logger.tensorboard.add_heatmap('attention', self.global_step, self.model_ref.attentions[b],
+                                           drawbox=self.model_ref.regions[b])
 
     def unit_train(self, data):
         xs, ys, frame_lens, label_lens, filenames, _ = data
@@ -119,7 +121,7 @@ class LASTrainer(NonSplitTrainer):
 def batch_train(argv):
     parser = argparse.ArgumentParser(description="ListenAttendSpell AM with batch training")
     # for training
-    parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
+    parser.add_argument('--data-path', default='./data', type=str, help="dataset path to use in training")
     parser.add_argument('--num-epochs', default=200, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for optimizer")
     parser.add_argument('--max-norm', default=1e-2, type=int, help="norm cutoff to prevent explosion of gradients")
@@ -137,9 +139,10 @@ def batch_train(argv):
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="adamw", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
+    parser.add_argument('--local_rank', default=-1, type=int, help=f"set rank 0..n-1 when pytorch's launcher is used")
     args = parser.parse_args(argv)
 
-    init_distributed(args.use_cuda)
+    init_distributed(args.use_cuda, local_rank=args.local_rank)
     init_logger(log_file="train.log", rank=get_rank(), **vars(args))
     set_seed(args.seed)
 
@@ -234,9 +237,9 @@ def batch_train(argv):
 def train(argv):
     parser = argparse.ArgumentParser(description="ListenAttendSpell AM with fully supervised training")
     # for training
-    parser.add_argument('--data-path', default='/d1/jbaik/ics-asr/data', type=str, help="dataset path to use in training")
+    parser.add_argument('--data-path', default='./data', type=str, help="dataset path to use in training")
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
-    parser.add_argument('--max-len', default=5., type=float, help="max length of utterance to use in secs")
+    parser.add_argument('--max-len', default=10., type=float, help="max length of utterance to use in secs")
     parser.add_argument('--batch-size', default=32, type=int, help="number of images (and labels) to be considered in a batch")
     parser.add_argument('--num-workers', default=16, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
@@ -256,9 +259,10 @@ def train(argv):
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="adamw", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
+    parser.add_argument('--local_rank', default=-1, type=int, help=f"set rank 0..n-1 when pytorch's launcher is used")
     args = parser.parse_args(argv)
 
-    init_distributed(args.use_cuda)
+    init_distributed(args.use_cuda, local_rank=args.local_rank)
     init_logger(log_file="train.log", rank=get_rank(), **vars(args))
     set_seed(args.seed)
 
