@@ -50,7 +50,7 @@ class LASTrainer(NonSplitTrainer):
         self.plot_attention_heatmap()
 
     def plot_attention_heatmap(self):
-        if is_distributed() and dist.get_rank > 0:
+        if is_distributed() and dist.get_rank() > 0:
             return
         if logger.visdom is not None and self.model_ref.attentions is not None:
             # pick up random attention in batch size, plot each of num of heads
@@ -241,7 +241,7 @@ def train(argv):
     parser.add_argument('--min-len', default=1., type=float, help="min length of utterance to use in secs")
     parser.add_argument('--max-len', default=10., type=float, help="max length of utterance to use in secs")
     parser.add_argument('--batch-size', default=32, type=int, help="number of images (and labels) to be considered in a batch")
-    parser.add_argument('--num-workers', default=16, type=int, help="number of dataloader workers")
+    parser.add_argument('--num-workers', default=32, type=int, help="number of dataloader workers")
     parser.add_argument('--num-epochs', default=100, type=int, help="number of epochs to run")
     parser.add_argument('--init-lr', default=1e-4, type=float, help="initial learning rate for Adam optimizer")
     parser.add_argument('--max-norm', default=1e-2, type=int, help="norm cutoff to prevent explosion of gradients")
