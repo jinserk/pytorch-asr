@@ -10,12 +10,13 @@ models = set([
 ])
 
 try:
-    model = [arg for arg in sys.argv[1:] if arg[0] != '-']
-    if len(model) > 1:
+    model = [arg for arg in sys.argv[1:] if arg in models]
+    if not model:
         raise RuntimeError
     model = model[0]
     argv = sys.argv[1:]
     argv.remove(model)
+    print(model, argv)
     #model, argv = sys.argv[1], sys.argv[2:]
     if model not in models:
         raise
