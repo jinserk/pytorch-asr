@@ -55,9 +55,10 @@ def batch_train(argv):
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="adamw", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
+    parser.add_argument('--local_rank', default=-1, type=int, help=f"set rank 0..n-1 when pytorch's launcher is used")
     args = parser.parse_args(argv)
 
-    init_distributed(args.use_cuda)
+    init_distributed(args.use_cuda, local_rank=args.local_rank)
     init_logger(log_file="train.log", rank=get_rank(), **vars(args))
     set_seed(args.seed)
 
@@ -167,9 +168,10 @@ def train(argv):
     parser.add_argument('--checkpoint', default=False, action='store_true', help="save checkpoint")
     parser.add_argument('--continue-from', default=None, type=str, help="model file path to make continued from")
     parser.add_argument('--opt-type', default="adamw", type=str, help=f"optimizer type in {OPTIMIZER_TYPES}")
+    parser.add_argument('--local_rank', default=-1, type=int, help=f"set rank 0..n-1 when pytorch's launcher is used")
     args = parser.parse_args(argv)
 
-    init_distributed(args.use_cuda)
+    init_distributed(args.use_cuda, local_rank=args.local_rank)
     init_logger(log_file="train.log", rank=get_rank(), **vars(args))
     set_seed(args.seed)
 

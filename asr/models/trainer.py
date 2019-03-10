@@ -38,37 +38,44 @@ torch.backends.cudnn.deterministic = False
 torch.multiprocessing.freeze_support()
 
 
-def init_distributed(use_cuda, backend="nccl", init="slurm"):
+def init_distributed(use_cuda, backend="nccl", init="slurm", local_rank=-1):
     #try:
     #    mp.set_start_method('spawn')  # spawn, forkserver, and fork
     #except RuntimeError:
     #    pass
 
     try:
-        if init == "slurm":
-            rank = int(os.environ['SLURM_PROCID'])
-            world_size = int(os.environ['SLURM_NTASKS'])
-            local_rank = int(os.environ['SLURM_LOCALID'])
-            #maser_node = os.environ['SLURM_TOPOLOGY_ADDR']
-            #maser_port = '23456'
-        elif init == "ompi":
-            rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
-            world_size = int(os.environ['OMPI_COMM_WORLD_SIZE'])
-            local_rank = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
+        if local_rank == -1:
+            if init == "slurm":
+                rank = int(os.environ['SLURM_PROCID'])
+                world_size = int(os.environ['SLURM_NTASKS'])
+                local_rank = int(os.environ['SLURM_LOCALID'])
+                #maser_node = os.environ['SLURM_TOPOLOGY_ADDR']
+                #maser_port = '23456'
+            elif init == "ompi":
+                rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
+                world_size = int(os.environ['OMPI_COMM_WORLD_SIZE'])
+                local_rank = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
 
-        if use_cuda:
-            device = local_rank % torch.cuda.device_count()
-            torch.cuda.set_device(device)
-            print(f"set cuda device to cuda:{device}")
+            if use_cuda:
+                device = local_rank % torch.cuda.device_count()
+                torch.cuda.set_device(device)
+                print(f"set cuda device to cuda:{device}")
 
-        master_node = os.environ["MASTER_ADDR"]
-        master_port = os.environ["MASTER_PORT"]
-        init_method = f"tcp://{master_node}:{master_port}"
-        #init_method = "env://"
-        dist.init_process_group(backend=backend, init_method=init_method, world_size=world_size, rank=rank)
-        print(f"initialized as {rank}/{world_size} via {init_method}")
+            master_node = os.environ["MASTER_ADDR"]
+            master_port = os.environ["MASTER_PORT"]
+            init_method = f"tcp://{master_node}:{master_port}"
+            #init_method = "env://"
+            dist.init_process_group(backend=backend, init_method=init_method, world_size=world_size, rank=rank)
+            print(f"initialized as {rank}/{world_size} via {init_method}")
+        else:
+            if use_cuda:
+                torch.cuda.set_device(local_rank)
+                print(f"set cuda device to cuda:{local_rank}")
+            dist.init_process_group(backend=backend, init_method="env://")
+            print(f"initialized as {dist.get_rank()}/{dist.get_world_size()} via env://")
     except Exception as e:
-        #print(e)
+        raise e
         print(f"initialized as single process")
 
 
@@ -447,7 +454,6 @@ class NonSplitTrainer(Trainer):
         if self.fp16:
             ys_hat = ys_hat.float()
         # convert likes to ctc labels
-        print(ys_hat)
         hyps = [onehot2int(yh[:s]).squeeze() for yh, s in zip(ys_hat, frame_lens)]
         hyps = [remove_duplicates(h, blank=0) for h in hyps]
         # slice the targets

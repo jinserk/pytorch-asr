@@ -10,8 +10,10 @@ scipy
 #git+https://github.com/NVIDIA/apex
 #pyro-ppl
 #cffi
+sox
 pyyaml
 wheel
+argcomplete
 scikit-learn
 matplotlib
 colorlover
