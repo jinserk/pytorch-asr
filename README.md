@@ -33,6 +33,11 @@ Do not forget to set `pyenv local <python-version>` in the local repo if you're 
 
 To avoid the `-fPIC` related compile error, you have to configure Kaldi with `--shared` option when you install it.
 
+Install dependent packages:
+```
+$ sudo apt install sox libsox-dev
+```
+
 Download:
 ```
 $ git clone https://github.com/jinserk/pytorch-asr.git
